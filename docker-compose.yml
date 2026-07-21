@@ -40,8 +40,13 @@ services:
       GROUP_INSIGHTS_MCP_TOKEN: ${GROUP_INSIGHTS_MCP_TOKEN:-}
       SOCIAL_BACKEND_URL: ${SOCIAL_BACKEND_URL:-}
       SOCIAL_BACKEND_TOKEN: ${SOCIAL_BACKEND_TOKEN:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      UPLOAD_DIR: /data/uploads
       FB_PAGE_ID: ${FB_PAGE_ID:-}
       FB_ACCESS_TOKEN: ${FB_ACCESS_TOKEN:-}
+    volumes:
+      - fanpage_uploads:/data/uploads
 
 volumes:
   fanpage_pgdata:
+  fanpage_uploads:
