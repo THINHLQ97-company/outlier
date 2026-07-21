@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Loader2, Clock, X, AlertTriangle } from "lucide-react";
 import { listPosts, saveChecklist, approvePost, requestEdit, rejectPost } from "../services/posts";
+import { imageDisplayUrl } from "../services/http";
 import type { PostRow, PostStatus } from "../types";
 import { CHECKLIST_ITEMS } from "../../shared/engine-data";
 
@@ -78,7 +79,7 @@ export default function ApprovalQueue() {
                         }`}
                       >
                         {p.finalImageUrl && (
-                          <img src={p.finalImageUrl} alt="" className="w-14 h-14 rounded-md object-cover bg-stone-100 shrink-0" />
+                          <img src={imageDisplayUrl(p.finalImageUrl) || undefined} alt="" className="w-14 h-14 rounded-md object-cover bg-stone-100 shrink-0" />
                         )}
                         <div className="min-w-0 flex-1">
                           <p className="text-xs text-stone-700 line-clamp-2">{p.caption || "(không có caption)"}</p>
@@ -92,7 +93,7 @@ export default function ApprovalQueue() {
                           )}
                           {col.status === "sua_thoai" && (
                             <Link
-                              to={`/image-studio?scriptId=${p.scriptId}`}
+                              to={`/image-studio?postId=${p.id}`}
                               className="text-[11px] text-storm-600 hover:underline mt-1 inline-block"
                               onClick={(e) => e.stopPropagation()}
                             >
@@ -196,7 +197,7 @@ function ChecklistModal({ post, onClose, onDone }: { post: PostRow; onClose: () 
         </div>
         <div className="p-5 grid grid-cols-1 md:grid-cols-[200px_1fr] gap-5">
           <div>
-            {post.finalImageUrl && <img src={post.finalImageUrl} alt="Ảnh cuối" className="w-full rounded-lg border border-stone-200" />}
+            {post.finalImageUrl && <img src={imageDisplayUrl(post.finalImageUrl) || undefined} alt="Ảnh cuối" className="w-full rounded-lg border border-stone-200" />}
             <p className="text-sm text-stone-600 italic mt-2">"{post.caption}"</p>
           </div>
           <div className="flex flex-col gap-2">

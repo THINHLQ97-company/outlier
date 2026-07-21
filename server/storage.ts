@@ -16,9 +16,10 @@ export interface StorageDriver {
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || "/data/uploads";
 
-// Namespace hợp lệ cho key — chỉ cần "characters" ở iMVP này, giữ "misc" làm
-// chỗ chứa mặc định phòng khi cần dùng storage cho việc khác sau này.
-export const KEY_PREFIXES = ["characters", "misc"] as const;
+// Namespace hợp lệ cho key: "characters" (ảnh reference nhân vật), "posts"
+// (ảnh biến thể + ảnh cuối bài viết — thay cho việc nhét base64 vào Postgres),
+// "misc" (dự phòng).
+export const KEY_PREFIXES = ["characters", "posts", "misc"] as const;
 export type KeyPrefix = (typeof KEY_PREFIXES)[number];
 
 class FsDriver implements StorageDriver {
@@ -107,6 +108,18 @@ export function parseDataUrl(dataUrl: string): { ext: string; buffer: Buffer } |
   return { ext, buffer: Buffer.from(m[2], "base64") };
 }
 
+// Lưu 1 data URL ảnh (base64) vào storage nội bộ, trả về "/api/files/<key>".
+// null nếu không parse được (không phải data:image base64) — caller giữ
+// nguyên giá trị gốc. Dùng để thôi nhét base64 ảnh vào Postgres (ảnh biến thể
+// + ảnh cuối bài viết), giảm phình DB + cho phép browser cache qua /api/files.
+export async function persistDataUrl(prefix: KeyPrefix, dataUrl: string): Promise<string | null> {
+  const parsed = parseDataUrl(dataUrl);
+  if (!parsed) return null;
+  const key = newKey(prefix, parsed.ext);
+  await storage.put(key, parsed.buffer);
+  return `/api/files/${key}`;
+}
+
 // "/api/files/<key>" → "<key>" nếu referenceImageUrl trỏ vào storage nội bộ,
 // null nếu đó là URL ngoài (không phải file do app này quản lý) — dùng khi
 // cần xoá ảnh cũ trước khi ghi ảnh mới (xem server/routes/characters.routes.ts).
@@ -114,4 +127,21 @@ export function internalKeyFromUrl(url: string | null | undefined): string | nul
   if (!url) return null;
   const m = /^\/api\/files\/(.+)$/.exec(url);
   return m ? m[1] : null;
+}
+
+// Đọc ảnh reference (referenceImageUrl trỏ vào storage nội bộ) thành inline data
+// { mimeType, data(base64) } — đúng shape @google/genai cần cho image-to-image.
+// URL ngoài / thiếu / lỗi đọc → null (bỏ qua, không chặn sinh ảnh). Dùng để
+// đính ảnh nhân vật khi VẼ, giữ nhất quán ngoại hình (mục 2.4 v3.md).
+export async function readImageAsInlineData(
+  url: string | null | undefined
+): Promise<{ mimeType: string; data: string } | null> {
+  const key = internalKeyFromUrl(url);
+  if (!key) return null;
+  try {
+    const buf = await storage.get(key);
+    return { mimeType: contentTypeForKey(key), data: buf.toString("base64") };
+  } catch {
+    return null;
+  }
 }

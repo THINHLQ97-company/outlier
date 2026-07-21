@@ -57,16 +57,9 @@ export async function generateCharacterReference(id: string): Promise<CharacterR
   return res.json();
 }
 
-// referenceImageUrl trỏ vào "/api/files/<key>" (storage nội bộ, requireAuth)
-// hoặc 1 URL ngoài. <img src> không gửi được header Authorization, nên với
-// URL nội bộ phải đính token qua query string (extractToken hỗ trợ sẵn, xem
-// server/auth-shared.ts) — URL ngoài giữ nguyên.
-export function imageDisplayUrl(url: string | null): string | null {
-  if (!url) return null;
-  if (!url.startsWith("/api/files/")) return url;
-  const token = localStorage.getItem("authToken") || "";
-  return `${url}?token=${encodeURIComponent(token)}`;
-}
+// imageDisplayUrl đã chuyển sang services/http.ts (dùng chung cho ảnh nhân vật
+// lẫn ảnh bài viết). Re-export để không phải sửa import ở Characters.tsx.
+export { imageDisplayUrl } from "./http";
 
 // Convert 1 File (input[type=file]) sang data URL base64 để gửi lên
 // refImageDataUrl (createCharacter/updateCharacter).

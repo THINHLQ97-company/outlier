@@ -100,6 +100,10 @@ export async function generateImageVariants(input: {
   styleSummary: string;
   panelsText: string;
   characterNames: string[];
+  aspectRatio?: string;
+  // Ảnh nhân vật tham chiếu (thư viện Nhân vật) — đính vào Gemini để giữ đúng
+  // ngoại hình đã duyệt (image-to-image, mục 2.4 v3.md). Rỗng → chỉ dựa text.
+  referenceImages?: { mimeType: string; data: string }[];
 }): Promise<GenerateImageResult> {
   if (!process.env.GEMINI_API_KEY) {
     const warning = "[social-proxy] GEMINI_API_KEY chưa cấu hình — dùng ảnh placeholder (demo).";
@@ -114,12 +118,16 @@ export async function generateImageVariants(input: {
     };
   }
 
-  const prompt = `${input.styleSummary}\n\n${input.panelsText}\n\nKHÔNG vẽ chữ/thoại lên ảnh (noText) — chữ sẽ được thêm ở hậu kỳ.`;
+  const refs = input.referenceImages || [];
+  const refNote = refs.length
+    ? `\n\nGiữ ĐÚNG ngoại hình các nhân vật theo ${refs.length} ảnh tham chiếu đính kèm (không đổi trang phục/màu/nhận diện).`
+    : "";
+  const prompt = `${input.styleSummary}\n\n${input.panelsText}${refNote}\n\nKHÔNG vẽ chữ/thoại lên ảnh (noText) — chữ sẽ được thêm ở hậu kỳ.`;
   try {
     // 2 biến thể độc lập từ cùng 1 prompt (FR4.2) — gọi song song.
     const results = await Promise.all(
       [0, 1].map(async () => ({
-        url: await generateImageGemini(prompt),
+        url: await generateImageGemini(prompt, refs.length ? refs : undefined, input.aspectRatio || "1:1"),
         source: "social" as const, // nghĩa là "ảnh Gemini thật" (khác "placeholder"), không còn liên quan share-projects/social
       }))
     );

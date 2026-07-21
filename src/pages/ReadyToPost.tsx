@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Loader2, Download, Copy, Check, ExternalLink } from "lucide-react";
 import { listPosts, markPosted } from "../services/posts";
+import { imageDisplayUrl } from "../services/http";
 import type { PostRow } from "../types";
 
 // ĐĂNG (J5, thủ công trong iMVP): tải ảnh cuối + copy caption → tự đăng lên
@@ -44,8 +45,10 @@ export default function ReadyToPost() {
 
   function handleDownload(post: PostRow) {
     if (!post.finalImageUrl) return;
+    // finalImageUrl có thể là "/api/files/<key>" (requireAuth) — đính token qua
+    // query để tải được, hoặc data:/URL ngoài thì giữ nguyên.
     const a = document.createElement("a");
-    a.href = post.finalImageUrl;
+    a.href = imageDisplayUrl(post.finalImageUrl) || post.finalImageUrl;
     a.download = `an-nam-voi-ai-${post.id}.png`;
     a.click();
   }
@@ -91,7 +94,7 @@ export default function ReadyToPost() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {ready.map((p) => (
             <div key={p.id} className="bg-white border border-stone-200 rounded-xl p-4 flex gap-4">
-              {p.finalImageUrl && <img src={p.finalImageUrl} alt="" className="w-28 h-28 rounded-lg object-cover bg-stone-100 shrink-0" />}
+              {p.finalImageUrl && <img src={imageDisplayUrl(p.finalImageUrl) || undefined} alt="" className="w-28 h-28 rounded-lg object-cover bg-stone-100 shrink-0" />}
               <div className="flex-1 min-w-0 flex flex-col gap-2">
                 <p className="text-sm text-stone-700 italic">"{p.caption}"</p>
                 <div className="flex items-center gap-2">
@@ -131,7 +134,7 @@ export default function ReadyToPost() {
           <div className="flex flex-col gap-2">
             {history.map((p) => (
               <div key={p.id} className="flex items-center gap-3 bg-white border border-stone-200 rounded-lg p-2.5">
-                {p.finalImageUrl && <img src={p.finalImageUrl} alt="" className="w-10 h-10 rounded object-cover bg-stone-100 shrink-0" />}
+                {p.finalImageUrl && <img src={imageDisplayUrl(p.finalImageUrl) || undefined} alt="" className="w-10 h-10 rounded object-cover bg-stone-100 shrink-0" />}
                 <p className="text-xs text-stone-600 flex-1 truncate">{p.caption}</p>
                 {p.fbPostUrl && (
                   <a href={p.fbPostUrl} target="_blank" rel="noreferrer" className="text-xs text-storm-600 hover:underline flex items-center gap-1 shrink-0">

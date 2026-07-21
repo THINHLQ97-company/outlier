@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { Loader2, Sparkles, Check, AlertTriangle, Send } from "lucide-react";
-import { generateImages, selectImage, saveOverlay, submitForApproval } from "../services/posts";
+import { generateImages, getPost, selectImage, saveOverlay, submitForApproval } from "../services/posts";
+import { imageDisplayUrl } from "../services/http";
 import type { PostRow } from "../types";
 import TextOverlayEditor from "../components/TextOverlayEditor";
 
@@ -9,12 +10,19 @@ const WATERMARK_OPTIONS = ["MATBAO", "MATBAO INVOICE"];
 
 // VẼ (J3): sinh 2 biến thể ảnh KHÔNG chữ từ kịch bản đã chọn → chọn 1 ảnh →
 // text-overlay editor (Canvas) → export ảnh cuối + watermark → gửi vào DUYỆT.
+//
+// Hai chế độ mở:
+//   ?scriptId=<id> — luồng mới: sinh ảnh từ kịch bản đã chọn.
+//   ?postId=<id>   — "Sửa thoại": mở lại bài đã có để chỉnh overlay/caption
+//                    rồi export + gửi duyệt lại (KHÔNG tạo post mới).
 export default function ImageStudio() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const scriptId = params.get("scriptId");
+  const postId = params.get("postId");
 
   const [post, setPost] = useState<PostRow | null>(null);
+  const [loadingPost, setLoadingPost] = useState(!!postId);
   const [generating, setGenerating] = useState(false);
   const [selecting, setSelecting] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -23,7 +31,28 @@ export default function ImageStudio() {
   const [warning, setWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  if (!scriptId) {
+  // Chế độ "Sửa thoại" — nạp lại bài cũ theo postId.
+  useEffect(() => {
+    if (!postId) return;
+    let alive = true;
+    (async () => {
+      try {
+        const p = await getPost(postId);
+        if (!alive) return;
+        setPost(p);
+        setCaption(p.caption || "");
+      } catch (e: any) {
+        if (alive) setError(e?.message || "Không tải được bài để sửa.");
+      } finally {
+        if (alive) setLoadingPost(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [postId]);
+
+  if (!scriptId && !postId) {
     return (
       <div className="text-center py-16 text-stone-400 text-sm">
         Chưa chọn kịch bản. Quay lại{" "}
@@ -36,11 +65,12 @@ export default function ImageStudio() {
   }
 
   async function handleGenerate() {
+    if (!scriptId) return;
     setGenerating(true);
     setError(null);
     setWarning(null);
     try {
-      const result: any = await generateImages(scriptId!);
+      const result: any = await generateImages(scriptId);
       setPost(result);
       setCaption(result.caption || "");
       if (result.warning) setWarning(result.warning);
@@ -93,14 +123,28 @@ export default function ImageStudio() {
     }
   }
 
+  const isReopen = !!postId;
+
   return (
     <div className="flex flex-col gap-4 max-w-3xl">
       <div>
-        <h1 className="text-lg font-bold text-stone-800 font-display">Dựng ảnh (VẼ)</h1>
-        <p className="text-sm text-stone-500">2 biến thể ảnh không chữ → chọn 1 → gắn nhãn + watermark.</p>
+        <h1 className="text-lg font-bold text-stone-800 font-display">
+          {isReopen ? "Sửa thoại (VẼ)" : "Dựng ảnh (VẼ)"}
+        </h1>
+        <p className="text-sm text-stone-500">
+          {isReopen
+            ? "Chỉnh nhãn chữ + watermark trên ảnh đã chọn → export lại → gửi duyệt lại."
+            : "2 biến thể ảnh không chữ → chọn 1 → gắn nhãn + watermark."}
+        </p>
       </div>
 
-      {!post && (
+      {loadingPost && (
+        <div className="flex items-center gap-2 text-stone-400 text-sm py-6">
+          <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> Đang tải bài...
+        </div>
+      )}
+
+      {!post && !loadingPost && scriptId && (
         <button
           onClick={handleGenerate}
           disabled={generating}
@@ -119,66 +163,65 @@ export default function ImageStudio() {
       )}
       {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
 
-      {post && !post.finalImageUrl && (
-        <>
-          <div className="grid grid-cols-2 gap-3">
-            {post.imageVariants.map((v, i) => (
-              <button
-                key={i}
-                onClick={() => handleSelectImage(v.url)}
-                disabled={selecting}
-                className={`relative rounded-xl overflow-hidden border-2 transition-colors ${
-                  post.selectedImageUrl === v.url ? "border-storm-500" : "border-transparent hover:border-storm-200"
-                }`}
-              >
-                <img src={v.url} alt={`Biến thể ảnh ${i + 1}`} className="w-full aspect-square object-cover bg-stone-100" />
-                {post.selectedImageUrl === v.url && (
-                  <span className="absolute top-2 right-2 bg-storm-600 text-white rounded-full p-1">
-                    <Check className="w-3.5 h-3.5" aria-hidden="true" />
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-
-          {post.selectedImageUrl && (
-            <div className="flex flex-col gap-3">
-              <div>
-                <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="caption">
-                  Caption (≤ 2 câu, không giải thích trò đùa)
-                </label>
-                <textarea
-                  id="caption"
-                  rows={2}
-                  value={caption}
-                  onChange={(e) => setCaption(e.target.value)}
-                  className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
-                />
-              </div>
-              <TextOverlayEditor
-                imageUrl={post.selectedImageUrl}
-                initialOverlay={post.overlayJson}
-                watermarkOptions={WATERMARK_OPTIONS}
-                onExport={handleExport}
-                exporting={exporting}
-              />
-            </div>
-          )}
-        </>
+      {/* Chọn 1 trong 2 biến thể (chỉ khi chưa chọn ảnh) */}
+      {post && !post.selectedImageUrl && (
+        <div className="grid grid-cols-2 gap-3">
+          {post.imageVariants.map((v, i) => (
+            <button
+              key={i}
+              onClick={() => handleSelectImage(v.url)}
+              disabled={selecting}
+              className={`relative rounded-xl overflow-hidden border-2 transition-colors ${
+                post.selectedImageUrl === v.url ? "border-storm-500" : "border-transparent hover:border-storm-200"
+              }`}
+            >
+              <img src={imageDisplayUrl(v.url) || undefined} alt={`Biến thể ảnh ${i + 1}`} className="w-full aspect-square object-cover bg-stone-100" />
+            </button>
+          ))}
+        </div>
       )}
 
-      {post?.finalImageUrl && (
+      {/* Editor overlay — luôn hiện khi đã có ảnh chọn (cho phép re-edit khi Sửa thoại) */}
+      {post && post.selectedImageUrl && (
         <div className="flex flex-col gap-3">
-          <img src={post.finalImageUrl} alt="Ảnh cuối kèm watermark" className="w-full max-w-sm rounded-xl border border-stone-200" />
-          <p className="text-sm text-stone-600 italic">"{caption}"</p>
-          <button
-            onClick={handleSubmit}
-            disabled={submitting}
-            className="self-start flex items-center gap-1.5 text-sm font-medium text-white bg-storm-700 hover:bg-storm-800 px-4 py-2.5 rounded-lg disabled:opacity-60"
-          >
-            {submitting ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Send className="w-4 h-4" aria-hidden="true" />}
-            Gửi duyệt (vào kanban Chờ duyệt)
-          </button>
+          <div>
+            <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="caption">
+              Caption (≤ 2 câu, không giải thích trò đùa)
+            </label>
+            <textarea
+              id="caption"
+              rows={2}
+              value={caption}
+              onChange={(e) => setCaption(e.target.value)}
+              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <TextOverlayEditor
+            imageUrl={imageDisplayUrl(post.selectedImageUrl) || post.selectedImageUrl}
+            initialOverlay={post.overlayJson}
+            watermarkOptions={WATERMARK_OPTIONS}
+            onExport={handleExport}
+            exporting={exporting}
+          />
+
+          {post.finalImageUrl && (
+            <div className="flex flex-col gap-3 border-t border-stone-200 pt-4">
+              <p className="text-xs font-medium text-stone-500">Ảnh cuối đã lưu:</p>
+              <img
+                src={imageDisplayUrl(post.finalImageUrl) || undefined}
+                alt="Ảnh cuối kèm watermark"
+                className="w-full max-w-sm rounded-xl border border-stone-200"
+              />
+              <button
+                onClick={handleSubmit}
+                disabled={submitting}
+                className="self-start flex items-center gap-1.5 text-sm font-medium text-white bg-storm-700 hover:bg-storm-800 px-4 py-2.5 rounded-lg disabled:opacity-60"
+              >
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Send className="w-4 h-4" aria-hidden="true" />}
+                Gửi duyệt (vào kanban Chờ duyệt)
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
