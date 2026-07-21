@@ -15,7 +15,15 @@ import {
   normalizeAspectRatio,
   type AspectRatioValue,
 } from "../services/image-store";
-import { STYLE_PROMPT, WATERMARK_BRANDS, type AxisKey } from "../../shared/engine-data";
+import { ART_STYLES, PANEL_LAYOUTS, WATERMARK_BRANDS, type AxisKey } from "../../shared/engine-data";
+
+// Tra phong cách/bố cục theo key (fallback về mặc định đầu danh sách).
+function resolveArtStyle(key: any): (typeof ART_STYLES)[number] {
+  return ART_STYLES.find((s) => s.key === key) || ART_STYLES[0];
+}
+function resolvePanelLayout(key: any): (typeof PANEL_LAYOUTS)[number] {
+  return PANEL_LAYOUTS.find((l) => l.key === key) || PANEL_LAYOUTS[0];
+}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TRUC_VALUES = ["ai", "ke_toan", "hosting"] as const;
@@ -38,26 +46,26 @@ export interface StudioParams {
   truc: AxisKey | null;
   characterIds: string[];
   assetIds: string[];
+  artStyle?: string; // key ART_STYLES (mặc định tông Mắt Bão)
+  panelLayout?: string; // key PANEL_LAYOUTS (1/2/4/auto)
 }
 
-// Xây prompt (STYLE_PROMPT + mô tả nhân vật đã chọn) + gom ảnh tham chiếu
-// (ảnh nhân vật + ảnh assets, tối đa 4) + gọi Gemini + lưu ảnh vào storage.
-// Dùng chung cho POST /api/studio/generate (tạo mới) và
-// /api/posts/:id/regenerate-images khi post.origin="studio" (vẽ lại).
+// Gom ảnh tham chiếu (PHÂN VAI: ảnh nhân vật = giữ khuôn mặt; meme_template =
+// copy bố cục) + phong cách + bố cục đã chọn → gọi Gemini → lưu ảnh. Dùng chung
+// cho POST /api/studio/generate và /regenerate-images (post.origin="studio").
 export async function generateStudioVariants(
   db: any,
   owner: string,
   params: StudioParams,
   aspectRatio: AspectRatioValue
 ): Promise<{ storedImages: { url: string; source: "social" | "placeholder" }[]; warning?: string }> {
-  // Nhân vật đã chọn (nếu có) — không bắt buộc, cho phép vẽ chỉ từ mô tả + tham chiếu.
   const chosenChars = params.characterIds.length
     ? await db.select().from(charactersTable).where(inArray(charactersTable.id, params.characterIds))
     : [];
   const characterNames: string[] = chosenChars.map((c: any) => c.name);
   const characterPrompts = chosenChars.map((c: any) => `${c.name}: ${c.promptDescription}`).join("\n");
 
-  // Assets tham chiếu: chỉ đọc asset của mình HOẶC được chia sẻ.
+  // Assets: chỉ đọc asset của mình HOẶC shared.
   const chosenAssets = params.assetIds.length
     ? await db
         .select()
@@ -65,30 +73,36 @@ export async function generateStudioVariants(
         .where(and(inArray(assetsTable.id, params.assetIds), or(eq(assetsTable.owner, owner), eq(assetsTable.isShared, true))))
     : [];
 
-  // Gom ảnh tham chiếu: ảnh nhân vật trước, rồi ảnh asset — cắt tối đa 4.
-  const charRefs = (
+  // PHÂN VAI ảnh tham chiếu:
+  //  - charRefs: ảnh nhân vật (thư viện) + asset kind="reference" → giữ khuôn mặt/design.
+  //  - templateRefs: asset kind="meme_template" → copy bố cục/số khung.
+  const charAssetImgs = (
+    await Promise.all(chosenAssets.filter((a: any) => a.kind !== "meme_template").map((a: any) => readImageAsInlineData(a.imageUrl)))
+  ).filter(Boolean);
+  const templateImgs = (
+    await Promise.all(chosenAssets.filter((a: any) => a.kind === "meme_template").map((a: any) => readImageAsInlineData(a.imageUrl)))
+  ).filter(Boolean);
+  const characterImgs = (
     await Promise.all(chosenChars.map((c: any) => readImageAsInlineData(c.referenceImageUrl)))
-  ).filter((x: any): x is { mimeType: string; data: string } => x !== null);
-  const assetRefs = (
-    await Promise.all(chosenAssets.map((a: any) => readImageAsInlineData(a.imageUrl)))
-  ).filter((x: any): x is { mimeType: string; data: string } => x !== null);
-  const referenceImages = [...charRefs, ...assetRefs].slice(0, MAX_REFERENCE_IMAGES);
+  ).filter(Boolean);
 
-  // panelsText = mô tả tự do; asset meme_template có note → thêm hướng dẫn diễn giải.
-  let panelsText = params.promptText;
-  const memeNotes = chosenAssets
-    .filter((a: any) => a.kind === "meme_template" && a.note && a.note.trim())
-    .map((a: any) => `Diễn giải lại theo bố cục/tinh thần meme tham chiếu, note: ${a.note.trim()}`);
-  if (memeNotes.length) panelsText = `${panelsText}\n\n${memeNotes.join("\n")}`;
+  const characterRefs = [...characterImgs, ...charAssetImgs].slice(0, MAX_REFERENCE_IMAGES) as any[];
+  const templateRefs = templateImgs.slice(0, 1) as any[]; // 1 meme mẫu là đủ để copy bố cục
 
-  const styleSummary = characterPrompts ? `${STYLE_PROMPT}\n\n${characterPrompts}` : STYLE_PROMPT;
+  const style = resolveArtStyle(params.artStyle);
+  // Có meme mẫu → mặc định bám bố cục ảnh mẫu ("auto") nếu người dùng chưa chọn.
+  const layoutKey = params.panelLayout || (templateRefs.length ? "auto" : "1");
+  const layout = resolvePanelLayout(layoutKey);
 
   const result = await generateImageVariants({
-    styleSummary,
-    panelsText,
+    sceneText: params.promptText,
     characterNames,
-    referenceImages,
+    characterPrompts,
+    stylePrompt: style.prompt,
+    layoutInstruction: layout.instruction,
     aspectRatio,
+    characterRefs,
+    templateRefs,
   });
 
   const storedImages = await persistVariantImages(result.images);
@@ -110,10 +124,12 @@ export function registerStudioRoutes(app: Express) {
     const aspectRatio = normalizeAspectRatio(body.aspectRatio);
     const isShared = body.isShared === true;
     const caption = typeof body.caption === "string" ? body.caption : "";
+    const artStyle = resolveArtStyle(body.artStyle).key;
+    const panelLayout = resolvePanelLayout(body.panelLayout).key;
 
     try {
       const db = getDb();
-      const params: StudioParams = { promptText, truc, characterIds, assetIds };
+      const params: StudioParams = { promptText, truc, characterIds, assetIds, artStyle, panelLayout };
       const { storedImages, warning } = await generateStudioVariants(db, user, params, aspectRatio);
 
       const [row] = await db
@@ -132,7 +148,7 @@ export function registerStudioRoutes(app: Express) {
             watermarkBrand: truc ? WATERMARK_BRANDS[truc] : "MATBAO",
             aspectRatio,
             // Lưu lại tham số Studio để /regenerate-images vẽ lại đúng (scriptId null).
-            studioParams: { characterIds, assetIds, truc },
+            studioParams: { characterIds, assetIds, truc, artStyle, panelLayout },
           },
           caption,
           status: "draft",

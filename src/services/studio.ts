@@ -10,6 +10,8 @@ export interface StudioGenerateInput {
   characterIds?: string[]; // uuid nhân vật đã chọn (có thể rỗng)
   assetIds?: string[]; // uuid asset tham chiếu (meme_template/reference)
   aspectRatio?: string; // "1:1" | "3:4" | "9:16" (mặc định 1:1)
+  artStyle?: string; // key ART_STYLES (phong cách vẽ)
+  panelLayout?: string; // key PANEL_LAYOUTS (1/2/4/auto)
   isShared?: boolean; // hiện trong thư viện chung (mặc định false)
   caption?: string;
 }

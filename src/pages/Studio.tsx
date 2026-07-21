@@ -7,7 +7,7 @@ import { listCharacters, fileToDataUrl } from "../services/characters";
 import { listAssets, createAsset } from "../services/assets";
 import { imageDisplayUrl } from "../services/http";
 import type { PostRow, CharacterRow, AssetRow, AxisKey, AssetKind } from "../types";
-import { AXES } from "../../shared/engine-data";
+import { AXES, ART_STYLES, PANEL_LAYOUTS } from "../../shared/engine-data";
 import CharacterPicker from "../components/CharacterPicker";
 import TextOverlayEditor from "../components/TextOverlayEditor";
 
@@ -39,6 +39,8 @@ export default function Studio() {
   const [promptText, setPromptText] = useState("");
   const [truc, setTruc] = useState<AxisKey | "">("");
   const [aspectRatio, setAspectRatio] = useState("1:1");
+  const [artStyle, setArtStyle] = useState(ART_STYLES[0].key);
+  const [panelLayout, setPanelLayout] = useState("1"); // 1/2/4/auto
   const [isShared, setIsShared] = useState(false);
   const [caption, setCaption] = useState("");
 
@@ -120,6 +122,8 @@ export default function Studio() {
         characterIds: selectedCharacterIds,
         assetIds: selectedAssetIds,
         aspectRatio,
+        artStyle,
+        panelLayout,
         isShared,
         caption: caption.trim() || undefined,
       });
@@ -311,6 +315,32 @@ export default function Studio() {
 
           <div className="flex flex-wrap items-end gap-3">
             <div>
+              <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="st-style">Phong cách vẽ</label>
+              <select
+                id="st-style"
+                value={artStyle}
+                onChange={(e) => setArtStyle(e.target.value)}
+                className="rounded-lg border border-stone-300 px-3 py-2 text-sm"
+              >
+                {ART_STYLES.map((s) => (
+                  <option key={s.key} value={s.key}>{s.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="st-layout">Bố cục / số khung</label>
+              <select
+                id="st-layout"
+                value={panelLayout}
+                onChange={(e) => setPanelLayout(e.target.value)}
+                className="rounded-lg border border-stone-300 px-3 py-2 text-sm"
+              >
+                {PANEL_LAYOUTS.map((l) => (
+                  <option key={l.key} value={l.key}>{l.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
               <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="st-ratio">Tỉ lệ khung</label>
               <select
                 id="st-ratio"
@@ -328,6 +358,11 @@ export default function Studio() {
               Chia sẻ team (bỏ chọn = chỉ mình tôi)
             </label>
           </div>
+          {panelLayout === "auto" && !selectedAssetIds.length && (
+            <p className="text-[11px] text-amber-700 -mt-1">
+              "Theo ảnh mẫu" cần đính 1 ảnh template meme ở phần Ảnh tham chiếu bên trên.
+            </p>
+          )}
 
           <div>
             <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="st-caption">Caption (tuỳ chọn)</label>

@@ -6,9 +6,88 @@
 //
 // KHÔNG đổi nội dung nghiệp vụ ở đây tuỳ tiện — đây là spec đã được duyệt.
 
+// STYLE_PROMPT gốc — dùng cho ảnh reference nhân vật (1 khung, nền trung tính).
 export const STYLE_PROMPT = `Vietnamese webcomic meme, soft watercolor + clean ink outline, warm off-white paper texture,
-SINGLE PANEL or 2 panels max, thin black borders, expressive exaggerated cartoon faces,
+SINGLE PANEL, thin black borders, expressive exaggerated cartoon faces,
 flat lighting, no gradients on characters. Leave clean empty space for text overlay.`;
+
+// ── Tách phong cách vẽ / bố cục khung để CHỌN được (thay vì ép cứng) ──────────
+// Trước đây STYLE_PROMPT ép "SINGLE PANEL or 2 panels max" → không tạo được meme
+// nhiều khung. Nay tách: người dùng chọn PHONG CÁCH + BỐ CỤC riêng.
+
+// Nét render nền — LUÔN thêm vào cuối prompt ảnh (đảm bảo không chèn chữ vào ảnh,
+// chừa chỗ cho text overlay hậu kỳ).
+export const BASE_RENDER = `Expressive, exaggerated cartoon faces. Clear thin black borders around each panel. Leave clean empty space for later text overlay. Absolutely NO text, letters, words, numbers, speech bubbles or captions rendered in the image.`;
+
+export interface ArtStyle {
+  key: string;
+  label: string; // hiện trên UI
+  prompt: string; // đoạn phong cách tiếng Anh đưa vào đầu prompt ảnh
+}
+
+// Phong cách vẽ chọn được. Mặc định là tông thương hiệu Mắt Bão (màu nước).
+export const ART_STYLES: ArtStyle[] = [
+  {
+    key: "matbao-watercolor",
+    label: "Màu nước Mắt Bão (mặc định)",
+    prompt:
+      "Vietnamese webcomic style: soft watercolor washes with clean black ink outlines, warm off-white paper texture, flat lighting, no gradients on characters",
+  },
+  {
+    key: "flat-cartoon",
+    label: "Hoạt hình phẳng (flat vector)",
+    prompt:
+      "flat vector cartoon style, bold clean black outlines, solid bright flat colors, minimal shading, modern sticker look",
+  },
+  {
+    key: "manga-bw",
+    label: "Manga đen trắng",
+    prompt:
+      "black and white manga style, expressive clean linework, screentone shading, high contrast, no color",
+  },
+  {
+    key: "3d-cute",
+    label: "3D dễ thương (Pixar-ish)",
+    prompt:
+      "cute stylized 3D rendered cartoon, soft global illumination, rounded shapes, glossy, Pixar-like character design",
+  },
+  {
+    key: "retro-print",
+    label: "In báo retro (halftone)",
+    prompt:
+      "retro newspaper comic print style, halftone dot shading, limited muted color palette, slightly rough registration",
+  },
+];
+
+export interface PanelLayout {
+  key: string;
+  label: string; // hiện trên UI
+  instruction: string; // hướng dẫn bố cục tiếng Anh
+  aspectHint?: string; // gợi ý tỉ lệ khung phù hợp
+}
+
+// Bố cục / số khung chọn được. "auto" = theo đúng ảnh meme mẫu đính kèm.
+export const PANEL_LAYOUTS: PanelLayout[] = [
+  { key: "1", label: "1 khung", instruction: "Compose as a SINGLE illustrated panel.", aspectHint: "1:1" },
+  {
+    key: "2",
+    label: "2 khung",
+    instruction: "Compose as a 2-panel comic (two panels side by side or stacked), each clearly bordered, showing a before/after or setup/punchline progression.",
+    aspectHint: "1:1",
+  },
+  {
+    key: "4",
+    label: "4 khung (2x2)",
+    instruction: "Compose as a 4-panel comic in a 2x2 grid, each panel clearly bordered, showing a sequential progression across the four panels. Keep the SAME character design consistent in every panel.",
+    aspectHint: "1:1",
+  },
+  {
+    key: "auto",
+    label: "Theo ảnh mẫu (meme)",
+    instruction: "Reproduce the EXACT panel layout of the provided meme template reference image: same number of panels, same panel arrangement, same camera framing and the same visual progression/joke beat in each panel. Only replace the original character(s) with our character(s) and redraw in the chosen art style.",
+    aspectHint: "1:1",
+  },
+];
 
 export type CharacterKind = "nguoi" | "ai" | "linh_vat";
 

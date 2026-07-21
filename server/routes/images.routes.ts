@@ -15,7 +15,13 @@ import {
   type AspectRatioValue,
 } from "../services/image-store";
 import { generateStudioVariants, type StudioParams } from "./studio.routes";
-import { AXES, STYLE_PROMPT, WATERMARK_BRANDS, type AxisKey } from "../../shared/engine-data";
+import { AXES, ART_STYLES, PANEL_LAYOUTS, WATERMARK_BRANDS, type AxisKey } from "../../shared/engine-data";
+
+// Pipeline giữ LUẬT BIÊN TẬP fanpage: ≤2 khung (meme viral). Layout suy theo số
+// panel của phương án kịch bản. Phong cách: tông thương hiệu mặc định.
+const BRAND_STYLE = ART_STYLES[0].prompt;
+const layoutFor = (panelCount: number) =>
+  (PANEL_LAYOUTS.find((l) => l.key === (panelCount >= 2 ? "2" : "1")) || PANEL_LAYOUTS[0]).instruction;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Chỉ được chỉnh ảnh/overlay khi bài đang ở khâu VẼ (nháp) hoặc quay lại sửa
@@ -75,11 +81,13 @@ async function generateAndStoreImageVariants(
   const panelsText = variant.panels.map((p: string, i: number) => `Khung ${i + 1}: ${p}`).join("\n");
 
   const result = await generateImageVariants({
-    styleSummary: `${STYLE_PROMPT}\n\n${characterPrompts}`,
-    panelsText,
+    sceneText: panelsText,
     characterNames,
-    referenceImages,
+    characterPrompts,
+    stylePrompt: BRAND_STYLE,
+    layoutInstruction: layoutFor(variant.panels?.length || 1),
     aspectRatio,
+    characterRefs: referenceImages,
   });
 
   const storedImages = await persistVariantImages(result.images);
@@ -167,6 +175,8 @@ export function registerImageRoutes(app: Express) {
           truc: (existing.truc as any) || null,
           characterIds: onlyUuids(sp.characterIds),
           assetIds: onlyUuids(sp.assetIds),
+          artStyle: sp.artStyle,
+          panelLayout: sp.panelLayout,
         };
         const owner = existing.owner || getAuthUser(req)!;
         ({ storedImages, warning } = await generateStudioVariants(db, owner, params, aspectRatio));
