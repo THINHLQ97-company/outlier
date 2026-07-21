@@ -31,6 +31,16 @@ Nguồn: chuyển đổi từ `docs/PLAN.md` (iMVP, 7 step, tất cả đã hoà
 - [x] **Bảo mật (codex MEDIUM)**: `/overlay` update DB trước, xoá file ảnh cũ sau (tránh mất ảnh khi lỗi giữa chừng)
 - [x] **Hiệu năng**: thêm index DB (`signals.status/published_date`, `scripts.signal_id`, `posts.status/script_id`) — migration `0002`
 
+## Đợt mở rộng lớn (2026-07-21) — Studio + kho dữ liệu + quản lý user
+
+- [x] **Studio Vẽ tự do** (`/studio`) — tạo ảnh trực tiếp không cần tín hiệu/kịch bản: mô tả tự do + chọn nhân vật + đính ảnh tham chiếu (asset) + tỉ lệ khung + chia sẻ/riêng → sinh ảnh → overlay → gửi duyệt/lưu. `POST /api/studio/generate` (origin=studio, scriptId null)
+- [x] **Chọn nhân vật khi tạo ảnh** — component CharacterPicker dùng chung Studio + ImageStudio (pipeline); `characterIds` override dàn mặc định theo trục
+- [x] **Tự viết kịch bản** (freeform) — tab trong màn Kịch bản; `POST /api/scripts/freeform` (signalId null, source=freeform)
+- [x] **Kho template meme + ảnh tham chiếu** (bảng `assets`, kind meme_template|reference) — upload + shared/riêng; owner-only sửa/xoá; dùng làm reference trong Studio
+- [x] **Thư viện ảnh** (`/library`) — 2 tab: gallery ảnh đã tạo (lọc mine/shared/all, tải, lưu-làm-tham-chiếu) + tab template/tham chiếu
+- [x] **Quản lý user** (`/admin/users`, chỉ admin) — CRUD user, đổi role, khoá/mở, reset mật khẩu; chặn tự-khoá/tự-hạ-quyền; không lộ passwordHash
+- [x] **Ownership model** — owner + isShared cho posts/assets (pipeline mặc định shared team; Studio chọn riêng/chung); migration `0003`
+
 ## Rủi ro đã biết (chấp nhận cho iMVP nội bộ, fix sau nếu go-live rộng)
 
 - Token đăng nhập (7 ngày) truyền qua query string `?token=` cho `GET /api/files/*` (vì `<img>` không gửi được header Authorization) — có thể lọt vào access log/history/Referer. Chấp nhận cho công cụ nội bộ; nếu go-live rộng nên đổi sang cookie HttpOnly same-origin hoặc token ngắn hạn scope theo file.
