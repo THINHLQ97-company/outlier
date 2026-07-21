@@ -5,9 +5,16 @@ import type { Express } from "express";
 import { and, eq, inArray } from "drizzle-orm";
 import { getDb, isDbConfigured } from "../db/client";
 import { posts, scripts, characters as charactersTable } from "../db/schema";
-import { requireAuth } from "../auth-mw";
+import { requireAuth, getAuthUser } from "../auth-mw";
 import { generateImageVariants } from "../services/social-proxy";
 import { readImageAsInlineData, persistDataUrl, internalKeyFromUrl, storage } from "../storage";
+import {
+  persistVariantImages,
+  deleteInternalVariants,
+  normalizeAspectRatio,
+  type AspectRatioValue,
+} from "../services/image-store";
+import { generateStudioVariants, type StudioParams } from "./studio.routes";
 import { AXES, STYLE_PROMPT, WATERMARK_BRANDS, type AxisKey } from "../../shared/engine-data";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -16,11 +23,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // kéo ngược state machine, codex HIGH #1).
 const EDITABLE_STATUSES = ["draft", "sua_thoai"] as const;
 
-// B2.2 — tỉ lệ khung cho phép chọn khi sinh ảnh (whitelist, mặc định 1:1).
-const ASPECT_RATIOS = ["1:1", "3:4", "9:16"] as const;
-type AspectRatioValue = (typeof ASPECT_RATIOS)[number];
-function normalizeAspectRatio(v: any): AspectRatioValue {
-  return ASPECT_RATIOS.includes(v) ? v : "1:1";
+function onlyUuids(v: any): string[] {
+  return Array.isArray(v) ? v.filter((x) => typeof x === "string" && UUID_RE.test(x)) : [];
 }
 
 function dbDown(res: any): boolean {
@@ -31,17 +35,33 @@ function dbDown(res: any): boolean {
   return false;
 }
 
-// Logic build prompt (style + nhân vật chủ đạo theo trục + panels) + ảnh tham
-// chiếu + gọi generateImageVariants + lưu 2 biến thể vào storage — dùng chung
-// cho cả /api/images/generate (tạo mới) và /api/posts/:id/regenerate-images
-// (vẽ lại). `script` phải đã có selectedVariant hợp lệ (caller tự kiểm tra).
-async function generateAndStoreImageVariants(db: any, script: any, aspectRatio: AspectRatioValue) {
+// Logic build prompt (style + nhân vật + panels) + ảnh tham chiếu + gọi
+// generateImageVariants + lưu 2 biến thể vào storage — dùng chung cho cả
+// /api/images/generate (tạo mới) và /api/posts/:id/regenerate-images (vẽ lại).
+// `script` phải đã có selectedVariant hợp lệ (caller tự kiểm tra).
+//
+// Chọn nhân vật: nếu truyền `characterIds` (mảng UUID không rỗng) → dùng ĐÚNG
+// các nhân vật đó (người vận hành tự chọn dàn diễn). Nếu rỗng/không truyền →
+// giữ hành vi cũ: lấy nhân vật chủ đạo theo trục (AXES.leadCharacters).
+async function generateAndStoreImageVariants(
+  db: any,
+  script: any,
+  aspectRatio: AspectRatioValue,
+  characterIds?: string[]
+) {
   const variant = script.contentJson[script.selectedVariant];
-  const axis = AXES[script.truc as AxisKey];
-  const leadCharacterNames: readonly string[] = axis?.leadCharacters ?? [];
   const allChars = await db.select().from(charactersTable);
-  const leadChars = allChars.filter((c: any) => leadCharacterNames.includes(c.name));
-  const activeChars = leadChars.length ? leadChars : allChars;
+
+  let activeChars: any[];
+  if (characterIds && characterIds.length) {
+    activeChars = allChars.filter((c: any) => characterIds.includes(c.id));
+    if (!activeChars.length) activeChars = allChars; // id không khớp → fallback cả bộ
+  } else {
+    const axis = AXES[script.truc as AxisKey];
+    const leadCharacterNames: readonly string[] = axis?.leadCharacters ?? [];
+    const leadChars = allChars.filter((c: any) => leadCharacterNames.includes(c.name));
+    activeChars = leadChars.length ? leadChars : allChars;
+  }
   const characterNames = activeChars.map((c: any) => c.name);
   const characterPrompts = activeChars.map((c: any) => `${c.name}: ${c.promptDescription}`).join("\n");
 
@@ -62,29 +82,8 @@ async function generateAndStoreImageVariants(db: any, script: any, aspectRatio: 
     aspectRatio,
   });
 
-  // Ảnh Gemini thật (base64 data URL, có thể ~1MB/ảnh) → lưu vào storage,
-  // chỉ giữ tham chiếu "/api/files/<key>" trong DB (thay vì nhét base64 vào
-  // Postgres). Ảnh placeholder demo (SVG nhẹ) giữ nguyên data URL.
-  const storedImages = await Promise.all(
-    result.images.map(async (img) => {
-      if (img.url.startsWith("data:image/") && img.source === "social") {
-        const url = await persistDataUrl("posts", img.url);
-        return url ? { ...img, url } : img;
-      }
-      return img;
-    })
-  );
+  const storedImages = await persistVariantImages(result.images);
   return { storedImages, warning: result.warning };
-}
-
-// Xoá các file ảnh biến thể nội bộ khỏi storage (best-effort, không throw).
-async function deleteInternalVariants(variants: any[] | null | undefined) {
-  await Promise.all(
-    (variants || []).map(async (img: any) => {
-      const key = internalKeyFromUrl(img?.url);
-      if (key) await storage.delete(key).catch(() => {});
-    })
-  );
 }
 
 export function registerImageRoutes(app: Express) {
@@ -92,9 +91,12 @@ export function registerImageRoutes(app: Express) {
   // library) + mô tả khung từ kịch bản đã chọn → sinh 2 biến thể ảnh KHÔNG chữ.
   app.post("/api/images/generate", requireAuth, async (req, res) => {
     if (dbDown(res)) return;
+    const user = getAuthUser(req)!;
     const { scriptId } = req.body || {};
     if (!scriptId || !UUID_RE.test(scriptId)) return res.status(400).json({ error: "scriptId không hợp lệ." });
     const aspectRatio = normalizeAspectRatio(req.body?.aspectRatio);
+    // Optional — người vận hành tự chọn dàn nhân vật; rỗng → lấy theo trục (cũ).
+    const characterIds = onlyUuids(req.body?.characterIds);
 
     try {
       const db = getDb();
@@ -106,18 +108,21 @@ export function registerImageRoutes(app: Express) {
       const variant = script.contentJson[script.selectedVariant];
       if (!variant) return res.status(400).json({ error: "Phương án đã chọn không hợp lệ." });
 
-      const { storedImages, warning } = await generateAndStoreImageVariants(db, script, aspectRatio);
+      const { storedImages, warning } = await generateAndStoreImageVariants(db, script, aspectRatio, characterIds);
 
       const [row] = await db
         .insert(posts)
         .values({
           scriptId,
+          owner: user,
           imageVariants: storedImages,
           selectedImageUrl: null,
           overlayJson: {
             textBoxes: [],
             watermarkBrand: WATERMARK_BRANDS[script.truc as AxisKey] || "MATBAO",
             aspectRatio,
+            // Lưu lựa chọn nhân vật để /regenerate-images vẽ lại đúng dàn.
+            characterIds,
           },
           caption: variant.caption,
           status: "draft",
@@ -148,16 +153,39 @@ export function registerImageRoutes(app: Express) {
         return res.status(409).json({ error: `Bài đang ở trạng thái "${existing.status}", không thể vẽ lại ảnh.` });
       }
 
-      const [script] = await db.select().from(scripts).where(eq(scripts.id, existing.scriptId));
-      if (!script) return res.status(404).json({ error: "Không tìm thấy kịch bản gốc." });
-      if (script.selectedVariant === null || script.selectedVariant === undefined) {
-        return res.status(400).json({ error: "Kịch bản chưa chọn phương án (FR3.3)." });
-      }
-      const variant = script.contentJson[script.selectedVariant];
-      if (!variant) return res.status(400).json({ error: "Phương án đã chọn không hợp lệ." });
+      const overlay = (existing.overlayJson as any) || {};
+      const aspectRatio = normalizeAspectRatio(overlay?.aspectRatio);
 
-      const aspectRatio = normalizeAspectRatio((existing.overlayJson as any)?.aspectRatio);
-      const { storedImages, warning } = await generateAndStoreImageVariants(db, script, aspectRatio);
+      let storedImages: { url: string; source: "social" | "placeholder" }[];
+      let warning: string | undefined;
+
+      if (existing.origin === "studio") {
+        // Bài Studio (scriptId null) — vẽ lại từ tham số Studio đã lưu trong overlayJson.
+        const sp = overlay?.studioParams || {};
+        const params: StudioParams = {
+          promptText: existing.promptText || "",
+          truc: (existing.truc as any) || null,
+          characterIds: onlyUuids(sp.characterIds),
+          assetIds: onlyUuids(sp.assetIds),
+        };
+        const owner = existing.owner || getAuthUser(req)!;
+        ({ storedImages, warning } = await generateStudioVariants(db, owner, params, aspectRatio));
+      } else {
+        const [script] = await db.select().from(scripts).where(eq(scripts.id, existing.scriptId));
+        if (!script) return res.status(404).json({ error: "Không tìm thấy kịch bản gốc." });
+        if (script.selectedVariant === null || script.selectedVariant === undefined) {
+          return res.status(400).json({ error: "Kịch bản chưa chọn phương án (FR3.3)." });
+        }
+        const variant = script.contentJson[script.selectedVariant];
+        if (!variant) return res.status(400).json({ error: "Phương án đã chọn không hợp lệ." });
+        // Vẽ lại đúng dàn nhân vật đã chọn lúc tạo (nếu có).
+        ({ storedImages, warning } = await generateAndStoreImageVariants(
+          db,
+          script,
+          aspectRatio,
+          onlyUuids(overlay?.characterIds)
+        ));
+      }
 
       // Atomic: chỉ update khi status vẫn nằm trong nhóm được sửa (chống race).
       const [row] = await db

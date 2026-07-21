@@ -32,6 +32,22 @@ export async function generateScript(input: {
   return res.json();
 }
 
+// Tự viết kịch bản (freeform) — mô tả trực tiếp ý tưởng, không gắn tín hiệu.
+export async function generateFreeformScript(input: {
+  title: string;
+  truc: string;
+  formatMeme: string;
+  description: string;
+}): Promise<ScriptRow> {
+  const res = await fetch("/api/scripts/freeform", {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) return asError(res, "Sinh kịch bản tự viết thất bại.");
+  return res.json();
+}
+
 // FR3.3 — chọn 1 trong 3 phương án.
 export async function selectScriptVariant(id: string, variantIndex: number): Promise<ScriptRow> {
   const res = await fetch(`/api/scripts/${id}/select`, {

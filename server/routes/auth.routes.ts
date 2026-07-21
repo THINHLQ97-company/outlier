@@ -51,14 +51,18 @@ export function registerAuthRoutes(app: Express) {
   app.get("/api/me", requireAuth, async (req, res) => {
     const username = getAuthUser(req)!;
     if (!isDbConfigured()) {
-      return res.status(200).json({ username, role: "member" });
+      return res.status(503).json({ error: "Tính năng tài khoản chưa khả dụng (thiếu DATABASE_URL)." });
     }
     try {
       const [user] = await getDb().select().from(users).where(eq(users.username, username));
-      return res.status(200).json({ username, role: user?.role === "admin" ? "admin" : "member" });
+      return res.status(200).json({
+        username,
+        role: user?.role === "admin" ? "admin" : "member",
+        isActive: user?.isActive ?? true,
+      });
     } catch (e: any) {
       console.error("/api/me:", e?.message || e);
-      return res.status(200).json({ username, role: "member" });
+      return res.status(500).json({ error: "Lỗi tải thông tin tài khoản." });
     }
   });
 }

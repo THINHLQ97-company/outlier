@@ -64,14 +64,18 @@ export type NewRubricVersion = typeof rubricVersions.$inferInsert;
 
 // ===== scripts — bước DỊCH: 3 phương án kịch bản / tín hiệu =====
 // contentJson: 3 phương án [{ formatMeme, panels: [{label}], caption, ctaSoft }]
+// signalId nullable: kịch bản tự viết (freeform, source="freeform") không gắn
+// với tín hiệu có sẵn. source: "signal" (từ tín hiệu) | "freeform" (tự mô tả).
 export const scripts = pgTable("scripts", {
   id: uuid("id").primaryKey().defaultRandom(),
-  signalId: uuid("signal_id").notNull().references(() => signals.id, { onDelete: "cascade" }),
+  signalId: uuid("signal_id").references(() => signals.id, { onDelete: "cascade" }),
+  source: text("source").notNull().default("signal"), // "signal" | "freeform"
+  title: text("title"), // nhãn kịch bản tự viết (freeform)
   truc: text("truc").notNull(),
   formatMeme: text("format_meme").notNull(), // format ưu tiên lúc generate (F1-F7)
   contentJson: jsonb("content_json").$type<Record<string, any>[]>().notNull().default([]),
   selectedVariant: integer("selected_variant"), // index 0-2, null = chưa chọn
-  isDemo: boolean("is_demo").notNull().default(false), // true nếu sinh bằng fallback (thiếu SOCIAL_BACKEND_URL)
+  isDemo: boolean("is_demo").notNull().default(false), // true nếu sinh bằng fallback (thiếu GEMINI_API_KEY)
   createdBy: text("created_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
@@ -105,9 +109,18 @@ export type NewCharacterRow = typeof characters.$inferInsert;
 // imageVariants: [{ url, source: "social" | "placeholder" }] (2 biến thể không chữ)
 // overlayJson: { textBoxes: [{x,y,width,fontSize,text,color,align}], watermark: {brand, opacity} }
 // checklistJson: { [itemKey]: boolean } — 14 mục (mục 5 spec)
+// scriptId nullable: bài từ Studio Vẽ tự do (freeform) sinh ảnh trực tiếp,
+// không đi qua kịch bản. owner/isShared: quyền sở hữu ảnh cho thư viện (mặc
+// định isShared=true cho pipeline team-shared; Studio có thể đặt riêng tư).
+// truc/promptText: freeform lưu trực tiếp trục + mô tả (pipeline lấy từ script).
 export const posts = pgTable("posts", {
   id: uuid("id").primaryKey().defaultRandom(),
-  scriptId: uuid("script_id").notNull().references(() => scripts.id, { onDelete: "cascade" }),
+  scriptId: uuid("script_id").references(() => scripts.id, { onDelete: "cascade" }),
+  origin: text("origin").notNull().default("pipeline"), // "pipeline" | "studio"
+  owner: text("owner"), // username người tạo
+  isShared: boolean("is_shared").notNull().default(true), // hiện trong thư viện chung của team
+  truc: text("truc"), // trục (studio freeform set trực tiếp; pipeline null → lấy từ script)
+  promptText: text("prompt_text"), // mô tả tự do (studio freeform)
   imageVariants: jsonb("image_variants").$type<Record<string, any>[]>().default([]),
   selectedImageUrl: text("selected_image_url"),
   overlayJson: jsonb("overlay_json").$type<Record<string, any>>().default({}),
@@ -124,7 +137,30 @@ export const posts = pgTable("posts", {
 }, (t) => ({
   statusIdx: index("posts_status_idx").on(t.status),
   scriptIdx: index("posts_script_idx").on(t.scriptId),
+  ownerIdx: index("posts_owner_idx").on(t.owner),
 }));
 
 export type PostRow = typeof posts.$inferSelect;
 export type NewPostRow = typeof posts.$inferInsert;
+
+// ===== assets — kho template meme + ảnh tham chiếu (shared/riêng) =====
+// kind: "meme_template" (upload meme mẫu + note diễn giải lại theo meme) |
+//       "reference" (ảnh tham chiếu chung: style/prop/bối cảnh).
+// Dùng trong Studio Vẽ để kết hợp tham chiếu + nhân vật + chủ đề → ảnh cuối.
+export const assets = pgTable("assets", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  owner: text("owner").notNull(), // username người tạo
+  isShared: boolean("is_shared").notNull().default(false), // false = chỉ mình tôi
+  kind: text("kind").notNull().default("reference"), // "meme_template" | "reference"
+  name: text("name").notNull(),
+  imageUrl: text("image_url"), // "/api/files/assets/<key>" (storage nội bộ)
+  note: text("note"), // ghi chú diễn giải (meme template) / mô tả tham chiếu
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  ownerIdx: index("assets_owner_idx").on(t.owner),
+  kindIdx: index("assets_kind_idx").on(t.kind),
+}));
+
+export type AssetRow = typeof assets.$inferSelect;
+export type NewAssetRow = typeof assets.$inferInsert;

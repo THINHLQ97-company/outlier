@@ -1,7 +1,7 @@
 // VẼ + DUYỆT + ĐĂNG client. Endpoints: server/routes/images.routes.ts +
 // server/routes/posts.routes.ts (Step 5/6).
 import { authHeaders, asError } from "./http";
-import type { PostRow, PostStatus, OverlayConfig } from "../types";
+import type { PostRow, PostStatus, OverlayConfig, GalleryPost, AssetRow, AssetKind } from "../types";
 
 export async function listPosts(status?: PostStatus): Promise<PostRow[]> {
   const qs = status ? `?status=${encodeURIComponent(status)}` : "";
@@ -37,11 +37,16 @@ export async function getCalendar(): Promise<CalendarPost[]> {
 // FR4.2 — sinh 2 biến thể ảnh KHÔNG chữ (Gemini image trực tiếp). Fallback
 // sang ảnh placeholder nếu thiếu GEMINI_API_KEY (kèm cảnh báo). aspectRatio:
 // "1:1" | "3:4" | "9:16" (B2.2, mặc định "1:1" nếu không truyền).
-export async function generateImages(scriptId: string, aspectRatio?: string): Promise<PostRow> {
+// characterIds (optional): tự chọn dàn nhân vật; rỗng → lấy theo trục (cũ).
+export async function generateImages(
+  scriptId: string,
+  aspectRatio?: string,
+  characterIds?: string[]
+): Promise<PostRow> {
   const res = await fetch("/api/images/generate", {
     method: "POST",
     headers: authHeaders(),
-    body: JSON.stringify({ scriptId, aspectRatio }),
+    body: JSON.stringify({ scriptId, aspectRatio, characterIds }),
   });
   if (!res.ok) return asError(res, "Sinh ảnh thất bại.");
   return res.json();
@@ -133,5 +138,27 @@ export async function markPosted(postId: string, fbPostUrl: string): Promise<Pos
     body: JSON.stringify({ fbPostUrl }),
   });
   if (!res.ok) return asError(res, "Đánh dấu đã đăng thất bại.");
+  return res.json();
+}
+
+// Thư viện ảnh — post đã có ảnh (kèm trục + quyền sở hữu). scope: mine|shared|all.
+export async function getGallery(scope?: "mine" | "shared" | "all"): Promise<GalleryPost[]> {
+  const qs = scope ? `?scope=${encodeURIComponent(scope)}` : "";
+  const res = await fetch(`/api/gallery${qs}`, { headers: authHeaders(false) });
+  if (!res.ok) return asError(res, "Không tải được thư viện ảnh.");
+  return res.json();
+}
+
+// Lưu ảnh cuối của 1 post sang assets (kho tham chiếu). kind mặc định "reference".
+export async function savePostAsAsset(
+  postId: string,
+  payload: { name: string; kind?: AssetKind; isShared?: boolean }
+): Promise<AssetRow> {
+  const res = await fetch(`/api/gallery/${postId}/save-as-asset`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) return asError(res, "Lưu ảnh thành asset thất bại.");
   return res.json();
 }

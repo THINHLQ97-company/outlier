@@ -3,7 +3,7 @@
 // cho_duyet → (request-edit) → sua_thoai → (quay lại VẼ, submit lại) → cho_duyet
 // cho_duyet → (reject, bắt buộc lý do) → rot → (quay lại DỊCH)
 import type { Express } from "express";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { getDb, isDbConfigured } from "../db/client";
 import { posts, scripts } from "../db/schema";
 import { requireAuth } from "../auth-mw";
@@ -53,7 +53,8 @@ export function registerPostRoutes(app: Express) {
           status: posts.status,
           caption: posts.caption,
           finalImageUrl: posts.finalImageUrl,
-          truc: scripts.truc,
+          // Studio post (scriptId null) vẫn có trục nhờ posts.truc; pipeline lấy từ script.
+          truc: sql<string | null>`coalesce(${posts.truc}, ${scripts.truc})`,
           createdAt: posts.createdAt,
           decidedAt: posts.decidedAt,
           postedAt: posts.postedAt,

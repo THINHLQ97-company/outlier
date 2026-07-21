@@ -10,6 +10,10 @@ import { registerSignalRoutes } from "./server/routes/signals.routes";
 import { registerScriptRoutes } from "./server/routes/scripts.routes";
 import { registerImageRoutes } from "./server/routes/images.routes";
 import { registerPostRoutes } from "./server/routes/posts.routes";
+import { registerUserRoutes } from "./server/routes/users.routes";
+import { registerAssetRoutes } from "./server/routes/assets.routes";
+import { registerStudioRoutes } from "./server/routes/studio.routes";
+import { registerGalleryRoutes } from "./server/routes/gallery.routes";
 
 dotenv.config();
 
@@ -52,6 +56,18 @@ async function startServer() {
 
   // ===== POSTS (Step 6) — DUYỆT (kanban + checklist) + ĐĂNG (thủ công) =====
   registerPostRoutes(app);
+
+  // ===== USERS — quản lý tài khoản (chỉ admin) =====
+  registerUserRoutes(app);
+
+  // ===== ASSETS — kho template meme + ảnh tham chiếu =====
+  registerAssetRoutes(app);
+
+  // ===== STUDIO — Vẽ tự do (sinh ảnh trực tiếp, không qua kịch bản) =====
+  registerStudioRoutes(app);
+
+  // ===== GALLERY — thư viện ảnh + lưu ảnh thành asset =====
+  registerGalleryRoutes(app);
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

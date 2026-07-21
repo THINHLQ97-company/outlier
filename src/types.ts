@@ -55,9 +55,13 @@ export interface ScriptVariant {
   ctaSoft?: string;
 }
 
+export type ScriptSource = "signal" | "freeform";
+
 export interface ScriptRow {
   id: string;
-  signalId: string;
+  signalId: string | null; // null với kịch bản tự viết (freeform)
+  source: ScriptSource;
+  title: string | null; // nhãn kịch bản tự viết
   truc: AxisKey;
   formatMeme: string;
   contentJson: ScriptVariant[];
@@ -99,6 +103,14 @@ export interface TextBox {
   align: "left" | "center" | "right";
 }
 
+export type PostOrigin = "pipeline" | "studio";
+
+export interface StudioParams {
+  characterIds: string[];
+  assetIds: string[];
+  truc: AxisKey | null;
+}
+
 export interface OverlayConfig {
   textBoxes: TextBox[];
   watermarkBrand?: string;
@@ -106,11 +118,20 @@ export interface OverlayConfig {
   // để TextOverlayEditor/ImageStudio hiển thị đúng canvas kể cả khi mở lại
   // bằng "Sửa thoại". Mặc định "1:1" nếu thiếu (bài cũ trước B2.2).
   aspectRatio?: string;
+  // Pipeline: dàn nhân vật đã chọn lúc sinh ảnh (để vẽ lại đúng).
+  characterIds?: string[];
+  // Studio: tham số vẽ tự do đã lưu (để vẽ lại đúng).
+  studioParams?: StudioParams;
 }
 
 export interface PostRow {
   id: string;
-  scriptId: string;
+  scriptId: string | null; // null với bài Studio (vẽ tự do)
+  origin: PostOrigin;
+  owner: string | null;
+  isShared: boolean;
+  truc: AxisKey | null; // studio set trực tiếp; pipeline null → lấy từ script
+  promptText: string | null; // mô tả tự do (studio)
   imageVariants: ImageVariant[];
   selectedImageUrl: string | null;
   overlayJson: OverlayConfig;
@@ -124,4 +145,52 @@ export interface PostRow {
   createdAt: string;
   decidedAt: string | null;
   postedAt: string | null;
+}
+
+// ===== assets — kho template meme + ảnh tham chiếu =====
+export type AssetKind = "meme_template" | "reference";
+
+export interface AssetRow {
+  id: string;
+  owner: string;
+  isShared: boolean;
+  kind: AssetKind;
+  name: string;
+  imageUrl: string | null; // "/api/files/assets/<key>"
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+  isMine: boolean; // server đính cờ: asset này thuộc user hiện tại (mới được sửa/xoá)
+}
+
+// ===== users — quản lý tài khoản (admin) =====
+export interface UserRow {
+  id: string;
+  username: string;
+  role: Role;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MeInfo {
+  username: string;
+  role: Role;
+  isActive: boolean;
+}
+
+// ===== gallery — post có ảnh, kèm trục + quyền sở hữu =====
+export interface GalleryPost {
+  id: string;
+  origin: PostOrigin;
+  owner: string | null;
+  isShared: boolean;
+  status: PostStatus;
+  truc: AxisKey | null;
+  finalImageUrl: string | null;
+  selectedImageUrl: string | null;
+  imageVariants: ImageVariant[];
+  caption: string | null;
+  createdAt: string;
+  isMine: boolean;
 }

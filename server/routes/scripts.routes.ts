@@ -89,6 +89,44 @@ export function registerScriptRoutes(app: Express) {
     }
   });
 
+  // Tự viết kịch bản (freeform) — không gắn tín hiệu có sẵn, mô tả trực tiếp
+  // ý tưởng. Sinh 3 phương án như luồng /generate, source="freeform".
+  app.post("/api/scripts/freeform", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const user = getAuthUser(req)!;
+    const { title, truc, formatMeme, description } = req.body || {};
+    if (typeof title !== "string" || !title.trim()) return res.status(400).json({ error: "Thiếu tiêu đề kịch bản." });
+    if (!truc) return res.status(400).json({ error: "Thiếu trục." });
+    if (!formatMeme) return res.status(400).json({ error: "Thiếu format meme." });
+    if (typeof description !== "string" || !description.trim()) return res.status(400).json({ error: "Thiếu mô tả ý tưởng." });
+
+    try {
+      const result = await generateScriptVariants({
+        signalSummary: description.trim(),
+        truc: truc as AxisKey,
+        formatMeme,
+      });
+      const [row] = await getDb()
+        .insert(scripts)
+        .values({
+          signalId: null,
+          source: "freeform",
+          title: title.trim(),
+          truc,
+          formatMeme,
+          contentJson: result.variants,
+          selectedVariant: null,
+          isDemo: result.isDemo,
+          createdBy: user,
+        })
+        .returning();
+      res.status(201).json({ ...row, warning: result.warning });
+    } catch (e: any) {
+      console.error("freeform script:", e?.message || e);
+      res.status(500).json({ error: "Sinh kịch bản tự viết thất bại." });
+    }
+  });
+
   // FR3.3 — chọn 1 trong 3 phương án.
   app.post("/api/scripts/:id/select", requireAuth, async (req, res) => {
     if (dbDown(res)) return;
