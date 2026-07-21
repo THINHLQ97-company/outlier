@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import { runMigrations } from "./server/db/migrate";
 import { registerAuthRoutes } from "./server/routes/auth.routes";
 import { registerCharacterRoutes } from "./server/routes/characters.routes";
+import { registerSignalRoutes } from "./server/routes/signals.routes";
 
 dotenv.config();
 
@@ -33,8 +34,10 @@ async function startServer() {
   // ===== CHARACTERS (Step 3) — read-only reference library (FR4.1) =====
   registerCharacterRoutes(app);
 
+  // ===== SIGNALS (Step 4) — THU + LỌC =====
+  registerSignalRoutes(app);
+
   // ===== ROUTES (registered progressively in later steps) =====
-  // registerSignalRoutes(app) — Step 4 (THU + LỌC)
   // registerScriptRoutes(app) — Step 5 (DỊCH)
   // registerImageRoutes(app)  — Step 5 (VẼ)
   // registerPostRoutes(app)   — Step 6 (DUYỆT + ĐĂNG)

@@ -40,10 +40,10 @@
 - [x] Commit: `feat: auth + api client layer`
 
 ### Step 4 — THU + LỌC
-- [ ] `server/services/market-radar.client.ts`, `group-insights.client.ts` — gọi HTTP JSON-RPC 2.0 (đọc `MARKET_RADAR_MCP_TOKEN`/`GROUP_INSIGHTS_MCP_TOKEN` từ env, không hardcode; nếu thiếu token → fallback demo data, log warning rõ ràng)
-- [ ] `server/routes/signals.routes.ts`: list, sync (trigger THU), score (LỌC rule-based), update rubric version
-- [ ] `src/pages/SignalsQueue.tsx`: bảng tín hiệu theo điểm/ngưỡng + form nhập tay
-- [ ] Commit: `feat: THU + LỌC — signal queue + rubric scoring`
+- [x] `server/services/market-radar.client.ts`, `group-insights.client.ts` — gọi HTTP JSON-RPC 2.0 (đọc `MARKET_RADAR_MCP_TOKEN`/`GROUP_INSIGHTS_MCP_TOKEN` từ env, không hardcode; nếu thiếu token → fallback demo data, log warning rõ ràng)
+- [x] `server/routes/signals.routes.ts`: list, sync (trigger THU), score (LỌC rule-based), update rubric version
+- [x] `src/pages/SignalsQueue.tsx`: bảng tín hiệu theo điểm/ngưỡng + form nhập tay
+- [x] Commit: `feat: THU + LỌC — signal queue + rubric scoring`
 
 ### Step 5 — DỊCH + VẼ
 - [ ] `server/services/social-proxy.ts`: gọi REST sang social backend (`SOCIAL_BACKEND_URL` env, chưa có → placeholder rõ ràng, không bịa) cho generateText + generate-image
