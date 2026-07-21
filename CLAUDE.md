@@ -51,19 +51,38 @@ thái hợp lệ (server-side re-check, không tin tưởng client).
 
 - **Market Radar MCP** + **Group Insights MCP** (`server/services/market-radar.client.ts`,
   `group-insights.client.ts`) — HTTP JSON-RPC 2.0 (`server/services/jsonrpc.ts`).
-- **social backend** (`server/services/social-proxy.ts`) — REST proxy sang
-  `share-projects/social` cho Gemini text/image gen. API key/token KHÔNG BAO GIỜ
-  đi tới client.
+- **Gemini trực tiếp** (`server/services/gemini-direct.ts`) — DỊCH (kịch bản, text) và
+  VẼ (ảnh) gọi thẳng `@google/genai` bằng `GEMINI_API_KEY`, pattern y hệt
+  `share-projects/marcow-crop` đang chạy production (KHÔNG còn proxy qua
+  `share-projects/social` — đổi ngày 2026-07-21, xem quyết định trong
+  `server/services/social-proxy.ts`: endpoint `share-projects/social` chưa từng
+  xác nhận tồn tại/reachable). `server/services/social-proxy.ts` GIỮ TÊN cũ (để
+  không đổi import ở `scripts.routes.ts`/`images.routes.ts`) nhưng bên trong đã
+  đổi sang gọi `gemini-direct.ts` làm đường chính. API key KHÔNG BAO GIỜ đi tới
+  client — biến `SOCIAL_BACKEND_URL`/`SOCIAL_BACKEND_TOKEN` vẫn giữ trong
+  `.env.example` phòng khi cần dùng cho tích hợp khác sau này, không dùng cho
+  DỊCH/VẼ nữa.
+- **Object storage** (`server/storage.ts`) — driver filesystem ghi dưới
+  `UPLOAD_DIR` (default `/data/uploads`), dùng cho ảnh reference nhân vật
+  (menu "Nhân vật", `server/routes/characters.routes.ts` + `files.routes.ts`).
+  Port từ `share-projects/marcow-crop/server/storage.ts`, đơn giản hoá (bỏ
+  multi-owner) — xem interface `StorageDriver`.
 - **Nguyên tắc bắt buộc cho MỌI service tích hợp ngoài**: nếu thiếu
-  URL/token trong `.env` → fallback sang demo/placeholder data, `console.warn`
+  URL/token/API key trong `.env` → fallback sang demo/placeholder data, `console.warn`
   rõ ràng, **KHÔNG throw crash toàn app**. Đây là pattern đã áp dụng nhất quán —
   giữ nguyên khi thêm tích hợp mới.
 
 ## 4. Quy chuẩn giao diện (UI/UX)
 
-- **Phong cách**: clean, storm-indigo primary (`--color-storm-*` trong
-  `src/index.css`, khác tông cam đất của marcow-crop — brand "Mắt Bão").
-  Font `Inter` + `Be Vietnam Pro` (dự phòng dấu tiếng Việt đậm cho watermark/label).
+- **Phong cách**: đã chuyển sang dùng đúng bảng màu + font của
+  `share-projects/marcow-crop` (quyết định user ngày 2026-07-21, "tái sử dụng lại
+  toàn bộ UX của marcow-crop") — lý do: đồng bộ UX với hệ sinh thái nội bộ Mắt Bão.
+  Primary cam đất `#D97757` (hover `#C66545`), background `#FAF9F6`, text
+  `#2D2D2D`. Token CSS **giữ nguyên tên biến** `--color-storm-*` trong
+  `src/index.css` (chỉ đổi giá trị hex) để không phải sửa class ở mọi file.
+  Font `Comic Neue` (heading/logo, qua class `font-display`) + `Inter` (còn lại,
+  `font-sans`); `Be Vietnam Pro` vẫn giữ làm fallback cho canvas text-overlay
+  (không thuộc phạm vi reskin UI — xem `TextOverlayEditor.tsx`).
 - **Text-overlay editor** (`src/components/TextOverlayEditor.tsx`) — HTML5 Canvas
   thuần, không thư viện ngoài. Toạ độ text box lưu dạng phân số (0-1) của canvas
   gốc 1024×1024 để export luôn đúng tỉ lệ.
