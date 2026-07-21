@@ -88,7 +88,8 @@ export default function Characters() {
   // API generate-reference sẵn có cho từng cái. Lỗi 1 nhân vật thì ghi lại và
   // tiếp tục cái kế (không dừng cả loạt) — pattern "không crash" của CLAUDE.md.
   async function handleGenerateAll() {
-    const todo = items.filter((c) => !c.referenceImageUrl);
+    // Cần vẽ: chưa có ảnh HOẶC ảnh đã mất file (imageMissing) — vd sau redeploy.
+    const todo = items.filter((c) => !c.referenceImageUrl || c.imageMissing);
     if (todo.length === 0) return;
     setDrawingAll(true);
     setDrawAllResult(null);
@@ -148,14 +149,14 @@ export default function Characters() {
         <div className="flex items-center gap-2">
           <button
             onClick={handleGenerateAll}
-            disabled={isDemoMode || drawingAll || items.every((c) => !!c.referenceImageUrl)}
+            disabled={isDemoMode || drawingAll || items.every((c) => !!c.referenceImageUrl && !c.imageMissing)}
             className="flex items-center gap-1.5 text-sm font-medium text-storm-700 bg-storm-50 hover:bg-storm-100 px-3 py-2 rounded-lg transition-colors disabled:opacity-60"
             title={
               isDemoMode
                 ? "Chưa cấu hình DATABASE_URL — chỉ xem được dữ liệu demo."
-                : items.every((c) => !!c.referenceImageUrl)
+                : items.every((c) => !!c.referenceImageUrl && !c.imageMissing)
                   ? "Tất cả nhân vật đã có ảnh reference."
-                  : "Lần lượt cho AI vẽ ảnh reference cho các nhân vật chưa có ảnh."
+                  : "Lần lượt cho AI vẽ ảnh reference cho các nhân vật chưa có ảnh (kể cả ảnh bị mất file)."
             }
           >
             {drawingAll ? (
@@ -272,7 +273,7 @@ function CharacterCard({
     <div className="flex flex-col gap-3 bg-white p-4 rounded-xl border border-stone-200 shadow-sm hover:border-stone-300 transition-all">
       <div className="flex items-start gap-3">
         <div className="w-16 h-16 rounded-lg overflow-hidden bg-stone-100 border border-stone-200 shrink-0 flex items-center justify-center">
-          {c.referenceImageUrl ? (
+          {c.referenceImageUrl && !c.imageMissing ? (
             <img src={imageDisplayUrl(c.referenceImageUrl) || undefined} alt={c.name} className="w-full h-full object-cover" />
           ) : (
             <UserRound className="w-7 h-7 text-stone-300" aria-hidden="true" />

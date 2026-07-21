@@ -53,7 +53,17 @@ export function registerCharacterRoutes(app: Express) {
     }
     try {
       const rows = await getDb().select().from(characters).orderBy(desc(characters.createdAt));
-      res.json(rows);
+      // imageMissing: referenceImageUrl trỏ vào storage nội bộ nhưng FILE không
+      // còn (vd volume bị mất khi redeploy) → UI hiện placeholder + "Vẽ cả bộ"
+      // nhận diện để vẽ lại. URL ngoài / null → imageMissing=false.
+      const withStatus = await Promise.all(
+        rows.map(async (r) => {
+          const key = internalKeyFromUrl(r.referenceImageUrl);
+          const imageMissing = key ? !(await storage.exists(key)) : false;
+          return { ...r, imageMissing };
+        })
+      );
+      res.json(withStatus);
     } catch (e: any) {
       console.error("list characters:", e?.message || e);
       res.status(500).json({ error: "Lỗi tải thư viện nhân vật." });

@@ -81,6 +81,7 @@ export interface CharacterRow {
   personality: string | null;
   catchphrase: string | null;
   referenceImageUrl: string | null;
+  imageMissing?: boolean; // URL có nhưng file storage đã mất (vd redeploy) → cần vẽ lại
   createdAt: string;
   updatedAt: string;
 }

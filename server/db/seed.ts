@@ -8,7 +8,10 @@
 //      GROUP_INSIGHTS_MCP_TOKEN thật — xem server/services/*.client.ts).
 //   4. (Optional) admin account từ ADMIN_SEED_USERNAME/PASSWORD, nếu set.
 //
-// Idempotent: upsert theo tên/username, an toàn chạy lại nhiều lần.
+// KHÔNG PHÁ HUỶ dữ liệu: chỉ INSERT bản ghi CHƯA CÓ, TUYỆT ĐỐI không UPDATE đè
+// dữ liệu người dùng đã chỉnh (mô tả nhân vật, ảnh reference...). An toàn chạy
+// lại nhiều lần. (Trước đây seedCharacters update đè mỗi lần deploy → mất chỉnh
+// sửa của người dùng; đã sửa 2026-07-21.)
 import dotenv from "dotenv";
 import { eq } from "drizzle-orm";
 import { getDb, getPool, isDbConfigured } from "./client";
@@ -20,30 +23,21 @@ dotenv.config();
 
 async function seedCharacters() {
   const db = getDb();
+  let inserted = 0;
   for (const c of CHARACTERS) {
     const [existing] = await db.select().from(characters).where(eq(characters.name, c.name));
-    if (existing) {
-      await db
-        .update(characters)
-        .set({
-          kind: c.kind,
-          promptDescription: c.promptDescription,
-          personality: c.personality,
-          catchphrase: c.catchphrase,
-        })
-        .where(eq(characters.id, existing.id));
-    } else {
-      await db.insert(characters).values({
-        name: c.name,
-        kind: c.kind,
-        promptDescription: c.promptDescription,
-        personality: c.personality,
-        catchphrase: c.catchphrase,
-        referenceImageUrl: null, // chưa có ảnh thật — generate sau khi có API key (xem PLAN.md)
-      });
-    }
+    if (existing) continue; // ĐÃ CÓ → giữ nguyên (không đè mô tả/ảnh người dùng chỉnh).
+    await db.insert(characters).values({
+      name: c.name,
+      kind: c.kind,
+      promptDescription: c.promptDescription,
+      personality: c.personality,
+      catchphrase: c.catchphrase,
+      referenceImageUrl: null, // chưa có ảnh — generate qua "AI vẽ ảnh"/"Vẽ cả bộ".
+    });
+    inserted++;
   }
-  console.log(`[seed] characters: upsert ${CHARACTERS.length} nhân vật OK.`);
+  console.log(`[seed] characters: thêm ${inserted} nhân vật mới (giữ nguyên ${CHARACTERS.length - inserted} đã có).`);
 }
 
 async function seedRubric() {
@@ -197,12 +191,13 @@ async function seedAdminUser() {
   const passwordHash = hashPassword(password);
   const [existing] = await db.select().from(users).where(eq(users.username, username));
   if (existing) {
-    await db.update(users).set({ passwordHash, role: "admin", updatedAt: new Date() }).where(eq(users.id, existing.id));
-    console.log(`[seed] users: cập nhật tài khoản admin "${username}" OK.`);
-  } else {
-    await db.insert(users).values({ username, passwordHash, role: "admin" });
-    console.log(`[seed] users: tạo tài khoản admin "${username}" OK.`);
+    // KHÔNG reset mật khẩu/role của tài khoản đã có (tránh đè mật khẩu người
+    // dùng đã đổi mỗi lần deploy). Quản lý tài khoản qua menu Quản trị.
+    console.log(`[seed] users: admin "${username}" đã tồn tại — giữ nguyên (không reset).`);
+    return;
   }
+  await db.insert(users).values({ username, passwordHash, role: "admin" });
+  console.log(`[seed] users: tạo tài khoản admin "${username}" OK.`);
 }
 
 async function main() {
