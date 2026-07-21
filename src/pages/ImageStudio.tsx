@@ -1,12 +1,19 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
-import { Loader2, Sparkles, Check, AlertTriangle, Send } from "lucide-react";
-import { generateImages, getPost, selectImage, saveOverlay, submitForApproval } from "../services/posts";
+import { Loader2, Sparkles, Check, AlertTriangle, Send, RefreshCw } from "lucide-react";
+import { generateImages, regenerateImages, getPost, selectImage, saveOverlay, submitForApproval } from "../services/posts";
 import { imageDisplayUrl } from "../services/http";
 import type { PostRow } from "../types";
 import TextOverlayEditor from "../components/TextOverlayEditor";
 
 const WATERMARK_OPTIONS = ["MATBAO", "MATBAO INVOICE"];
+
+// B2.2 — tỉ lệ khung chọn trước khi sinh ảnh (khớp whitelist server).
+const ASPECT_RATIO_OPTIONS: { value: string; label: string }[] = [
+  { value: "1:1", label: "1:1 (vuông)" },
+  { value: "3:4", label: "3:4 (dọc)" },
+  { value: "9:16", label: "9:16 (dọc cao)" },
+];
 
 // VẼ (J3): sinh 2 biến thể ảnh KHÔNG chữ từ kịch bản đã chọn → chọn 1 ảnh →
 // text-overlay editor (Canvas) → export ảnh cuối + watermark → gửi vào DUYỆT.
@@ -24,12 +31,14 @@ export default function ImageStudio() {
   const [post, setPost] = useState<PostRow | null>(null);
   const [loadingPost, setLoadingPost] = useState(!!postId);
   const [generating, setGenerating] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
   const [selecting, setSelecting] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [caption, setCaption] = useState("");
   const [warning, setWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [aspectRatio, setAspectRatio] = useState("1:1");
 
   // Chế độ "Sửa thoại" — nạp lại bài cũ theo postId.
   useEffect(() => {
@@ -70,7 +79,7 @@ export default function ImageStudio() {
     setError(null);
     setWarning(null);
     try {
-      const result: any = await generateImages(scriptId);
+      const result: any = await generateImages(scriptId, aspectRatio);
       setPost(result);
       setCaption(result.caption || "");
       if (result.warning) setWarning(result.warning);
@@ -78,6 +87,23 @@ export default function ImageStudio() {
       setError(e?.message || "Sinh ảnh thất bại.");
     } finally {
       setGenerating(false);
+    }
+  }
+
+  // B2.4 — vẽ lại 2 biến thể ảnh (giữ nguyên aspectRatio/kịch bản đã dùng).
+  async function handleRegenerate() {
+    if (!post) return;
+    setRegenerating(true);
+    setError(null);
+    setWarning(null);
+    try {
+      const result: any = await regenerateImages(post.id);
+      setPost(result);
+      if (result.warning) setWarning(result.warning);
+    } catch (e: any) {
+      setError(e?.message || "Vẽ lại ảnh thất bại.");
+    } finally {
+      setRegenerating(false);
     }
   }
 
@@ -145,13 +171,42 @@ export default function ImageStudio() {
       )}
 
       {!post && !loadingPost && scriptId && (
+        <div className="flex flex-col gap-2 self-start">
+          <div>
+            <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="aspect-ratio">
+              Tỉ lệ khung
+            </label>
+            <select
+              id="aspect-ratio"
+              value={aspectRatio}
+              onChange={(e) => setAspectRatio(e.target.value)}
+              className="rounded-lg border border-stone-300 px-3 py-2 text-sm"
+            >
+              {ASPECT_RATIO_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+          <button
+            onClick={handleGenerate}
+            disabled={generating}
+            className="self-start flex items-center gap-1.5 text-sm font-medium text-white bg-storm-600 hover:bg-storm-700 px-4 py-2.5 rounded-lg disabled:opacity-60"
+          >
+            {generating ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Sparkles className="w-4 h-4" aria-hidden="true" />}
+            Sinh 2 biến thể ảnh
+          </button>
+        </div>
+      )}
+
+      {post && (
         <button
-          onClick={handleGenerate}
-          disabled={generating}
-          className="self-start flex items-center gap-1.5 text-sm font-medium text-white bg-storm-600 hover:bg-storm-700 px-4 py-2.5 rounded-lg disabled:opacity-60"
+          onClick={handleRegenerate}
+          disabled={regenerating}
+          className="self-start flex items-center gap-1.5 text-sm font-medium text-storm-700 bg-storm-50 hover:bg-storm-100 px-3 py-2 rounded-lg disabled:opacity-60"
+          title="Sinh lại 2 biến thể ảnh mới (giữ nguyên tỉ lệ khung + kịch bản), ảnh cũ sẽ bị xoá."
         >
-          {generating ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Sparkles className="w-4 h-4" aria-hidden="true" />}
-          Sinh 2 biến thể ảnh
+          {regenerating ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="w-4 h-4" aria-hidden="true" />}
+          Vẽ lại 2 biến thể
         </button>
       )}
 
@@ -175,7 +230,12 @@ export default function ImageStudio() {
                 post.selectedImageUrl === v.url ? "border-storm-500" : "border-transparent hover:border-storm-200"
               }`}
             >
-              <img src={imageDisplayUrl(v.url) || undefined} alt={`Biến thể ảnh ${i + 1}`} className="w-full aspect-square object-cover bg-stone-100" />
+              <img
+                src={imageDisplayUrl(v.url) || undefined}
+                alt={`Biến thể ảnh ${i + 1}`}
+                className="w-full object-cover bg-stone-100"
+                style={{ aspectRatio: (post.overlayJson?.aspectRatio || "1:1").replace(":", " / ") }}
+              />
             </button>
           ))}
         </div>
@@ -202,6 +262,7 @@ export default function ImageStudio() {
             watermarkOptions={WATERMARK_OPTIONS}
             onExport={handleExport}
             exporting={exporting}
+            aspectRatio={post.overlayJson?.aspectRatio || "1:1"}
           />
 
           {post.finalImageUrl && (

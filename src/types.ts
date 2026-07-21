@@ -102,6 +102,10 @@ export interface TextBox {
 export interface OverlayConfig {
   textBoxes: TextBox[];
   watermarkBrand?: string;
+  // B2.2 — tỉ lệ khung đã dùng khi sinh ảnh ("1:1" | "3:4" | "9:16"), đọc lại
+  // để TextOverlayEditor/ImageStudio hiển thị đúng canvas kể cả khi mở lại
+  // bằng "Sửa thoại". Mặc định "1:1" nếu thiếu (bài cũ trước B2.2).
+  aspectRatio?: string;
 }
 
 export interface PostRow {

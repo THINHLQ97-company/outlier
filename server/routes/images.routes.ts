@@ -16,12 +16,75 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // kéo ngược state machine, codex HIGH #1).
 const EDITABLE_STATUSES = ["draft", "sua_thoai"] as const;
 
+// B2.2 — tỉ lệ khung cho phép chọn khi sinh ảnh (whitelist, mặc định 1:1).
+const ASPECT_RATIOS = ["1:1", "3:4", "9:16"] as const;
+type AspectRatioValue = (typeof ASPECT_RATIOS)[number];
+function normalizeAspectRatio(v: any): AspectRatioValue {
+  return ASPECT_RATIOS.includes(v) ? v : "1:1";
+}
+
 function dbDown(res: any): boolean {
   if (!isDbConfigured()) {
     res.status(503).json({ error: "Tính năng dữ liệu chưa khả dụng (thiếu DATABASE_URL)." });
     return true;
   }
   return false;
+}
+
+// Logic build prompt (style + nhân vật chủ đạo theo trục + panels) + ảnh tham
+// chiếu + gọi generateImageVariants + lưu 2 biến thể vào storage — dùng chung
+// cho cả /api/images/generate (tạo mới) và /api/posts/:id/regenerate-images
+// (vẽ lại). `script` phải đã có selectedVariant hợp lệ (caller tự kiểm tra).
+async function generateAndStoreImageVariants(db: any, script: any, aspectRatio: AspectRatioValue) {
+  const variant = script.contentJson[script.selectedVariant];
+  const axis = AXES[script.truc as AxisKey];
+  const leadCharacterNames: readonly string[] = axis?.leadCharacters ?? [];
+  const allChars = await db.select().from(charactersTable);
+  const leadChars = allChars.filter((c: any) => leadCharacterNames.includes(c.name));
+  const activeChars = leadChars.length ? leadChars : allChars;
+  const characterNames = activeChars.map((c: any) => c.name);
+  const characterPrompts = activeChars.map((c: any) => `${c.name}: ${c.promptDescription}`).join("\n");
+
+  // Đính ảnh nhân vật tham chiếu (nếu đã có trong thư viện) để Gemini giữ
+  // đúng ngoại hình — tối đa 3 ảnh (mục 2.2 v3.md: tối đa 3 AI/khung; giới
+  // hạn để prompt không quá nặng). Nhân vật chưa có ảnh → bỏ qua, chỉ dùng text.
+  const referenceImages = (
+    await Promise.all(activeChars.slice(0, 3).map((c: any) => readImageAsInlineData(c.referenceImageUrl)))
+  ).filter((x: any): x is { mimeType: string; data: string } => x !== null);
+
+  const panelsText = variant.panels.map((p: string, i: number) => `Khung ${i + 1}: ${p}`).join("\n");
+
+  const result = await generateImageVariants({
+    styleSummary: `${STYLE_PROMPT}\n\n${characterPrompts}`,
+    panelsText,
+    characterNames,
+    referenceImages,
+    aspectRatio,
+  });
+
+  // Ảnh Gemini thật (base64 data URL, có thể ~1MB/ảnh) → lưu vào storage,
+  // chỉ giữ tham chiếu "/api/files/<key>" trong DB (thay vì nhét base64 vào
+  // Postgres). Ảnh placeholder demo (SVG nhẹ) giữ nguyên data URL.
+  const storedImages = await Promise.all(
+    result.images.map(async (img) => {
+      if (img.url.startsWith("data:image/") && img.source === "social") {
+        const url = await persistDataUrl("posts", img.url);
+        return url ? { ...img, url } : img;
+      }
+      return img;
+    })
+  );
+  return { storedImages, warning: result.warning };
+}
+
+// Xoá các file ảnh biến thể nội bộ khỏi storage (best-effort, không throw).
+async function deleteInternalVariants(variants: any[] | null | undefined) {
+  await Promise.all(
+    (variants || []).map(async (img: any) => {
+      const key = internalKeyFromUrl(img?.url);
+      if (key) await storage.delete(key).catch(() => {});
+    })
+  );
 }
 
 export function registerImageRoutes(app: Express) {
@@ -31,6 +94,7 @@ export function registerImageRoutes(app: Express) {
     if (dbDown(res)) return;
     const { scriptId } = req.body || {};
     if (!scriptId || !UUID_RE.test(scriptId)) return res.status(400).json({ error: "scriptId không hợp lệ." });
+    const aspectRatio = normalizeAspectRatio(req.body?.aspectRatio);
 
     try {
       const db = getDb();
@@ -42,42 +106,7 @@ export function registerImageRoutes(app: Express) {
       const variant = script.contentJson[script.selectedVariant];
       if (!variant) return res.status(400).json({ error: "Phương án đã chọn không hợp lệ." });
 
-      const axis = AXES[script.truc as AxisKey];
-      const leadCharacterNames: readonly string[] = axis?.leadCharacters ?? [];
-      const allChars = await db.select().from(charactersTable);
-      const leadChars = allChars.filter((c) => leadCharacterNames.includes(c.name));
-      const activeChars = leadChars.length ? leadChars : allChars;
-      const characterNames = activeChars.map((c) => c.name);
-      const characterPrompts = activeChars.map((c) => `${c.name}: ${c.promptDescription}`).join("\n");
-
-      // Đính ảnh nhân vật tham chiếu (nếu đã có trong thư viện) để Gemini giữ
-      // đúng ngoại hình — tối đa 3 ảnh (mục 2.2 v3.md: tối đa 3 AI/khung; giới
-      // hạn để prompt không quá nặng). Nhân vật chưa có ảnh → bỏ qua, chỉ dùng text.
-      const referenceImages = (
-        await Promise.all(activeChars.slice(0, 3).map((c) => readImageAsInlineData(c.referenceImageUrl)))
-      ).filter((x): x is { mimeType: string; data: string } => x !== null);
-
-      const panelsText = variant.panels.map((p: string, i: number) => `Khung ${i + 1}: ${p}`).join("\n");
-
-      const result = await generateImageVariants({
-        styleSummary: `${STYLE_PROMPT}\n\n${characterPrompts}`,
-        panelsText,
-        characterNames,
-        referenceImages,
-      });
-
-      // Ảnh Gemini thật (base64 data URL, có thể ~1MB/ảnh) → lưu vào storage,
-      // chỉ giữ tham chiếu "/api/files/<key>" trong DB (thay vì nhét base64 vào
-      // Postgres). Ảnh placeholder demo (SVG nhẹ) giữ nguyên data URL.
-      const storedImages = await Promise.all(
-        result.images.map(async (img) => {
-          if (img.url.startsWith("data:image/") && img.source === "social") {
-            const url = await persistDataUrl("posts", img.url);
-            return url ? { ...img, url } : img;
-          }
-          return img;
-        })
-      );
+      const { storedImages, warning } = await generateAndStoreImageVariants(db, script, aspectRatio);
 
       const [row] = await db
         .insert(posts)
@@ -85,16 +114,68 @@ export function registerImageRoutes(app: Express) {
           scriptId,
           imageVariants: storedImages,
           selectedImageUrl: null,
-          overlayJson: { textBoxes: [], watermarkBrand: WATERMARK_BRANDS[script.truc as AxisKey] || "MATBAO" },
+          overlayJson: {
+            textBoxes: [],
+            watermarkBrand: WATERMARK_BRANDS[script.truc as AxisKey] || "MATBAO",
+            aspectRatio,
+          },
           caption: variant.caption,
           status: "draft",
         })
         .returning();
 
-      res.status(201).json({ ...row, warning: result.warning });
+      res.status(201).json({ ...row, warning });
     } catch (e: any) {
       console.error("generate images:", e?.message || e);
       res.status(500).json({ error: "Sinh ảnh thất bại." });
+    }
+  });
+
+  // B2.4 — vẽ lại 2 biến thể ảnh (dùng lại prompt build + referenceImages +
+  // aspectRatio đã lưu trong overlayJson của post + script tương ứng). Guard:
+  // chỉ khi status ∈ EDITABLE_STATUSES. Xoá ảnh biến thể CŨ khỏi storage sau
+  // khi update DB thành công, set selectedImageUrl=null (ảnh cũ đã chọn không
+  // còn tồn tại nữa).
+  app.post("/api/posts/:id/regenerate-images", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const { id } = req.params;
+    if (!UUID_RE.test(id)) return res.status(400).json({ error: "ID không hợp lệ." });
+    try {
+      const db = getDb();
+      const [existing] = await db.select().from(posts).where(eq(posts.id, id));
+      if (!existing) return res.status(404).json({ error: "Không tìm thấy bài." });
+      if (!EDITABLE_STATUSES.includes(existing.status as any)) {
+        return res.status(409).json({ error: `Bài đang ở trạng thái "${existing.status}", không thể vẽ lại ảnh.` });
+      }
+
+      const [script] = await db.select().from(scripts).where(eq(scripts.id, existing.scriptId));
+      if (!script) return res.status(404).json({ error: "Không tìm thấy kịch bản gốc." });
+      if (script.selectedVariant === null || script.selectedVariant === undefined) {
+        return res.status(400).json({ error: "Kịch bản chưa chọn phương án (FR3.3)." });
+      }
+      const variant = script.contentJson[script.selectedVariant];
+      if (!variant) return res.status(400).json({ error: "Phương án đã chọn không hợp lệ." });
+
+      const aspectRatio = normalizeAspectRatio((existing.overlayJson as any)?.aspectRatio);
+      const { storedImages, warning } = await generateAndStoreImageVariants(db, script, aspectRatio);
+
+      // Atomic: chỉ update khi status vẫn nằm trong nhóm được sửa (chống race).
+      const [row] = await db
+        .update(posts)
+        .set({ imageVariants: storedImages, selectedImageUrl: null })
+        .where(and(eq(posts.id, id), inArray(posts.status, EDITABLE_STATUSES as any)))
+        .returning();
+      if (!row) {
+        // Update trượt (status vừa đổi) — dọn ảnh mới vừa sinh để không rác storage.
+        await deleteInternalVariants(storedImages);
+        return res.status(409).json({ error: "Trạng thái bài vừa thay đổi, thử lại." });
+      }
+      // Update DB xong xuôi mới dọn ảnh biến thể CŨ (nếu là file nội bộ).
+      await deleteInternalVariants(existing.imageVariants as any[]);
+      res.json({ ...row, warning });
+    } catch (e: any) {
+      console.error("regenerate images:", e?.message || e);
+      res.status(500).json({ error: "Vẽ lại ảnh thất bại." });
     }
   });
 

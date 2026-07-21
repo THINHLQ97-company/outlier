@@ -77,6 +77,49 @@ export async function generateScriptVariants(input: {
   }
 }
 
+// Dịch mô tả khung (tiếng Việt) + phong cách + dàn nhân vật xuất hiện thành 1
+// đoạn prompt ẢNH tiếng Anh có cấu trúc — đòn bẩy chất lượng lớn nhất cho VẼ
+// vì model ảnh (gemini-3.1-flash-image-preview) hiểu prompt tiếng Anh tốt hơn
+// nhiều so với tiếng Việt trực tiếp. Pattern tham khảo tinh thần
+// generateImagePromptsFromJson (share-projects/marcow-crop/src/services/gemini.ts)
+// — yêu cầu Gemini trả JSON { "prompt": "..." } (vì generateTextGemini luôn ép
+// responseMimeType=application/json), rồi lấy field đó ra làm prompt ảnh thô.
+// Lỗi bất kỳ (Gemini fail, JSON không parse được, field rỗng) → trả null, KHÔNG
+// throw — caller (generateImageVariants) fallback về prompt tiếng Việt gốc.
+async function translatePanelsToImagePrompt(input: {
+  styleSummary: string;
+  panelsText: string;
+  characterNames: string[];
+}): Promise<string | null> {
+  const prompt = `Bạn là chuyên gia Prompt Engineering cho công cụ tạo ảnh AI (text-to-image). Nhiệm vụ: chuyển mô tả khung truyện tranh (tiếng Việt) dưới đây thành MỘT đoạn prompt ẢNH tiếng Anh duy nhất, chuyên ngành minh hoạ/truyện tranh (bối cảnh, bố cục khung, hành động, biểu cảm, vị trí nhân vật).
+
+PHONG CÁCH + DÀN NHÂN VẬT (đã có mô tả tiếng Anh, giữ nguyên tinh thần):
+${input.styleSummary}
+
+NHÂN VẬT XUẤT HIỆN TRONG KHUNG NÀY: ${input.characterNames.join(", ") || "(không xác định)"}
+
+MÔ TẢ KHUNG (tiếng Việt, có thể gồm nhiều khung, tối đa 2):
+${input.panelsText}
+
+YÊU CẦU BẮT BUỘC:
+- Dịch bối cảnh/hành động/biểu cảm/bố cục sang tiếng Anh chuyên ngành minh hoạ.
+- Mô tả rõ số khung (1 hoặc 2 panel), bố cục từng khung, nhân vật nào xuất hiện, đang làm gì, biểu cảm gì.
+- Giữ nguyên phong cách nghệ thuật đã mô tả ở trên (đưa vào đầu đoạn prompt).
+- TUYỆT ĐỐI KHÔNG đưa bất kỳ chữ/thoại/nhãn/text nào cần hiển thị trên ảnh vào prompt — chữ sẽ được thêm ở hậu kỳ (noText).
+- Không thêm giải thích, không markdown.
+
+Chỉ trả về DUY NHẤT JSON dạng { "prompt": "<đoạn prompt ảnh tiếng Anh>" }.`;
+
+  try {
+    const text = await generateTextGemini(prompt);
+    const parsed = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
+    const value = typeof parsed?.prompt === "string" ? parsed.prompt.trim() : "";
+    return value || null;
+  } catch {
+    return null;
+  }
+}
+
 export interface GenerateImageResult {
   images: { url: string; source: "social" | "placeholder" }[];
   isDemo: boolean;
@@ -119,10 +162,30 @@ export async function generateImageVariants(input: {
   }
 
   const refs = input.referenceImages || [];
-  const refNote = refs.length
-    ? `\n\nGiữ ĐÚNG ngoại hình các nhân vật theo ${refs.length} ảnh tham chiếu đính kèm (không đổi trang phục/màu/nhận diện).`
-    : "";
-  const prompt = `${input.styleSummary}\n\n${input.panelsText}${refNote}\n\nKHÔNG vẽ chữ/thoại lên ảnh (noText) — chữ sẽ được thêm ở hậu kỳ.`;
+
+  // B2.1 — dịch mô tả khung VN → 1 prompt ảnh EN có cấu trúc trước khi vẽ (đòn
+  // bẩy chất lượng lớn nhất). Lỗi bước dịch → fallback về prompt VN cũ,
+  // console.warn, KHÔNG làm hỏng cả lượt sinh ảnh.
+  const translated = await translatePanelsToImagePrompt({
+    styleSummary: input.styleSummary,
+    panelsText: input.panelsText,
+    characterNames: input.characterNames,
+  });
+
+  let prompt: string;
+  if (translated) {
+    const refNoteEn = refs.length
+      ? `\n\nKeep the EXACT appearance of the characters as shown in the ${refs.length} attached reference image(s) (do not change outfit/colors/identity).`
+      : "";
+    prompt = `${input.styleSummary}\n\n${translated}${refNoteEn}\n\nDo NOT render any text/dialogue/labels on the image (noText) — text will be added later in post-production.`;
+  } else {
+    console.warn("[social-proxy] Dịch prompt ảnh VN→EN thất bại — dùng prompt tiếng Việt gốc (fallback).");
+    const refNote = refs.length
+      ? `\n\nGiữ ĐÚNG ngoại hình các nhân vật theo ${refs.length} ảnh tham chiếu đính kèm (không đổi trang phục/màu/nhận diện).`
+      : "";
+    prompt = `${input.styleSummary}\n\n${input.panelsText}${refNote}\n\nKHÔNG vẽ chữ/thoại lên ảnh (noText) — chữ sẽ được thêm ở hậu kỳ.`;
+  }
+
   try {
     // 2 biến thể độc lập từ cùng 1 prompt (FR4.2) — gọi song song.
     const results = await Promise.all(

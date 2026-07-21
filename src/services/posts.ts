@@ -34,15 +34,27 @@ export async function getCalendar(): Promise<CalendarPost[]> {
   return res.json();
 }
 
-// FR4.2 — sinh 2 biến thể ảnh KHÔNG chữ (Gemini image qua social backend).
-// Fallback sang ảnh placeholder nếu thiếu SOCIAL_BACKEND_URL (kèm cảnh báo).
-export async function generateImages(scriptId: string): Promise<PostRow> {
+// FR4.2 — sinh 2 biến thể ảnh KHÔNG chữ (Gemini image trực tiếp). Fallback
+// sang ảnh placeholder nếu thiếu GEMINI_API_KEY (kèm cảnh báo). aspectRatio:
+// "1:1" | "3:4" | "9:16" (B2.2, mặc định "1:1" nếu không truyền).
+export async function generateImages(scriptId: string, aspectRatio?: string): Promise<PostRow> {
   const res = await fetch("/api/images/generate", {
     method: "POST",
     headers: authHeaders(),
-    body: JSON.stringify({ scriptId }),
+    body: JSON.stringify({ scriptId, aspectRatio }),
   });
   if (!res.ok) return asError(res, "Sinh ảnh thất bại.");
+  return res.json();
+}
+
+// B2.4 — vẽ lại 2 biến thể ảnh cho post đã có (dùng lại prompt + aspectRatio
+// đã lưu). Chỉ cho phép khi post đang ở khâu VẼ (draft/sua_thoai).
+export async function regenerateImages(postId: string): Promise<PostRow> {
+  const res = await fetch(`/api/posts/${postId}/regenerate-images`, {
+    method: "POST",
+    headers: authHeaders(false),
+  });
+  if (!res.ok) return asError(res, "Vẽ lại ảnh thất bại.");
   return res.json();
 }
 
