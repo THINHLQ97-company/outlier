@@ -2,7 +2,7 @@
 // Pipeline: THU (signals) → LỌC (rubric_versions + signals.score_json) →
 // DỊCH (scripts) → VẼ (posts.image_variants/overlay_json) → DUYỆT (posts
 // status/checklist_json) → ĐĂNG (posts.fb_post_url, thủ công trong iMVP).
-import { pgTable, uuid, text, boolean, timestamp, jsonb, integer } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, boolean, timestamp, jsonb, integer, index } from "drizzle-orm/pg-core";
 
 // ===== users — theo pattern marcow-crop (username/password → HMAC token) =====
 export const users = pgTable("users", {
@@ -38,7 +38,10 @@ export const signals = pgTable("signals", {
   status: text("status").notNull().default("new"),
   createdBy: text("created_by"), // username, chỉ set khi source="manual"
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => ({
+  statusIdx: index("signals_status_idx").on(t.status),
+  publishedIdx: index("signals_published_idx").on(t.publishedDate),
+}));
 
 export type Signal = typeof signals.$inferSelect;
 export type NewSignal = typeof signals.$inferInsert;
@@ -71,7 +74,9 @@ export const scripts = pgTable("scripts", {
   isDemo: boolean("is_demo").notNull().default(false), // true nếu sinh bằng fallback (thiếu SOCIAL_BACKEND_URL)
   createdBy: text("created_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => ({
+  signalIdx: index("scripts_signal_idx").on(t.signalId),
+}));
 
 export type ScriptRow = typeof scripts.$inferSelect;
 export type NewScriptRow = typeof scripts.$inferInsert;
@@ -116,7 +121,10 @@ export const posts = pgTable("posts", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   decidedAt: timestamp("decided_at", { withTimezone: true }),
   postedAt: timestamp("posted_at", { withTimezone: true }),
-});
+}, (t) => ({
+  statusIdx: index("posts_status_idx").on(t.status),
+  scriptIdx: index("posts_script_idx").on(t.scriptId),
+}));
 
 export type PostRow = typeof posts.$inferSelect;
 export type NewPostRow = typeof posts.$inferInsert;

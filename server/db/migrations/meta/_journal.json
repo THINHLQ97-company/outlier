@@ -15,6 +15,13 @@
       "when": 1784607845833,
       "tag": "0001_petite_the_phantom",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784613307276,
+      "tag": "0002_smooth_colossus",
+      "breakpoints": true
     }
   ]
 }

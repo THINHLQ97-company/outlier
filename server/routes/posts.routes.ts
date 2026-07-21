@@ -3,9 +3,9 @@
 // cho_duyet → (request-edit) → sua_thoai → (quay lại VẼ, submit lại) → cho_duyet
 // cho_duyet → (reject, bắt buộc lý do) → rot → (quay lại DỊCH)
 import type { Express } from "express";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { getDb, isDbConfigured } from "../db/client";
-import { posts } from "../db/schema";
+import { posts, scripts } from "../db/schema";
 import { requireAuth } from "../auth-mw";
 import { CHECKLIST_ITEMS } from "../../shared/engine-data";
 
@@ -41,6 +41,33 @@ export function registerPostRoutes(app: Express) {
     }
   });
 
+  // Content calendar (PRD đề xuất thêm) — posts kèm trục (join scripts) để FE
+  // nhóm theo tuần + giám sát tỉ lệ 3 trục 50/30/20. Đặt path riêng "/api/calendar"
+  // để không đụng matcher "/api/posts/:id".
+  app.get("/api/calendar", requireAuth, async (_req, res) => {
+    if (dbDown(res)) return;
+    try {
+      const rows = await getDb()
+        .select({
+          id: posts.id,
+          status: posts.status,
+          caption: posts.caption,
+          finalImageUrl: posts.finalImageUrl,
+          truc: scripts.truc,
+          createdAt: posts.createdAt,
+          decidedAt: posts.decidedAt,
+          postedAt: posts.postedAt,
+        })
+        .from(posts)
+        .leftJoin(scripts, eq(posts.scriptId, scripts.id))
+        .orderBy(desc(posts.createdAt));
+      res.json(rows);
+    } catch (e: any) {
+      console.error("calendar:", e?.message || e);
+      res.status(500).json({ error: "Lỗi tải lịch nội dung." });
+    }
+  });
+
   app.get("/api/posts/:id", requireAuth, async (req, res) => {
     if (dbDown(res)) return;
     const { id } = req.params;
@@ -65,8 +92,14 @@ export function registerPostRoutes(app: Express) {
       return res.status(400).json({ error: "Thiếu checklistJson." });
     }
     try {
-      const [row] = await getDb().update(posts).set({ checklistJson }).where(eq(posts.id, id)).returning();
-      if (!row) return res.status(404).json({ error: "Không tìm thấy bài." });
+      // Chỉ cho lưu checklist khi bài đang "cho_duyet" — checklist chốt lúc
+      // duyệt, không sửa ngược bài đã duyệt/đã đăng (codex HIGH #2). Atomic WHERE.
+      const [row] = await getDb()
+        .update(posts)
+        .set({ checklistJson })
+        .where(and(eq(posts.id, id), eq(posts.status, "cho_duyet")))
+        .returning();
+      if (!row) return res.status(409).json({ error: "Chỉ sửa được checklist khi bài đang chờ duyệt." });
       res.json(row);
     } catch (e: any) {
       console.error("save checklist:", e?.message || e);
@@ -95,7 +128,12 @@ export function registerPostRoutes(app: Express) {
           missing: missing.map((m) => m.key),
         });
       }
-      const [row] = await db.update(posts).set({ status: "san_sang_dang", decidedAt: new Date() }).where(eq(posts.id, id)).returning();
+      const [row] = await db
+        .update(posts)
+        .set({ status: "san_sang_dang", decidedAt: new Date() })
+        .where(and(eq(posts.id, id), eq(posts.status, "cho_duyet")))
+        .returning();
+      if (!row) return res.status(409).json({ error: "Trạng thái bài vừa thay đổi, tải lại danh sách." });
       res.json(row);
     } catch (e: any) {
       console.error("approve post:", e?.message || e);
@@ -116,7 +154,12 @@ export function registerPostRoutes(app: Express) {
       if (existing.status !== "cho_duyet") {
         return res.status(400).json({ error: `Bài đang ở trạng thái "${existing.status}", không thể chuyển sửa thoại.` });
       }
-      const [row] = await db.update(posts).set({ status: "sua_thoai", decidedAt: new Date() }).where(eq(posts.id, id)).returning();
+      const [row] = await db
+        .update(posts)
+        .set({ status: "sua_thoai", decidedAt: new Date() })
+        .where(and(eq(posts.id, id), eq(posts.status, "cho_duyet")))
+        .returning();
+      if (!row) return res.status(409).json({ error: "Trạng thái bài vừa thay đổi, tải lại danh sách." });
       res.json(row);
     } catch (e: any) {
       console.error("request-edit post:", e?.message || e);
@@ -143,8 +186,9 @@ export function registerPostRoutes(app: Express) {
       const [row] = await db
         .update(posts)
         .set({ status: "rot", rejectReason: reason.trim(), decidedAt: new Date() })
-        .where(eq(posts.id, id))
+        .where(and(eq(posts.id, id), eq(posts.status, "cho_duyet")))
         .returning();
+      if (!row) return res.status(409).json({ error: "Trạng thái bài vừa thay đổi, tải lại danh sách." });
       res.json(row);
     } catch (e: any) {
       console.error("reject post:", e?.message || e);
@@ -171,8 +215,9 @@ export function registerPostRoutes(app: Express) {
       const [row] = await db
         .update(posts)
         .set({ status: "da_dang", fbPostUrl: fbPostUrl.trim(), postedAt: new Date() })
-        .where(eq(posts.id, id))
+        .where(and(eq(posts.id, id), eq(posts.status, "san_sang_dang")))
         .returning();
+      if (!row) return res.status(409).json({ error: "Trạng thái bài vừa thay đổi, tải lại danh sách." });
       res.json(row);
     } catch (e: any) {
       console.error("mark-posted:", e?.message || e);
