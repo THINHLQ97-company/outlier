@@ -3,6 +3,8 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import dotenv from "dotenv";
 import { runMigrations } from "./server/db/migrate";
+import { registerAuthRoutes } from "./server/routes/auth.routes";
+import { registerCharacterRoutes } from "./server/routes/characters.routes";
 
 dotenv.config();
 
@@ -25,13 +27,17 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
+  // ===== AUTH (Step 3) =====
+  registerAuthRoutes(app);
+
+  // ===== CHARACTERS (Step 3) — read-only reference library (FR4.1) =====
+  registerCharacterRoutes(app);
+
   // ===== ROUTES (registered progressively in later steps) =====
-  // registerAuthRoutes(app)      — Step 3
-  // registerSignalRoutes(app)    — Step 4 (THU + LỌC)
-  // registerScriptRoutes(app)    — Step 5 (DỊCH)
-  // registerImageRoutes(app)     — Step 5 (VẼ)
-  // registerPostRoutes(app)      — Step 6 (DUYỆT + ĐĂNG)
-  // registerCharacterRoutes(app) — Step 3/4
+  // registerSignalRoutes(app) — Step 4 (THU + LỌC)
+  // registerScriptRoutes(app) — Step 5 (DỊCH)
+  // registerImageRoutes(app)  — Step 5 (VẼ)
+  // registerPostRoutes(app)   — Step 6 (DUYỆT + ĐĂNG)
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

@@ -34,10 +34,10 @@
 - [x] Commit: `feat: data model + seed demo data`
 
 ### Step 3 — Auth + API client layer
-- [ ] `server/auth-mw.ts`, `server/password.ts` (theo pattern marcow-crop: username/password → HMAC token)
-- [ ] `src/AppContext.tsx`, `src/services/*.ts` (1 file/resource: signals, scripts, posts, characters)
-- [ ] Login page tối giản
-- [ ] Commit: `feat: auth + api client layer`
+- [x] `server/auth-mw.ts`, `server/password.ts` (theo pattern marcow-crop: username/password → HMAC token)
+- [x] `src/AppContext.tsx`, `src/services/*.ts` (1 file/resource: signals, scripts, posts, characters)
+- [x] Login page tối giản
+- [x] Commit: `feat: auth + api client layer`
 
 ### Step 4 — THU + LỌC
 - [ ] `server/services/market-radar.client.ts`, `group-insights.client.ts` — gọi HTTP JSON-RPC 2.0 (đọc `MARKET_RADAR_MCP_TOKEN`/`GROUP_INSIGHTS_MCP_TOKEN` từ env, không hardcode; nếu thiếu token → fallback demo data, log warning rõ ràng)
