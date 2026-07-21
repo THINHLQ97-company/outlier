@@ -6,6 +6,8 @@ import { runMigrations } from "./server/db/migrate";
 import { registerAuthRoutes } from "./server/routes/auth.routes";
 import { registerCharacterRoutes } from "./server/routes/characters.routes";
 import { registerSignalRoutes } from "./server/routes/signals.routes";
+import { registerScriptRoutes } from "./server/routes/scripts.routes";
+import { registerImageRoutes } from "./server/routes/images.routes";
 
 dotenv.config();
 
@@ -37,10 +39,14 @@ async function startServer() {
   // ===== SIGNALS (Step 4) — THU + LỌC =====
   registerSignalRoutes(app);
 
+  // ===== SCRIPTS (Step 5) — DỊCH =====
+  registerScriptRoutes(app);
+
+  // ===== IMAGES (Step 5) — VẼ (generate + text-overlay + submit to DUYỆT) =====
+  registerImageRoutes(app);
+
   // ===== ROUTES (registered progressively in later steps) =====
-  // registerScriptRoutes(app) — Step 5 (DỊCH)
-  // registerImageRoutes(app)  — Step 5 (VẼ)
-  // registerPostRoutes(app)   — Step 6 (DUYỆT + ĐĂNG)
+  // registerPostRoutes(app) — Step 6 (DUYỆT + ĐĂNG)
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

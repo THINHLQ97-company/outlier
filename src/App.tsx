@@ -4,6 +4,8 @@ import { AppProvider, useAppContext } from "./AppContext";
 import Login from "./components/Login";
 import Layout from "./components/Layout";
 import SignalsQueue from "./pages/SignalsQueue";
+import ScriptEditor from "./pages/ScriptEditor";
+import ImageStudio from "./pages/ImageStudio";
 
 // Placeholder cho các trang chưa xây (Step 5-6) — tránh 404 khi bấm nav.
 function ComingSoon({ label }: { label: string }) {
@@ -32,8 +34,8 @@ function Gate() {
       <Routes>
         <Route path="/" element={<Navigate to="/signals" replace />} />
         <Route path="/signals" element={<SignalsQueue />} />
-        <Route path="/scripts" element={<ComingSoon label="Kịch bản (DỊCH)" />} />
-        <Route path="/image-studio" element={<ComingSoon label="Ảnh (VẼ)" />} />
+        <Route path="/scripts" element={<ScriptEditor />} />
+        <Route path="/image-studio" element={<ImageStudio />} />
         <Route path="/approval" element={<ComingSoon label="Duyệt" />} />
         <Route path="/ready" element={<ComingSoon label="Sẵn sàng đăng" />} />
         <Route path="*" element={<Navigate to="/signals" replace />} />

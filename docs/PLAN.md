@@ -46,10 +46,10 @@
 - [x] Commit: `feat: THU + LỌC — signal queue + rubric scoring`
 
 ### Step 5 — DỊCH + VẼ
-- [ ] `server/services/social-proxy.ts`: gọi REST sang social backend (`SOCIAL_BACKEND_URL` env, chưa có → placeholder rõ ràng, không bịa) cho generateText + generate-image
-- [ ] `server/routes/scripts.routes.ts`, `server/routes/images.routes.ts`
-- [ ] `src/pages/ScriptEditor.tsx` (chọn trục + format meme, sinh 3 phương án), `src/pages/ImageStudio.tsx` (sinh 2 biến thể + text-overlay editor canvas + watermark export)
-- [ ] Commit: `feat: DỊCH + VẼ — script gen, image gen, text overlay`
+- [x] `server/services/social-proxy.ts`: gọi REST sang social backend (`SOCIAL_BACKEND_URL` env, chưa có → placeholder rõ ràng, không bịa) cho generateText + generate-image
+- [x] `server/routes/scripts.routes.ts`, `server/routes/images.routes.ts`
+- [x] `src/pages/ScriptEditor.tsx` (chọn trục + format meme, sinh 3 phương án), `src/pages/ImageStudio.tsx` (sinh 2 biến thể + text-overlay editor canvas + watermark export)
+- [x] Commit: `feat: DỊCH + VẼ — script gen, image gen, text overlay`
 
 ### Step 6 — DUYỆT + ĐĂNG
 - [ ] `server/routes/posts.routes.ts` (state machine cho_duyet→sua_thoai/rot/san_sang_dang→da_dang)
