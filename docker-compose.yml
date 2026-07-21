@@ -1,0 +1,47 @@
+# Local dev / demo stack: app + Postgres. `docker compose up` should run clean
+# even without real MCP/social/Facebook credentials (see .env.example — code
+# falls back to demo/seed data and logs warnings instead of crashing).
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: fanpage
+      POSTGRES_PASSWORD: fanpage
+      POSTGRES_DB: fanpage_content_create
+    ports:
+      - "5433:5432"
+    volumes:
+      - fanpage_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fanpage -d fanpage_content_create"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgres://fanpage:fanpage@db:5432/fanpage_content_create
+      AUTH_SECRET: ${AUTH_SECRET:-dev-only-change-me-32-chars-min}
+      ADMIN_SEED_USERNAME: ${ADMIN_SEED_USERNAME:-}
+      ADMIN_SEED_PASSWORD: ${ADMIN_SEED_PASSWORD:-}
+      MARKET_RADAR_MCP_URL: ${MARKET_RADAR_MCP_URL:-}
+      MARKET_RADAR_MCP_TOKEN: ${MARKET_RADAR_MCP_TOKEN:-}
+      GROUP_INSIGHTS_MCP_URL: ${GROUP_INSIGHTS_MCP_URL:-}
+      GROUP_INSIGHTS_MCP_TOKEN: ${GROUP_INSIGHTS_MCP_TOKEN:-}
+      SOCIAL_BACKEND_URL: ${SOCIAL_BACKEND_URL:-}
+      SOCIAL_BACKEND_TOKEN: ${SOCIAL_BACKEND_TOKEN:-}
+      FB_PAGE_ID: ${FB_PAGE_ID:-}
+      FB_ACCESS_TOKEN: ${FB_ACCESS_TOKEN:-}
+
+volumes:
+  fanpage_pgdata:

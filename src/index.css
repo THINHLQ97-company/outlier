@@ -1,0 +1,55 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Be+Vietnam+Pro:wght@400;600;700&display=swap");
+@import "tailwindcss";
+
+/* Brand tokens — "Mắt Bão" storm motif: deep storm-indigo primary (thay vì
+   copy nguyên tông cam đất của marcow-crop), giữ pattern @theme + font setup
+   từ marcow-crop. Be Vietnam Pro dự phòng cho chữ có dấu đậm (labels/watermark
+   preview) vì hỗ trợ tiếng Việt tốt. */
+@theme {
+  --font-sans: "Inter", "Be Vietnam Pro", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Be Vietnam Pro", "Inter", ui-sans-serif, sans-serif;
+
+  --color-storm-50: #eef2ff;
+  --color-storm-100: #e0e7ff;
+  --color-storm-200: #c7d2fe;
+  --color-storm-300: #a5b4fc;
+  --color-storm-400: #818cf8;
+  --color-storm-500: #5c6ef8;
+  --color-storm-600: #4338ca;
+  --color-storm-700: #362e9c;
+  --color-storm-800: #2b2578;
+  --color-storm-900: #211c5c;
+
+  --color-ember-500: #f0623d;
+  --color-ember-600: #d94f2c;
+}
+
+body {
+  background-color: #f6f7fb;
+  color: #1e1b2e;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd2e8;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9aa5cf;
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd2e8 transparent;
+}
