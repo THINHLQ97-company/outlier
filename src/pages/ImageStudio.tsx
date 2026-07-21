@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
-import { Loader2, Sparkles, Check, AlertTriangle, Send, RefreshCw } from "lucide-react";
+import { Loader2, Sparkles, AlertTriangle, Send, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
 import { generateImages, regenerateImages, getPost, selectImage, saveOverlay, submitForApproval } from "../services/posts";
 import { imageDisplayUrl } from "../services/http";
-import type { PostRow } from "../types";
+import { listCharacters } from "../services/characters";
+import type { PostRow, CharacterRow } from "../types";
 import TextOverlayEditor from "../components/TextOverlayEditor";
+import CharacterPicker from "../components/CharacterPicker";
 
 const WATERMARK_OPTIONS = ["MATBAO", "MATBAO INVOICE"];
 
@@ -39,6 +41,24 @@ export default function ImageStudio() {
   const [warning, setWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [aspectRatio, setAspectRatio] = useState("1:1");
+  const [characters, setCharacters] = useState<CharacterRow[]>([]);
+  const [selectedCharacterIds, setSelectedCharacterIds] = useState<string[]>([]);
+  const [characterPickerOpen, setCharacterPickerOpen] = useState(false);
+
+  // Nhân vật tuỳ chọn (mục 5, mở rộng) — chỉ cần ở chế độ sinh mới (scriptId),
+  // không dùng khi "Sửa thoại" (postId, ảnh đã sinh rồi).
+  useEffect(() => {
+    if (!scriptId) return;
+    listCharacters()
+      .then(setCharacters)
+      .catch(() => {
+        /* best-effort — không chặn luồng sinh ảnh theo trục (mặc định cũ) */
+      });
+  }, [scriptId]);
+
+  function toggleCharacter(id: string) {
+    setSelectedCharacterIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
 
   // Chế độ "Sửa thoại" — nạp lại bài cũ theo postId.
   useEffect(() => {
@@ -79,7 +99,7 @@ export default function ImageStudio() {
     setError(null);
     setWarning(null);
     try {
-      const result: any = await generateImages(scriptId, aspectRatio);
+      const result: any = await generateImages(scriptId, aspectRatio, selectedCharacterIds);
       setPost(result);
       setCaption(result.caption || "");
       if (result.warning) setWarning(result.warning);
@@ -149,16 +169,19 @@ export default function ImageStudio() {
     }
   }
 
-  const isReopen = !!postId;
+  // Tiêu đề: chỉ hiện "Sửa thoại" khi bài đang thật sự ở trạng thái sua_thoai
+  // (mở lại từ Duyệt → yêu cầu sửa) — postId cũng dùng chung route này để mở
+  // lại bài draft dở dang, trường hợp đó vẫn là "Dựng ảnh" bình thường.
+  const isEditingRejectedTalk = post?.status === "sua_thoai";
 
   return (
     <div className="flex flex-col gap-4 max-w-3xl">
       <div>
         <h1 className="text-lg font-bold text-stone-800 font-display">
-          {isReopen ? "Sửa thoại (VẼ)" : "Dựng ảnh (VẼ)"}
+          {isEditingRejectedTalk ? "Sửa thoại (VẼ)" : "Dựng ảnh (VẼ)"}
         </h1>
         <p className="text-sm text-stone-500">
-          {isReopen
+          {isEditingRejectedTalk
             ? "Chỉnh nhãn chữ + watermark trên ảnh đã chọn → export lại → gửi duyệt lại."
             : "2 biến thể ảnh không chữ → chọn 1 → gắn nhãn + watermark."}
         </p>
@@ -187,6 +210,26 @@ export default function ImageStudio() {
               ))}
             </select>
           </div>
+
+          <div className="border border-stone-200 rounded-lg">
+            <button
+              type="button"
+              onClick={() => setCharacterPickerOpen((v) => !v)}
+              className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-stone-600"
+            >
+              <span>
+                Chọn nhân vật (tuỳ chọn){selectedCharacterIds.length > 0 ? ` — đã chọn ${selectedCharacterIds.length}` : ""}
+              </span>
+              {characterPickerOpen ? <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" /> : <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />}
+            </button>
+            {characterPickerOpen && (
+              <div className="px-3 pb-3">
+                <p className="text-[11px] text-stone-400 mb-1.5">Không chọn → giữ hành vi cũ (dàn nhân vật chủ đạo theo trục).</p>
+                <CharacterPicker characters={characters} selectedIds={selectedCharacterIds} onToggle={toggleCharacter} />
+              </div>
+            )}
+          </div>
+
           <button
             onClick={handleGenerate}
             disabled={generating}

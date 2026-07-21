@@ -1,12 +1,26 @@
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
-import { LogOut, Radar, PenLine, Image as ImageIcon, ClipboardCheck, Send, Users, CalendarDays } from "lucide-react";
+import {
+  LogOut,
+  Radar,
+  PenLine,
+  Image as ImageIcon,
+  ClipboardCheck,
+  Send,
+  Users,
+  CalendarDays,
+  Palette,
+  Images,
+  ShieldCheck,
+} from "lucide-react";
 import { useAppContext } from "../AppContext";
 
 const NAV_ITEMS = [
   { to: "/signals", label: "Tín hiệu", icon: Radar },
   { to: "/scripts", label: "Kịch bản", icon: PenLine },
   { to: "/image-studio", label: "Ảnh", icon: ImageIcon },
+  { to: "/studio", label: "Studio", icon: Palette },
+  { to: "/library", label: "Thư viện", icon: Images },
   { to: "/approval", label: "Duyệt", icon: ClipboardCheck },
   { to: "/ready", label: "Sẵn sàng đăng", icon: Send },
   { to: "/calendar", label: "Lịch", icon: CalendarDays },
@@ -14,7 +28,8 @@ const NAV_ITEMS = [
 ];
 
 export default function Layout({ children }: { children: ReactNode }) {
-  const { username, logout } = useAppContext();
+  const { username, isAdmin, logout } = useAppContext();
+  const navItems = isAdmin ? [...NAV_ITEMS, { to: "/admin/users", label: "Quản trị", icon: ShieldCheck }] : NAV_ITEMS;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -23,7 +38,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           <div className="flex items-center gap-6">
             <span className="font-display font-bold text-storm-800 text-sm shrink-0">Ăn Nằm Với AI</span>
             <nav className="flex items-center gap-1" aria-label="Điều hướng chính">
-              {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
+              {navItems.map(({ to, label, icon: Icon }) => (
                 <NavLink
                   key={to}
                   to={to}

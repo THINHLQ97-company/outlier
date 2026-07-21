@@ -11,6 +11,7 @@ interface AppState {
   authChecked: boolean;
   username: string | null;
   role: Role | null;
+  isAdmin: boolean;
   login: (username: string, token: string, role: Role) => void;
   logout: () => void;
 }
@@ -35,8 +36,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (result.valid) {
           setIsAuthenticated(true);
           setUsername(result.username || localStorage.getItem("authUser"));
+          // GET /api/me — role dùng để ẩn/hiện menu Quản trị. Lỗi (server tạm
+          // gián đoạn...) → fallback "member", KHÔNG chặn app (không throw).
           const me = await fetchMe(token).catch(() => null);
-          if (me) setRole(me.role);
+          setRole(me?.role || "member");
         } else {
           localStorage.removeItem("authToken");
           localStorage.removeItem("authUser");
@@ -66,7 +69,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AppContext.Provider value={{ isAuthenticated, authChecked, username, role, login, logout }}>
+    <AppContext.Provider
+      value={{ isAuthenticated, authChecked, username, role, isAdmin: role === "admin", login, logout }}
+    >
       {children}
     </AppContext.Provider>
   );
