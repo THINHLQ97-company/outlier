@@ -1,32 +1,39 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Be+Vietnam+Pro:wght@400;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Comic+Neue:wght@700&family=Inter:wght@400;500;600;700;800&family=Be+Vietnam+Pro:wght@400;600;700&display=swap");
 @import "tailwindcss";
 
-/* Brand tokens — "Mắt Bão" storm motif: deep storm-indigo primary (thay vì
-   copy nguyên tông cam đất của marcow-crop), giữ pattern @theme + font setup
-   từ marcow-crop. Be Vietnam Pro dự phòng cho chữ có dấu đậm (labels/watermark
-   preview) vì hỗ trợ tiếng Việt tốt. */
+/* Brand tokens — ĐÃ ĐỔI sang đúng bảng màu/font marcow-crop (quyết định user
+   2026-07-21, xem CLAUDE.md mục 4): primary cam đất #D97757 thay vì
+   storm-indigo trước đây. GIỮ NGUYÊN TÊN BIẾN `--color-storm-*` để không phải
+   sửa class ở mọi file (`bg-storm-600`, `text-storm-700`...) — chỉ đổi giá
+   trị hex sang thang cam đất tương đương. `--font-display` trỏ sang Comic
+   Neue (thay Be Vietnam Pro) vì class `font-display` đã dùng sẵn cho mọi
+   heading/logo trong app — theo yêu cầu "font-comic cho heading/logo, Inter
+   cho phần còn lại"; `--font-comic` cũng được khai báo cho code mới nào cần
+   gọi thẳng. Be Vietnam Pro vẫn giữ làm fallback vẽ chữ overlay lên ảnh
+   (TextOverlayEditor canvas — không đổi, không thuộc phạm vi reskin UI). */
 @theme {
   --font-sans: "Inter", "Be Vietnam Pro", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Be Vietnam Pro", "Inter", ui-sans-serif, sans-serif;
+  --font-display: "Comic Neue", "Inter", ui-sans-serif, sans-serif;
+  --font-comic: "Comic Neue", cursive, sans-serif;
 
-  --color-storm-50: #eef2ff;
-  --color-storm-100: #e0e7ff;
-  --color-storm-200: #c7d2fe;
-  --color-storm-300: #a5b4fc;
-  --color-storm-400: #818cf8;
-  --color-storm-500: #5c6ef8;
-  --color-storm-600: #4338ca;
-  --color-storm-700: #362e9c;
-  --color-storm-800: #2b2578;
-  --color-storm-900: #211c5c;
+  --color-storm-50: #fbf3ee;
+  --color-storm-100: #f6e4da;
+  --color-storm-200: #edc4ae;
+  --color-storm-300: #e2a280;
+  --color-storm-400: #dd8a69;
+  --color-storm-500: #d97757;
+  --color-storm-600: #c66545;
+  --color-storm-700: #a8523a;
+  --color-storm-800: #86412f;
+  --color-storm-900: #5f2e22;
 
-  --color-ember-500: #f0623d;
-  --color-ember-600: #d94f2c;
+  --color-ember-500: #e08b3d;
+  --color-ember-600: #c66545;
 }
 
 body {
-  background-color: #f6f7fb;
-  color: #1e1b2e;
+  background-color: #faf9f6;
+  color: #2d2d2d;
 }
 
 /* Custom Scrollbar */
@@ -40,16 +47,16 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd2e8;
+  background: #d6d3d1;
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #9aa5cf;
+  background: #a8a29e;
 }
 
 /* Firefox */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #cbd2e8 transparent;
+  scrollbar-color: #d6d3d1 transparent;
 }

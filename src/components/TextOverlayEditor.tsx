@@ -72,7 +72,7 @@ export default function TextOverlayEditor({ imageUrl, initialOverlay, watermarkO
       ctx.fillStyle = "rgba(255,255,255,0.88)";
       ctx.fillRect(x - 6, y - height + 6, width + 12, height);
       if (box.id === selectedId) {
-        ctx.strokeStyle = "#4338ca";
+        ctx.strokeStyle = "#c66545"; // storm-600 (tông cam đất, xem src/index.css)
         ctx.lineWidth = 2;
         ctx.strokeRect(x - 8, y - height + 4, width + 16, height + 4);
       }
