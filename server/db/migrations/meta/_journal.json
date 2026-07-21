@@ -29,6 +29,13 @@
       "when": 1784617266604,
       "tag": "0003_spicy_skaar",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784622660374,
+      "tag": "0004_loose_kang",
+      "breakpoints": true
     }
   ]
 }

@@ -164,3 +164,19 @@ export const assets = pgTable("assets", {
 
 export type AssetRow = typeof assets.$inferSelect;
 export type NewAssetRow = typeof assets.$inferInsert;
+
+// ===== files — lưu file ảnh TRONG Postgres (bền qua redeploy) =====
+// Trước đây lưu filesystem /data/uploads → mất sạch mỗi lần Coolify build lại
+// container (không có volume bền). Postgres là service riêng có volume bền nên
+// lưu ở đây đảm bảo KHÔNG mất dữ liệu. Bytes lưu base64 trong cột text (quy mô
+// nội bộ nhỏ — vài MB, chấp nhận được). Truy cập qua lớp storage (PgDriver).
+export const files = pgTable("files", {
+  key: text("key").primaryKey(), // vd "characters/<uuid>.png"
+  mimeType: text("mime_type").notNull().default("application/octet-stream"),
+  dataBase64: text("data_base64").notNull(),
+  size: integer("size").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type FileRow = typeof files.$inferSelect;
+export type NewFileRow = typeof files.$inferInsert;

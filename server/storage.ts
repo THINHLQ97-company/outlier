@@ -78,7 +78,59 @@ class FsDriver implements StorageDriver {
   }
 }
 
-export const storage: StorageDriver = new FsDriver(UPLOAD_DIR);
+// Postgres-backed driver — lưu bytes (base64) trong bảng `files`. BỀN qua
+// redeploy vì Postgres là service riêng có volume (khác filesystem container bị
+// xoá mỗi lần build lại). Dùng cho môi trường Coolify không có volume bền cho
+// UPLOAD_DIR. Chỉ hoạt động khi DATABASE_URL đã cấu hình (mọi call site đã guard
+// dbDown trước khi ghi/đọc file).
+class PgDriver implements StorageDriver {
+  private async db() {
+    const { getDb } = await import("./db/client");
+    const { files } = await import("./db/schema");
+    return { db: getDb(), files };
+  }
+  async put(key: string, data: Buffer): Promise<void> {
+    const { db, files } = await this.db();
+    const row = {
+      key,
+      mimeType: contentTypeForKey(key),
+      dataBase64: data.toString("base64"),
+      size: data.length,
+    };
+    await db
+      .insert(files)
+      .values(row)
+      .onConflictDoUpdate({ target: files.key, set: { dataBase64: row.dataBase64, mimeType: row.mimeType, size: row.size } });
+  }
+  async get(key: string): Promise<Buffer> {
+    const { db, files } = await this.db();
+    const { eq } = await import("drizzle-orm");
+    const [row] = await db.select().from(files).where(eq(files.key, key));
+    if (!row) throw new Error(`File not found: ${key}`);
+    return Buffer.from(row.dataBase64, "base64");
+  }
+  async delete(key: string): Promise<void> {
+    const { db, files } = await this.db();
+    const { eq } = await import("drizzle-orm");
+    await db.delete(files).where(eq(files.key, key));
+  }
+  async exists(key: string): Promise<boolean> {
+    const { db, files } = await this.db();
+    const { eq } = await import("drizzle-orm");
+    const [row] = await db.select({ key: files.key }).from(files).where(eq(files.key, key));
+    return !!row;
+  }
+  async list(): Promise<{ key: string; size: number }[]> {
+    const { db, files } = await this.db();
+    const rows = await db.select({ key: files.key, size: files.size }).from(files);
+    return rows.map((r) => ({ key: r.key, size: r.size }));
+  }
+}
+
+// FsDriver giữ lại (dùng khi STORAGE_DRIVER=fs + có volume bền). Mặc định PgDriver
+// để không mất ảnh trên Coolify (không có volume bền cho UPLOAD_DIR).
+export const storage: StorageDriver =
+  process.env.STORAGE_DRIVER === "fs" ? new FsDriver(UPLOAD_DIR) : new PgDriver();
 
 // Build a fresh namespaced key, e.g. newKey("characters", "png").
 export function newKey(prefix: KeyPrefix, ext: string): string {
