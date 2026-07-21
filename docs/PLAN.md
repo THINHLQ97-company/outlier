@@ -28,10 +28,10 @@
 - [x] Commit: `feat: scaffold skeleton (react+vite+express+drizzle, theo mẫu marcow-crop)`
 
 ### Step 2 — Data model
-- [ ] `server/db/schema.ts`: bảng `users`, `signals`, `rubric_versions`, `scripts`, `characters`, `posts` (đúng PRD mục 6)
-- [ ] Migration đầu tiên (`server/db/migrations/`)
-- [ ] Seed script: 5 nhân vật cố định (mục 2.4 v3.md) + vài tín hiệu demo giả lập (phòng khi chưa có MCP token)
-- [ ] Commit: `feat: data model + seed demo data`
+- [x] `server/db/schema.ts`: bảng `users`, `signals`, `rubric_versions`, `scripts`, `characters`, `posts` (đúng PRD mục 6)
+- [x] Migration đầu tiên (`server/db/migrations/`)
+- [x] Seed script: 5 nhân vật cố định (mục 2.4 v3.md) + vài tín hiệu demo giả lập (phòng khi chưa có MCP token)
+- [x] Commit: `feat: data model + seed demo data`
 
 ### Step 3 — Auth + API client layer
 - [ ] `server/auth-mw.ts`, `server/password.ts` (theo pattern marcow-crop: username/password → HMAC token)
