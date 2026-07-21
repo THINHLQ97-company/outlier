@@ -58,11 +58,11 @@
 - [x] Commit: `feat: DUYỆT + ĐĂNG — approval kanban, checklist, manual publish`
 
 ### Step 7 — Docs + polish + demo
-- [ ] `CLAUDE.md` cho project (theo chuẩn workspace)
-- [ ] `docs/ARCH.md` tối thiểu
-- [ ] Empty states, error handling cơ bản
-- [ ] `docker compose up` / `npm run dev` chạy sạch, verify end-to-end bằng seed data
-- [ ] Commit cuối + `/vibe handoff` nếu cần chuyển giao
+- [x] `CLAUDE.md` cho project (theo chuẩn workspace)
+- [x] `docs/ARCH.md` tối thiểu
+- [x] Empty states, error handling cơ bản
+- [x] `docker compose up` / `npm run dev` chạy sạch, verify end-to-end bằng seed data
+- [x] Commit cuối + `/vibe handoff` nếu cần chuyển giao (chuyển giao thật để main session review/push)
 
 ## Risks + Assumptions
 
@@ -73,7 +73,8 @@
 
 ## Definition of Done (iMVP)
 
-- [ ] Demo end-to-end: 1 tín hiệu (thật hoặc demo) → ảnh cuối có watermark + caption → qua duyệt → đánh dấu đã đăng
-- [ ] `npm run dev` / `docker compose up` chạy sạch với seed data
-- [ ] Không secret trong code (đọc từ `.env`, có `.env.example` đầy đủ placeholder)
-- [ ] README + CLAUDE.md đủ để người khác chạy được
+- [x] Demo end-to-end: 1 tín hiệu (thật hoặc demo) → ảnh cuối có watermark + caption → qua duyệt → đánh dấu đã đăng
+      (verified thủ công qua curl trong quá trình build — xem docs/ARCH.md; chưa verify qua UI thật vì chưa có browser trong môi trường build)
+- [x] `npm run dev` / `docker compose up` chạy sạch với seed data (đã test `docker compose up -d --build` + `npm run db:seed` thành công)
+- [x] Không secret trong code (đọc từ `.env`, có `.env.example` đầy đủ placeholder)
+- [x] README + CLAUDE.md đủ để người khác chạy được (README.md thêm ở Step 7)
