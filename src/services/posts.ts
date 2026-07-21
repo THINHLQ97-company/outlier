@@ -16,6 +16,24 @@ export async function getPost(id: string): Promise<PostRow> {
   return res.json();
 }
 
+export interface CalendarPost {
+  id: string;
+  status: PostStatus;
+  caption: string | null;
+  finalImageUrl: string | null;
+  truc: string | null;
+  createdAt: string;
+  decidedAt: string | null;
+  postedAt: string | null;
+}
+
+// Content calendar (theo dõi tỉ lệ 3 trục 50/30/20). Posts kèm trục (join scripts).
+export async function getCalendar(): Promise<CalendarPost[]> {
+  const res = await fetch("/api/calendar", { headers: authHeaders(false) });
+  if (!res.ok) return asError(res, "Không tải được lịch nội dung.");
+  return res.json();
+}
+
 // FR4.2 — sinh 2 biến thể ảnh KHÔNG chữ (Gemini image qua social backend).
 // Fallback sang ảnh placeholder nếu thiếu SOCIAL_BACKEND_URL (kèm cảnh báo).
 export async function generateImages(scriptId: string): Promise<PostRow> {

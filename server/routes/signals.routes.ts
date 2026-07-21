@@ -7,7 +7,7 @@ import { signals, rubricVersions } from "../db/schema";
 import { requireAuth, getAuthUser } from "../auth-mw";
 import { fetchMarketRadarSignals } from "../services/market-radar.client";
 import { fetchGroupInsightsSignals } from "../services/group-insights.client";
-import { suggestScoreForSignal, computeSignalStatus } from "../services/rubric-scoring";
+import { suggestScoreForSignal, suggestScoreWithLLM, computeSignalStatus } from "../services/rubric-scoring";
 import { RUBRIC_DEFAULT_WEIGHTS, RUBRIC_DEFAULT_THRESHOLDS } from "../../shared/engine-data";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -133,7 +133,9 @@ export function registerSignalRoutes(app: Express) {
     }
   });
 
-  // FR2.3 — gợi ý điểm rule-based, KHÔNG lưu.
+  // FR2.3 — gợi ý điểm, KHÔNG lưu. Ưu tiên LLM (Gemini "hiểu" nội dung) khi có
+  // GEMINI_API_KEY; lỗi/thiếu key → fallback rule-based (đếm từ khóa glossary).
+  // Người vận hành LUÔN rà/sửa tay trước khi chốt (/score).
   app.get("/api/signals/:id/suggest-score", requireAuth, async (req, res) => {
     if (dbDown(res)) return;
     const { id } = req.params;
@@ -141,13 +143,22 @@ export function registerSignalRoutes(app: Express) {
     try {
       const [signal] = await getDb().select().from(signals).where(eq(signals.id, id));
       if (!signal) return res.status(404).json({ error: "Không tìm thấy tín hiệu." });
-      const suggestion = suggestScoreForSignal({
+
+      const scoreInput = {
         title: signal.title,
         rawSummary: signal.rawSummary,
         publishedDate: signal.publishedDate as any,
         truc: signal.truc,
-      });
-      res.json(suggestion);
+      };
+
+      if (process.env.GEMINI_API_KEY) {
+        try {
+          return res.json(await suggestScoreWithLLM(scoreInput));
+        } catch (e: any) {
+          console.warn("[suggest-score] LLM thất bại, fallback rule-based:", e?.message || e);
+        }
+      }
+      res.json(suggestScoreForSignal(scoreInput));
     } catch (e: any) {
       console.error("suggest-score:", e?.message || e);
       res.status(500).json({ error: "Không gợi ý được điểm." });

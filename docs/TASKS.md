@@ -12,11 +12,37 @@ Nguồn: chuyển đổi từ `docs/PLAN.md` (iMVP, 7 step, tất cả đã hoà
 - [x] Step 6 — DUYỆT + ĐĂNG (state machine, kanban, checklist, ReadyToPost) — `f0d84ab`
 - [x] Step 7 — Docs (CLAUDE.md, ARCH.md, README.md) + verify build/typecheck/docker — `48f93fd`
 
-## Chưa làm (theo dõi riêng, không chặn deploy preview)
+## Đã làm thêm sau iMVP ban đầu (2026-07-21, ngoài 7 step gốc)
 
-- [ ] Verify UI qua trình duyệt thật (build agent chỉ test qua curl/API, chưa có browser)
-- [ ] Điền `.env` thật: MARKET_RADAR_MCP_TOKEN, GROUP_INSIGHTS_MCP_TOKEN, SOCIAL_BACKEND_URL/TOKEN, FB_PAGE_ID/FB_ACCESS_TOKEN, AUTH_SECRET random
-- [ ] Object storage cho ảnh cuối (hiện lưu base64 trong Postgres — chấp nhận được ở quy mô hiện tại, xem `docs/ARCH.md`)
+- [x] Menu "Nhân vật" (`/characters`) — CRUD đầy đủ + upload ảnh + AI generate ảnh reference
+- [x] Storage layer filesystem (`server/storage.ts`) cho ảnh nhân vật/upload
+- [x] DỊCH + VẼ đổi từ social-proxy sang gọi Gemini trực tiếp (`GEMINI_API_KEY`)
+- [x] UX reskin theo tông marcow-crop (màu cam đất + font Comic Neue/Inter)
+- [x] Deploy beta nội bộ lên Coolify (`fanpage-content-create.mk.dev.matbao.ai`) + Postgres riêng + `GEMINI_API_KEY` thật (copy từ marcow-crop)
+
+## Vòng rà soát + tối ưu (2026-07-21, sau codex review)
+
+- [x] **Nhất quán nhân vật**: đưa ảnh reference (tối đa 3 nhân vật chủ lực) vào Gemini khi sinh ảnh bài viết (image-to-image) — trước đây chỉ truyền mô tả text
+- [x] **Tối ưu lưu trữ**: ảnh biến thể + ảnh cuối bài viết chuyển từ base64 trong Postgres sang filesystem storage (`/api/files/<key>`), giảm phình DB
+- [x] **Sửa luồng "Sửa thoại"**: mở lại đúng post cũ theo `postId` (không tạo post rác mới); ImageStudio hỗ trợ cả `?scriptId` (mới) lẫn `?postId` (sửa)
+- [x] **LỌC LLM-assisted**: `/suggest-score` ưu tiên Gemini chấm 5 tiêu chí, fallback rule-based khi thiếu key/lỗi
+- [x] **Content calendar** (`/calendar`): lịch bài theo tuần + giám sát tỉ lệ 3 trục 50/30/20 (cảnh báo lệch >10 điểm %)
+- [x] **Bảo mật (codex HIGH)**: guard trạng thái + atomic `WHERE status` cho toàn bộ pipeline VẼ/DUYỆT/ĐĂNG (select-image/overlay/submit/checklist/approve/reject/request-edit/mark-posted) — chống kéo ngược state machine bài đã duyệt/đã đăng
+- [x] **Bảo mật (codex MEDIUM)**: `/overlay` update DB trước, xoá file ảnh cũ sau (tránh mất ảnh khi lỗi giữa chừng)
+- [x] **Hiệu năng**: thêm index DB (`signals.status/published_date`, `scripts.signal_id`, `posts.status/script_id`) — migration `0002`
+
+## Rủi ro đã biết (chấp nhận cho iMVP nội bộ, fix sau nếu go-live rộng)
+
+- Token đăng nhập (7 ngày) truyền qua query string `?token=` cho `GET /api/files/*` (vì `<img>` không gửi được header Authorization) — có thể lọt vào access log/history/Referer. Chấp nhận cho công cụ nội bộ; nếu go-live rộng nên đổi sang cookie HttpOnly same-origin hoặc token ngắn hạn scope theo file.
+- Chưa có ownership/phân quyền theo user (cả team dùng chung 1 pipeline 1 fanpage — không multi-tenant); `posts.createdBy` là field audit chưa gắn phân quyền.
+
+## Chưa làm
+
+- [ ] Verify UI qua trình duyệt thật từ IP văn phòng/VPN (chỉ mới test qua curl/API — app đang ở scope nội bộ nên tôi không tự curl full page được)
+- [ ] Điền nốt `.env` thật còn thiếu: `MARKET_RADAR_MCP_TOKEN`, `GROUP_INSIGHTS_MCP_TOKEN`, `FB_PAGE_ID`/`FB_ACCESS_TOKEN` (chỉ cần cho Phase 2 đăng tự động)
+- [ ] Object storage cho **ảnh bài viết cuối** (`posts.imageVariants`/`finalImageUrl`) vẫn base64 trong Postgres — chỉ ảnh nhân vật đã chuyển sang filesystem storage; ổn ở quy mô hiện tại (<10 người/~1 bài/ngày) nhưng nên dọn nếu scale lên
 - [ ] Luồng "Sửa thoại" nên patch lại post cũ thay vì tạo post row mới
-- [ ] LỌC: chuyển từ rule-based sang gọi LLM qua social backend khi có `SOCIAL_BACKEND_URL` thật
-- [ ] Phase 2 (ngoài scope iMVP): đăng tự động qua social's scheduler, bước HỌC thật, content calendar view
+- [ ] LỌC: hiện vẫn rule-based heuristic — có thể nâng lên LLM-assisted vì Gemini direct đã sẵn sàng (trước đây chặn vì chưa có SOCIAL_BACKEND_URL, giờ không còn lý do đó nữa)
+- [ ] Dọn 1 bản ghi `GEMINI_API_KEY` trùng lặp trong Coolify env vars (không lỗi, chỉ hơi rối)
+- [ ] Phase 2 (ngoài scope iMVP): đăng tự động qua social's scheduler, bước HỌC thật (insight + feedback loop rubric), content calendar view
+- [ ] Phase 3: P0 alert tự động (chưa có nguồn xác nhận), multi-fanpage nếu mở rộng
