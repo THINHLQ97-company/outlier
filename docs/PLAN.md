@@ -52,10 +52,10 @@
 - [x] Commit: `feat: DỊCH + VẼ — script gen, image gen, text overlay`
 
 ### Step 6 — DUYỆT + ĐĂNG
-- [ ] `server/routes/posts.routes.ts` (state machine cho_duyet→sua_thoai/rot/san_sang_dang→da_dang)
-- [ ] `src/pages/ApprovalQueue.tsx` — kanban 3 cột (tham khảo `PostsDashboard.tsx` marcow-crop) + checklist modal 14 mục
-- [ ] `src/pages/ReadyToPost.tsx` — tải ảnh/copy caption/đánh dấu đã đăng
-- [ ] Commit: `feat: DUYỆT + ĐĂNG — approval kanban, checklist, manual publish`
+- [x] `server/routes/posts.routes.ts` (state machine cho_duyet→sua_thoai/rot/san_sang_dang→da_dang)
+- [x] `src/pages/ApprovalQueue.tsx` — kanban 3 cột (tham khảo `PostsDashboard.tsx` marcow-crop) + checklist modal 14 mục
+- [x] `src/pages/ReadyToPost.tsx` — tải ảnh/copy caption/đánh dấu đã đăng
+- [x] Commit: `feat: DUYỆT + ĐĂNG — approval kanban, checklist, manual publish`
 
 ### Step 7 — Docs + polish + demo
 - [ ] `CLAUDE.md` cho project (theo chuẩn workspace)

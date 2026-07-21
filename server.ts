@@ -8,6 +8,7 @@ import { registerCharacterRoutes } from "./server/routes/characters.routes";
 import { registerSignalRoutes } from "./server/routes/signals.routes";
 import { registerScriptRoutes } from "./server/routes/scripts.routes";
 import { registerImageRoutes } from "./server/routes/images.routes";
+import { registerPostRoutes } from "./server/routes/posts.routes";
 
 dotenv.config();
 
@@ -45,8 +46,8 @@ async function startServer() {
   // ===== IMAGES (Step 5) — VẼ (generate + text-overlay + submit to DUYỆT) =====
   registerImageRoutes(app);
 
-  // ===== ROUTES (registered progressively in later steps) =====
-  // registerPostRoutes(app) — Step 6 (DUYỆT + ĐĂNG)
+  // ===== POSTS (Step 6) — DUYỆT (kanban + checklist) + ĐĂNG (thủ công) =====
+  registerPostRoutes(app);
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

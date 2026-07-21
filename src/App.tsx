@@ -6,15 +6,8 @@ import Layout from "./components/Layout";
 import SignalsQueue from "./pages/SignalsQueue";
 import ScriptEditor from "./pages/ScriptEditor";
 import ImageStudio from "./pages/ImageStudio";
-
-// Placeholder cho các trang chưa xây (Step 5-6) — tránh 404 khi bấm nav.
-function ComingSoon({ label }: { label: string }) {
-  return (
-    <div className="text-center py-16 text-stone-400 text-sm">
-      {label} — đang được xây dựng (xem docs/PLAN.md).
-    </div>
-  );
-}
+import ApprovalQueue from "./pages/ApprovalQueue";
+import ReadyToPost from "./pages/ReadyToPost";
 
 function Gate() {
   const { isAuthenticated, authChecked } = useAppContext();
@@ -36,8 +29,8 @@ function Gate() {
         <Route path="/signals" element={<SignalsQueue />} />
         <Route path="/scripts" element={<ScriptEditor />} />
         <Route path="/image-studio" element={<ImageStudio />} />
-        <Route path="/approval" element={<ComingSoon label="Duyệt" />} />
-        <Route path="/ready" element={<ComingSoon label="Sẵn sàng đăng" />} />
+        <Route path="/approval" element={<ApprovalQueue />} />
+        <Route path="/ready" element={<ReadyToPost />} />
         <Route path="*" element={<Navigate to="/signals" replace />} />
       </Routes>
     </Layout>
