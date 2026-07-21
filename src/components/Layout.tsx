@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
-import { LogOut, Radar, PenLine, Image as ImageIcon, ClipboardCheck, Send } from "lucide-react";
+import { LogOut, Radar, PenLine, Image as ImageIcon, ClipboardCheck, Send, Users } from "lucide-react";
 import { useAppContext } from "../AppContext";
 
 const NAV_ITEMS = [
@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { to: "/image-studio", label: "Ảnh", icon: ImageIcon },
   { to: "/approval", label: "Duyệt", icon: ClipboardCheck },
   { to: "/ready", label: "Sẵn sàng đăng", icon: Send },
+  { to: "/characters", label: "Nhân vật", icon: Users },
 ];
 
 export default function Layout({ children }: { children: ReactNode }) {

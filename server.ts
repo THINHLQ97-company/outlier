@@ -4,6 +4,7 @@ import path from "path";
 import dotenv from "dotenv";
 import { runMigrations } from "./server/db/migrate";
 import { registerAuthRoutes } from "./server/routes/auth.routes";
+import { registerFileRoutes } from "./server/routes/files.routes";
 import { registerCharacterRoutes } from "./server/routes/characters.routes";
 import { registerSignalRoutes } from "./server/routes/signals.routes";
 import { registerScriptRoutes } from "./server/routes/scripts.routes";
@@ -34,7 +35,10 @@ async function startServer() {
   // ===== AUTH (Step 3) =====
   registerAuthRoutes(app);
 
-  // ===== CHARACTERS (Step 3) — read-only reference library (FR4.1) =====
+  // ===== FILES — serve ảnh reference nhân vật lưu ở storage nội bộ =====
+  registerFileRoutes(app);
+
+  // ===== CHARACTERS — thư viện nhân vật, CRUD đầy đủ (menu "Nhân vật") =====
   registerCharacterRoutes(app);
 
   // ===== SIGNALS (Step 4) — THU + LỌC =====

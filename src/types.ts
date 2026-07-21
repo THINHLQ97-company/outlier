@@ -67,15 +67,18 @@ export interface ScriptRow {
   createdAt: string;
 }
 
+export type CharacterKind = "nguoi" | "ai" | "linh_vat";
+
 export interface CharacterRow {
   id: string;
   name: string;
-  kind: "nguoi" | "ai" | "linh_vat";
+  kind: CharacterKind;
   promptDescription: string;
   personality: string | null;
   catchphrase: string | null;
   referenceImageUrl: string | null;
   createdAt: string;
+  updatedAt: string;
 }
 
 export type PostStatus = "draft" | "cho_duyet" | "sua_thoai" | "rot" | "san_sang_dang" | "da_dang";

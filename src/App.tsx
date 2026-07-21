@@ -8,6 +8,7 @@ import ScriptEditor from "./pages/ScriptEditor";
 import ImageStudio from "./pages/ImageStudio";
 import ApprovalQueue from "./pages/ApprovalQueue";
 import ReadyToPost from "./pages/ReadyToPost";
+import Characters from "./pages/Characters";
 
 function Gate() {
   const { isAuthenticated, authChecked } = useAppContext();
@@ -31,6 +32,7 @@ function Gate() {
         <Route path="/image-studio" element={<ImageStudio />} />
         <Route path="/approval" element={<ApprovalQueue />} />
         <Route path="/ready" element={<ReadyToPost />} />
+        <Route path="/characters" element={<Characters />} />
         <Route path="*" element={<Navigate to="/signals" replace />} />
       </Routes>
     </Layout>

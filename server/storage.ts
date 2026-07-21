@@ -1,0 +1,117 @@
+// Object storage abstraction — ported từ share-projects/marcow-crop/server/storage.ts
+// (pattern y hệt production). Phase iMVP chỉ dùng cho ảnh reference của nhân
+// vật ("Nhân vật" CRUD), ghi dưới UPLOAD_DIR (env, default /data/uploads).
+// StorageDriver cho phép đổi sang MinIO/S3 sau này mà không cần sửa call site.
+import fs from "fs/promises";
+import path from "path";
+import crypto from "crypto";
+
+export interface StorageDriver {
+  put(key: string, data: Buffer): Promise<void>;
+  get(key: string): Promise<Buffer>;
+  delete(key: string): Promise<void>;
+  exists(key: string): Promise<boolean>;
+  list(): Promise<{ key: string; size: number }[]>;
+}
+
+const UPLOAD_DIR = process.env.UPLOAD_DIR || "/data/uploads";
+
+// Namespace hợp lệ cho key — chỉ cần "characters" ở iMVP này, giữ "misc" làm
+// chỗ chứa mặc định phòng khi cần dùng storage cho việc khác sau này.
+export const KEY_PREFIXES = ["characters", "misc"] as const;
+export type KeyPrefix = (typeof KEY_PREFIXES)[number];
+
+class FsDriver implements StorageDriver {
+  constructor(private root: string) {}
+
+  // Resolve a key to an absolute path, refusing path traversal.
+  private resolve(key: string): string {
+    const safe = path.posix.normalize(key);
+    if (safe.startsWith("..") || safe.includes("../") || path.isAbsolute(safe)) {
+      throw new Error("Invalid storage key");
+    }
+    return path.join(this.root, safe);
+  }
+
+  async put(key: string, data: Buffer): Promise<void> {
+    const p = this.resolve(key);
+    await fs.mkdir(path.dirname(p), { recursive: true });
+    await fs.writeFile(p, data);
+  }
+  async get(key: string): Promise<Buffer> {
+    return fs.readFile(this.resolve(key));
+  }
+  async delete(key: string): Promise<void> {
+    await fs.rm(this.resolve(key), { force: true });
+  }
+  async exists(key: string): Promise<boolean> {
+    try {
+      await fs.access(this.resolve(key));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  async list(): Promise<{ key: string; size: number }[]> {
+    const out: { key: string; size: number }[] = [];
+    const walk = async (dir: string, base: string) => {
+      let entries: import("fs").Dirent[];
+      try {
+        entries = await fs.readdir(dir, { withFileTypes: true });
+      } catch {
+        return; // nothing uploaded yet — UPLOAD_DIR may not exist
+      }
+      for (const entry of entries) {
+        const rel = base ? `${base}/${entry.name}` : entry.name;
+        const abs = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          await walk(abs, rel);
+        } else if (entry.isFile()) {
+          const stat = await fs.stat(abs);
+          out.push({ key: rel, size: stat.size });
+        }
+      }
+    };
+    await walk(this.root, "");
+    return out;
+  }
+}
+
+export const storage: StorageDriver = new FsDriver(UPLOAD_DIR);
+
+// Build a fresh namespaced key, e.g. newKey("characters", "png").
+export function newKey(prefix: KeyPrefix, ext: string): string {
+  const clean = ext.replace(/[^a-z0-9]/gi, "").toLowerCase() || "bin";
+  return `${prefix}/${crypto.randomUUID()}.${clean}`;
+}
+
+// Map a file extension to a content-type for serving.
+const MIME: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+  gif: "image/gif",
+};
+export function contentTypeForKey(key: string): string {
+  const ext = key.split(".").pop()?.toLowerCase() || "";
+  return MIME[ext] || "application/octet-stream";
+}
+
+// Parse a data URL (data:image/png;base64,XXXX) → { ext, buffer }.
+export function parseDataUrl(dataUrl: string): { ext: string; buffer: Buffer } | null {
+  const m = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i.exec(dataUrl);
+  if (!m) return null;
+  const subtype = m[1].split("/")[1].toLowerCase();
+  const ext = subtype === "jpeg" ? "jpg" : subtype;
+  return { ext, buffer: Buffer.from(m[2], "base64") };
+}
+
+// "/api/files/<key>" → "<key>" nếu referenceImageUrl trỏ vào storage nội bộ,
+// null nếu đó là URL ngoài (không phải file do app này quản lý) — dùng khi
+// cần xoá ảnh cũ trước khi ghi ảnh mới (xem server/routes/characters.routes.ts).
+export function internalKeyFromUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const m = /^\/api\/files\/(.+)$/.exec(url);
+  return m ? m[1] : null;
+}

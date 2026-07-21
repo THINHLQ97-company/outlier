@@ -77,6 +77,8 @@ export type ScriptRow = typeof scripts.$inferSelect;
 export type NewScriptRow = typeof scripts.$inferInsert;
 
 // ===== characters — dàn nhân vật cố định (mục 2.4 v3.md), reference text =====
+// CRUD đầy đủ từ Step "menu Nhân vật" (xem CLAUDE.md) — vẫn seed sẵn dàn nhân
+// vật cố định (server/db/seed.ts) nhưng nay cho phép thêm/sửa/xoá qua UI.
 export const characters = pgTable("characters", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(), // Gàn, Gèn, Chị Bão, Sếp, GPT, Gemini, Grok, Claude, Copilot
@@ -84,8 +86,9 @@ export const characters = pgTable("characters", {
   promptDescription: text("prompt_description").notNull(), // dán nguyên vào tool tạo ảnh (mục 2.4)
   personality: text("personality"), // tính cách / vai kể chuyện, dùng khi build prompt DỊCH
   catchphrase: text("catchphrase"),
-  referenceImageUrl: text("reference_image_url"), // để trống — generate thật khi có API key
+  referenceImageUrl: text("reference_image_url"), // "/api/files/characters/<uuid>.png" (storage nội bộ) hoặc URL ngoài
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export type CharacterRow = typeof characters.$inferSelect;
