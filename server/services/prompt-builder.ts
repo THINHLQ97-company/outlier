@@ -12,7 +12,7 @@
 import { generateTextGemini } from "./gemini-direct";
 import type { RefImage } from "./social-proxy";
 
-const MAX_REFERENCE_IMAGES = 5;
+const MAX_REFERENCE_IMAGES = 6;
 
 export interface PromptCharacter {
   name: string;
@@ -109,10 +109,14 @@ export async function buildImageGenerationRequest(input: BuildImageInput): Promi
     layout: input.layoutInstruction,
     aspect_ratio: input.aspectRatio,
     scene,
-    characters: input.characters.map((c) => ({
+    // CHỈ đưa vào ảnh những nhân vật CÓ ảnh tham chiếu đính kèm (keptCharImgs) —
+    // để mọi nhân vật xuất hiện đều giữ ĐÚNG mặt/trang phục. KHÔNG thêm nhân vật
+    // "chỉ có chữ" (vẽ không giống → phá nhất quán). Caller giới hạn số nhân vật
+    // đúng bằng ngân sách ảnh, nên không bị rớt nhân vật ngoài ý muốn.
+    characters: keptCharImgs.map((c) => ({
       name: c.name,
       personality: c.personality || undefined,
-      keep_appearance_from_reference_image: charNumber.has(c) ? `#${charNumber.get(c)}` : undefined,
+      keep_appearance_from_reference_image: `#${charNumber.get(c)}`,
     })),
     meme_layout_reference: memeNumber ? `#${memeNumber}` : undefined,
     dialogue: input.dialogue.map((d) => ({ character: d.character, text: d.text })),

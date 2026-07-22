@@ -10,9 +10,12 @@ interface Props {
   characters: CharacterRow[];
   selectedIds: string[];
   onToggle: (id: string) => void;
+  // Khi đã đủ ngân sách ảnh: làm mờ nhân vật CHƯA chọn (vẫn bấm được để hiện
+  // thông báo, nhưng báo hiệu không nên thêm nữa).
+  disableUnselected?: boolean;
 }
 
-export default function CharacterPicker({ characters, selectedIds, onToggle }: Props) {
+export default function CharacterPicker({ characters, selectedIds, onToggle, disableUnselected }: Props) {
   if (characters.length === 0) {
     return <p className="text-xs text-stone-400">Chưa có nhân vật nào trong thư viện.</p>;
   }
@@ -20,6 +23,7 @@ export default function CharacterPicker({ characters, selectedIds, onToggle }: P
     <div className="flex flex-wrap gap-2">
       {characters.map((c) => {
         const selected = selectedIds.includes(c.id);
+        const dimmed = disableUnselected && !selected;
         return (
           <button
             key={c.id}
@@ -28,7 +32,7 @@ export default function CharacterPicker({ characters, selectedIds, onToggle }: P
             aria-pressed={selected}
             className={`flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-full border text-sm transition-colors ${
               selected ? "border-storm-500 bg-storm-50 text-storm-800" : "border-stone-200 bg-white text-stone-600 hover:border-storm-300"
-            }`}
+            } ${dimmed ? "opacity-40" : ""}`}
           >
             <span className="w-7 h-7 rounded-full overflow-hidden bg-stone-100 border border-stone-200 shrink-0 flex items-center justify-center">
               {c.referenceImageUrl ? (

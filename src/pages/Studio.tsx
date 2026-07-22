@@ -30,10 +30,11 @@ const ASPECT_RATIO_OPTIONS: { value: string; label: string }[] = [
   { value: "3:4", label: "3:4 (dọc)" },
   { value: "9:16", label: "9:16 (dọc cao)" },
 ];
-// Model chỉ nhận tối đa 5 ảnh tham chiếu; ảnh mẫu meme + ảnh phong cách chiếm
-// sẵn tối đa 2 chỗ nên còn lại ~3 chỗ cho nhân vật/ảnh tham chiếu người dùng
-// chọn (server tự cắt bớt nếu vượt, ưu tiên giữ phong cách + ảnh mẫu).
-const MAX_PEOPLE_REF = 3;
+// Chọn BAO NHIÊU nhân vật cũng được — mọi nhân vật đã chọn đều vào prompt (tên +
+// tính cách). Giới hạn chỉ ở số ẢNH MẪU đính cho Gemini: model ảnh chỉ giữ đúng
+// mặt được ~4 nhân vật đầu (khớp MAX_REFERENCE_IMAGES=6 ở prompt-builder trừ chỗ
+// cho ảnh meme + phong cách); nhân vật còn lại vẫn xuất hiện, vẽ theo mô tả.
+const MAX_PEOPLE_REF = 4;
 
 const KIND_BADGE: Record<AssetKind, string> = {
   meme_template: "bg-amber-50 text-amber-700",
@@ -131,9 +132,21 @@ export default function Studio() {
   }, []);
 
   const selectedCharacters = characters.filter((c) => selectedCharacterIds.includes(c.id));
-  const totalPeopleRefCount = selectedCharacterIds.length + selectedAssetIds.length;
+  // Nhân vật + ảnh tham chiếu (KHÔNG tính ảnh mẫu meme) dùng chung ngân sách ảnh
+  // của model. Mỗi cái đều PHẢI có ảnh mẫu để giữ đúng nét → chặn ở MAX_PEOPLE_REF.
+  const selectedRefAssetCount = selectedAssetIds.filter(
+    (id) => assets.find((a) => a.id === id)?.kind !== "meme_template"
+  ).length;
+  const refUsed = selectedCharacterIds.length + selectedRefAssetCount;
+  const refFull = refUsed >= MAX_PEOPLE_REF;
 
   function toggleCharacter(id: string) {
+    const isSelected = selectedCharacterIds.includes(id);
+    if (!isSelected && refFull) {
+      setError(`Tối đa ${MAX_PEOPLE_REF} nhân vật/ảnh tham chiếu trong 1 ảnh — bỏ bớt để chọn thêm.`);
+      return;
+    }
+    setError(null);
     setSelectedCharacterIds((prev) => {
       const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
       // Bỏ chọn nhân vật → xoá luôn dòng thoại đang gán cho nhân vật đó.
@@ -146,6 +159,13 @@ export default function Studio() {
   }
 
   function toggleAsset(id: string) {
+    const isSelected = selectedAssetIds.includes(id);
+    const isMeme = assets.find((a) => a.id === id)?.kind === "meme_template";
+    if (!isSelected && !isMeme && refFull) {
+      setError(`Tối đa ${MAX_PEOPLE_REF} nhân vật/ảnh tham chiếu trong 1 ảnh — bỏ bớt để chọn thêm.`);
+      return;
+    }
+    setError(null);
     setSelectedAssetIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
@@ -333,7 +353,12 @@ export default function Studio() {
 
             <div>
               <p className="text-xs font-medium text-stone-600 mb-1.5">Chọn nhân vật (tuỳ chọn)</p>
-              <CharacterPicker characters={characters} selectedIds={selectedCharacterIds} onToggle={toggleCharacter} />
+              <CharacterPicker
+                characters={characters}
+                selectedIds={selectedCharacterIds}
+                onToggle={toggleCharacter}
+                disableUnselected={refFull}
+              />
             </div>
 
             <div>
@@ -438,12 +463,11 @@ export default function Studio() {
                   })}
                 </div>
               )}
-              {totalPeopleRefCount > MAX_PEOPLE_REF && (
-                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 mt-2 flex items-center gap-1.5">
-                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                  Đang chọn {totalPeopleRefCount} ảnh nhân vật/tham chiếu — hệ thống chỉ giữ được khoảng {MAX_PEOPLE_REF} ảnh đầu, ưu tiên phong cách + ảnh mẫu meme.
-                </p>
-              )}
+              <p className="text-[11px] text-stone-400 mt-2 leading-snug">
+                Đang chọn {refUsed}/{MAX_PEOPLE_REF} nhân vật &amp; ảnh tham chiếu. Mỗi cái đều được đính ảnh mẫu để giữ đúng nét —
+                model ảnh chỉ giữ được đúng chừng đó (ảnh mẫu meme + phong cách tính riêng).
+                {refFull && <span className="text-amber-700 font-medium"> Đã đủ — bỏ bớt để chọn cái khác.</span>}
+              </p>
               {panelLayout === "auto" && !selectedAssetIds.some((id) => assets.find((a) => a.id === id)?.kind === "meme_template") && (
                 <p className="text-[11px] text-amber-700 mt-2">
                   Bố cục "Theo ảnh mẫu" cần chọn 1 ảnh mẫu meme ở trên (huy hiệu "Ảnh mẫu meme").
@@ -674,6 +698,8 @@ export default function Studio() {
               )}
               Tạo ảnh
             </button>
+
+            {generating && <GenerationProgress />}
           </div>
         </div>
       )}
@@ -776,6 +802,52 @@ export default function Studio() {
           onClose={() => setScenarios(null)}
         />
       )}
+    </div>
+  );
+}
+
+// Tiến trình khi tạo ảnh — hệ thống làm nhiều bước server-side trong 1 lượt
+// (dựng prompt JSON → dịch mô tả → Gemini vẽ 2 biến thể → lưu). Panel này báo
+// bước đang chạy + thời gian trôi qua để người dùng biết hệ thống đang làm gì
+// (không phải treo). Bước cuối quay cho tới khi có kết quả.
+function GenerationProgress() {
+  const [elapsed, setElapsed] = useState(0);
+  const [step, setStep] = useState(0);
+  const STEPS = [
+    "Dựng kịch bản (bối cảnh + nhân vật + lời thoại → prompt) và gom ảnh tham chiếu",
+    "Gemini vẽ 2 biến thể ảnh (thường mất 15–40 giây)",
+  ];
+  useEffect(() => {
+    const t0 = Date.now();
+    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 1000);
+    const toStep2 = setTimeout(() => setStep(1), 3000);
+    return () => {
+      clearInterval(timer);
+      clearTimeout(toStep2);
+    };
+  }, []);
+  return (
+    <div className="mt-3 bg-storm-50 border border-storm-200 rounded-lg p-3 flex flex-col gap-2">
+      <div className="flex items-center justify-between text-xs font-medium text-storm-800">
+        <span>Đang tạo ảnh...</span>
+        <span className="text-storm-500 tabular-nums">{elapsed}s</span>
+      </div>
+      {STEPS.map((label, i) => {
+        const done = i < step;
+        const active = i === step;
+        return (
+          <div key={i} className="flex items-start gap-2 text-xs">
+            {done ? (
+              <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0 mt-px" aria-hidden="true" />
+            ) : active ? (
+              <Loader2 className="w-4 h-4 text-storm-600 shrink-0 mt-px animate-spin" aria-hidden="true" />
+            ) : (
+              <span className="w-4 h-4 rounded-full border border-stone-300 shrink-0 mt-px" aria-hidden="true" />
+            )}
+            <span className={done ? "text-stone-400 line-through" : active ? "text-stone-700" : "text-stone-400"}>{label}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
