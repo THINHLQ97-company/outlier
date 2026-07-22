@@ -3,9 +3,22 @@
 import type { Express } from "express";
 import { and, desc, eq, or, sql } from "drizzle-orm";
 import { getDb, isDbConfigured } from "../db/client";
-import { posts, scripts, assets } from "../db/schema";
+import { posts, scripts, assets, users } from "../db/schema";
 import { requireAuth, getAuthUser } from "../auth-mw";
 import { storage, newKey, internalKeyFromUrl } from "../storage";
+
+// Dọn mọi file ảnh nội bộ của 1 post (biến thể + ảnh đã chọn + ảnh cuối).
+async function deletePostFiles(post: any) {
+  const urls = [
+    ...((post.imageVariants || []) as any[]).map((v) => v?.url),
+    post.selectedImageUrl,
+    post.finalImageUrl,
+  ];
+  for (const url of urls) {
+    const key = internalKeyFromUrl(url);
+    if (key) await storage.delete(key).catch(() => {});
+  }
+}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const KIND_VALUES = ["meme_template", "reference"] as const;
@@ -101,6 +114,33 @@ export function registerGalleryRoutes(app: Express) {
     } catch (e: any) {
       console.error("save-as-asset:", e?.message || e);
       res.status(500).json({ error: "Lưu ảnh thành asset thất bại." });
+    }
+  });
+
+  // DELETE /api/gallery/:postId — xoá 1 ảnh khỏi thư viện. Chỉ chủ sở hữu (owner)
+  // hoặc admin. Xoá cả file ảnh nội bộ để không rác storage.
+  app.delete("/api/gallery/:postId", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const me = getAuthUser(req)!;
+    const { postId } = req.params;
+    if (!UUID_RE.test(postId)) return res.status(400).json({ error: "ID không hợp lệ." });
+    try {
+      const db = getDb();
+      const [post] = await db.select().from(posts).where(eq(posts.id, postId));
+      if (!post) return res.status(404).json({ error: "Không tìm thấy ảnh." });
+
+      const [user] = await db.select().from(users).where(eq(users.username, me));
+      const isAdmin = user?.role === "admin" && user?.isActive;
+      if (post.owner !== me && !isAdmin) {
+        return res.status(403).json({ error: "Chỉ người tạo (hoặc quản trị) mới xoá được ảnh này." });
+      }
+
+      await db.delete(posts).where(eq(posts.id, postId));
+      await deletePostFiles(post);
+      res.json({ ok: true });
+    } catch (e: any) {
+      console.error("delete gallery:", e?.message || e);
+      res.status(500).json({ error: "Xoá ảnh thất bại." });
     }
   });
 }

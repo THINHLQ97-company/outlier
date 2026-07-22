@@ -17,7 +17,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
-import { getGallery, savePostAsAsset } from "../services/posts";
+import { getGallery, savePostAsAsset, deleteGalleryPost } from "../services/posts";
 import {
   listCharacters,
   createCharacter,
@@ -182,12 +182,30 @@ function GalleryTab() {
         </div>
       )}
 
-      {detail && <GalleryDetailModal post={detail} onClose={() => setDetail(null)} />}
+      {detail && (
+        <GalleryDetailModal
+          post={detail}
+          onClose={() => setDetail(null)}
+          onDeleted={(id) => {
+            setItems((prev) => prev.filter((p) => p.id !== id));
+            setDetail(null);
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function GalleryDetailModal({ post, onClose }: { post: GalleryPost; onClose: () => void }) {
+function GalleryDetailModal({
+  post,
+  onClose,
+  onDeleted,
+}: {
+  post: GalleryPost;
+  onClose: () => void;
+  onDeleted: (id: string) => void;
+}) {
+  const { isAdmin } = useAppContext();
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [saveErr, setSaveErr] = useState<string | null>(null);
@@ -195,6 +213,22 @@ function GalleryDetailModal({ post, onClose }: { post: GalleryPost; onClose: () 
   const [assetName, setAssetName] = useState(post.caption?.slice(0, 60) || "Ảnh từ thư viện");
   const [assetKind, setAssetKind] = useState<AssetKind>("reference");
   const [assetShared, setAssetShared] = useState(post.isShared);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const canDelete = post.isMine || isAdmin;
+
+  async function handleDelete() {
+    setDeleting(true);
+    setSaveErr(null);
+    try {
+      await deleteGalleryPost(post.id);
+      onDeleted(post.id);
+    } catch (e: any) {
+      setSaveErr(e?.message || "Xoá ảnh thất bại.");
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  }
 
   const url = imageDisplayUrl(post.finalImageUrl || post.selectedImageUrl || post.imageVariants[0]?.url);
   const canEdit = post.status === "draft" || post.status === "sua_thoai";
@@ -273,7 +307,26 @@ function GalleryDetailModal({ post, onClose }: { post: GalleryPost; onClose: () 
                 <ExternalLink className="w-4 h-4" aria-hidden="true" /> Mở lại để sửa
               </Link>
             )}
+            {canDelete && (
+              <button
+                onClick={() => setConfirmDelete(true)}
+                disabled={deleting}
+                className="flex items-center gap-1.5 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 px-3 py-2 rounded-lg disabled:opacity-50 ml-auto"
+              >
+                {deleting ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Trash2 className="w-4 h-4" aria-hidden="true" />}
+                Xoá ảnh
+              </button>
+            )}
           </div>
+
+          <ConfirmDialog
+            isOpen={confirmDelete}
+            title="Xoá ảnh khỏi thư viện?"
+            message="Ảnh này sẽ bị xoá vĩnh viễn, không khôi phục được."
+            confirmText="Xoá"
+            onConfirm={handleDelete}
+            onCancel={() => setConfirmDelete(false)}
+          />
 
           {showSaveForm && (
             <div className="flex flex-col gap-2 bg-stone-50 border border-stone-200 rounded-lg p-3">

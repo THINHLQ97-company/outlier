@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { RefreshCw, Plus, Loader2, X, ExternalLink, AlertTriangle } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { RefreshCw, Plus, Loader2, X, ExternalLink, AlertTriangle, Wand2 } from "lucide-react";
 import { listSignals, syncSignals, createManualSignal } from "../services/signals";
 import type { Signal } from "../types";
 import { AXES, type AxisKey } from "../../shared/engine-data";
@@ -19,6 +20,7 @@ function fmtDate(iso: string) {
 // tắt, nguồn, ngày) + thêm ý tưởng thủ công + quét tín hiệu mới. Đã bỏ hẳn
 // phần chấm điểm/rubric để trang này dễ dùng, không cần biết thuật ngữ nội bộ.
 export default function SignalsQueue() {
+  const navigate = useNavigate();
   const [signals, setSignals] = useState<Signal[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -119,13 +121,22 @@ export default function SignalsQueue() {
               </div>
               <h3 className="text-sm font-semibold text-stone-800">{s.title}</h3>
               <p className="text-sm text-stone-500 mt-0.5">{s.rawSummary}</p>
-              <div className="flex items-center gap-3 mt-1 text-[11px] text-stone-400">
-                <span>{fmtDate(s.publishedDate)}</span>
-                {s.sourceUrl && (
-                  <a href={s.sourceUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-storm-600 hover:underline">
-                    Nguồn <ExternalLink className="w-3 h-3" aria-hidden="true" />
-                  </a>
-                )}
+              <div className="flex items-center justify-between gap-3 mt-1">
+                <div className="flex items-center gap-3 text-[11px] text-stone-400">
+                  <span>{fmtDate(s.publishedDate)}</span>
+                  {s.sourceUrl && (
+                    <a href={s.sourceUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-storm-600 hover:underline">
+                      Nguồn <ExternalLink className="w-3 h-3" aria-hidden="true" />
+                    </a>
+                  )}
+                </div>
+                <button
+                  onClick={() => navigate(`/studio?scene=${encodeURIComponent(`${s.title}. ${s.rawSummary}`)}`)}
+                  className="flex items-center gap-1.5 text-xs font-medium text-white bg-storm-600 hover:bg-storm-700 px-2.5 py-1.5 rounded-lg shrink-0"
+                  title="Mở trang Sáng tạo với mô tả bối cảnh điền sẵn từ tín hiệu này"
+                >
+                  <Wand2 className="w-3.5 h-3.5" aria-hidden="true" /> Đưa sang Sáng tạo
+                </button>
               </div>
             </div>
           ))}

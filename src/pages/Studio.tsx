@@ -9,13 +9,14 @@ import {
   Check,
   Plus,
   X,
+  Trash2,
   CheckCircle2,
   Sparkles,
 } from "lucide-react";
 import { studioGenerate } from "../services/studio";
 import { regenerateImages, selectImage, saveOverlay, getPost } from "../services/posts";
 import { listCharacters, fileToDataUrl } from "../services/characters";
-import { listAssets, createAsset } from "../services/assets";
+import { listAssets, createAsset, deleteAsset } from "../services/assets";
 import { listStyles } from "../services/styles";
 import { imageDisplayUrl } from "../services/http";
 import type { PostRow, CharacterRow, AssetRow, AssetKind, StyleRow, DialogueLine } from "../types";
@@ -83,6 +84,13 @@ export default function Studio() {
   // Mở lại 1 bài đã có (link "Mở lại để sửa" từ Thư viện, ?postId=<id>) — bỏ
   // qua form chọn nhân vật/mô tả, đi thẳng vào bước chọn ảnh/chỉnh chữ (post đã
   // có sẵn imageVariants). Chỉ áp dụng cho bài đang ở khâu VẼ (draft/sua_thoai).
+  // Điền sẵn mô tả bối cảnh khi mở từ Tín hiệu ("Đưa sang Sáng tạo" → ?scene=...).
+  useEffect(() => {
+    const scene = searchParams.get("scene");
+    if (scene && !searchParams.get("postId")) setPromptText(scene);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     const postId = searchParams.get("postId");
     if (!postId) return;
@@ -139,6 +147,21 @@ export default function Studio() {
 
   function toggleAsset(id: string) {
     setSelectedAssetIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  const [deletingAssetId, setDeletingAssetId] = useState<string | null>(null);
+  async function handleDeleteAsset(id: string) {
+    setDeletingAssetId(id);
+    setError(null);
+    try {
+      await deleteAsset(id);
+      setAssets((prev) => prev.filter((a) => a.id !== id));
+      setSelectedAssetIds((prev) => prev.filter((x) => x !== id));
+    } catch (e: any) {
+      setError(e?.message || "Xoá ảnh tham chiếu thất bại.");
+    } finally {
+      setDeletingAssetId(null);
+    }
   }
 
   async function handleUploadAsset(file: File) {
@@ -305,7 +328,7 @@ export default function Studio() {
                   }}
                 />
               </div>
-              <label className="flex items-center gap-1.5 text-xs text-stone-500 mb-2">
+              <label className="flex items-center gap-1.5 text-xs text-stone-500 mb-1">
                 <input
                   type="checkbox"
                   checked={uploadShared}
@@ -314,6 +337,10 @@ export default function Studio() {
                 />
                 Ảnh tải lên mới chia sẻ cho cả nhóm
               </label>
+              <p className="text-[11px] text-stone-400 mb-2 leading-snug">
+                Ảnh tham chiếu bạn tải lên được <b>lưu lại để tái dùng</b> cho các lần tạo ảnh sau (mới nhất xếp trước). Bấm{" "}
+                <Trash2 className="w-3 h-3 inline align-text-bottom" aria-hidden="true" /> để xoá ảnh không cần nữa.
+              </p>
               {assetsLoading ? (
                 <div className="flex items-center gap-2 text-stone-400 text-xs py-2">
                   <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> Đang tải kho ảnh...
@@ -325,31 +352,51 @@ export default function Studio() {
                   {assets.map((a) => {
                     const selected = selectedAssetIds.includes(a.id);
                     return (
-                      <button
+                      <div
                         key={a.id}
-                        type="button"
-                        onClick={() => toggleAsset(a.id)}
-                        aria-pressed={selected}
-                        title={`${a.name} — ${KIND_LABEL[a.kind]}${a.kind === "meme_template" ? " (đính làm ảnh mẫu bố cục)" : ""}`}
-                        className={`relative rounded-lg overflow-hidden border-2 text-left transition-colors ${
+                        className={`relative rounded-lg overflow-hidden border-2 transition-colors ${
                           selected ? "border-storm-500" : "border-transparent hover:border-storm-200"
                         }`}
                       >
-                        <img
-                          src={imageDisplayUrl(a.imageUrl) || undefined}
-                          alt={a.name}
-                          className="w-full h-20 object-cover bg-stone-100"
-                        />
-                        {selected && (
-                          <span className="absolute top-1 right-1 bg-storm-600 text-white rounded-full p-0.5">
-                            <Check className="w-3 h-3" aria-hidden="true" />
-                          </span>
+                        <button
+                          type="button"
+                          onClick={() => toggleAsset(a.id)}
+                          aria-pressed={selected}
+                          title={`${a.name} — ${KIND_LABEL[a.kind]}${a.kind === "meme_template" ? " (đính làm ảnh mẫu bố cục)" : ""}`}
+                          className="block w-full text-left"
+                        >
+                          <img
+                            src={imageDisplayUrl(a.imageUrl) || undefined}
+                            alt={a.name}
+                            className="w-full h-20 object-cover bg-stone-100"
+                          />
+                          {selected && (
+                            <span className="absolute top-1 right-1 bg-storm-600 text-white rounded-full p-0.5">
+                              <Check className="w-3 h-3" aria-hidden="true" />
+                            </span>
+                          )}
+                          <div className="absolute inset-x-0 bottom-0 bg-black/55 px-1.5 py-1 flex items-center justify-between gap-1">
+                            <span className="text-white text-[10px] truncate">{a.name}</span>
+                            <span className={`text-[9px] font-medium px-1 rounded ${KIND_BADGE[a.kind]}`}>{KIND_LABEL[a.kind]}</span>
+                          </div>
+                        </button>
+                        {a.isMine && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteAsset(a.id)}
+                            disabled={deletingAssetId === a.id}
+                            aria-label={`Xoá ảnh tham chiếu ${a.name}`}
+                            title="Xoá ảnh tham chiếu này"
+                            className="absolute top-1 left-1 bg-black/55 hover:bg-red-600 text-white rounded-full p-1 transition-colors disabled:opacity-50"
+                          >
+                            {deletingAssetId === a.id ? (
+                              <Loader2 className="w-3 h-3 animate-spin" aria-hidden="true" />
+                            ) : (
+                              <Trash2 className="w-3 h-3" aria-hidden="true" />
+                            )}
+                          </button>
                         )}
-                        <div className="absolute inset-x-0 bottom-0 bg-black/55 px-1.5 py-1 flex items-center justify-between gap-1">
-                          <span className="text-white text-[10px] truncate">{a.name}</span>
-                          <span className={`text-[9px] font-medium px-1 rounded ${KIND_BADGE[a.kind]}`}>{KIND_LABEL[a.kind]}</span>
-                        </div>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>

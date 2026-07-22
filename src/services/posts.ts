@@ -77,3 +77,9 @@ export async function savePostAsAsset(
   if (!res.ok) return asError(res, "Lưu ảnh thành asset thất bại.");
   return res.json();
 }
+
+// Xoá 1 ảnh khỏi thư viện (chỉ người tạo hoặc admin).
+export async function deleteGalleryPost(postId: string): Promise<void> {
+  const res = await fetch(`/api/gallery/${postId}`, { method: "DELETE", headers: authHeaders(false) });
+  if (!res.ok) return asError(res, "Xoá ảnh thất bại.");
+}
