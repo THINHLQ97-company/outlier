@@ -106,10 +106,21 @@ export interface TextBox {
 
 export type PostOrigin = "pipeline" | "studio";
 
+// Lời thoại gắn với nhân vật (Studio) — model tự vẽ bong bóng khi có thoại.
+export interface DialogueLine {
+  character: string;
+  text: string;
+}
+
 export interface StudioParams {
   characterIds: string[];
   assetIds: string[];
-  truc: AxisKey | null;
+  styleId?: string | null; // phong cách đã chọn (thư viện styles)
+  dialogue?: DialogueLine[]; // lời thoại đã nhập
+  panelLayout?: string; // key PANEL_LAYOUTS (1/2/4/auto)
+  // Deprecated: Studio không còn sinh caption theo trục (posts.truc = null). Giữ
+  // optional để không phá bài Studio cũ đã lưu studioParams.truc.
+  truc?: AxisKey | null;
 }
 
 export interface OverlayConfig {
@@ -162,6 +173,21 @@ export interface AssetRow {
   createdAt: string;
   updatedAt: string;
   isMine: boolean; // server đính cờ: asset này thuộc user hiện tại (mới được sửa/xoá)
+}
+
+// ===== styles — thư viện phong cách vẽ (ảnh tham chiếu + mô tả JSON) =====
+export interface StyleRow {
+  id: string;
+  owner: string;
+  isShared: boolean;
+  isDefault: boolean;
+  name: string;
+  styleJson: Record<string, any>;
+  referenceImageUrl: string | null; // "/api/files/styles/<key>" (ảnh minh hoạ)
+  imageMissing?: boolean; // URL có nhưng file storage đã mất → cần sinh lại
+  isMine?: boolean; // server đính cờ: phong cách này thuộc user hiện tại
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ===== users — quản lý tài khoản (admin) =====

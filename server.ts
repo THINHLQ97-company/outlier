@@ -13,6 +13,7 @@ import { registerPostRoutes } from "./server/routes/posts.routes";
 import { registerUserRoutes } from "./server/routes/users.routes";
 import { registerAssetRoutes } from "./server/routes/assets.routes";
 import { registerStudioRoutes } from "./server/routes/studio.routes";
+import { registerStyleRoutes } from "./server/routes/styles.routes";
 import { registerGalleryRoutes } from "./server/routes/gallery.routes";
 
 dotenv.config();
@@ -65,6 +66,9 @@ async function startServer() {
 
   // ===== STUDIO — Vẽ tự do (sinh ảnh trực tiếp, không qua kịch bản) =====
   registerStudioRoutes(app);
+
+  // ===== STYLES — thư viện phong cách vẽ (ảnh tham chiếu + mô tả JSON) =====
+  registerStyleRoutes(app);
 
   // ===== GALLERY — thư viện ảnh + lưu ảnh thành asset =====
   registerGalleryRoutes(app);

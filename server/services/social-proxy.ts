@@ -12,7 +12,7 @@
 // Khi thiếu GEMINI_API_KEY hoặc lệnh gọi Gemini thất bại → fallback sang kịch
 // bản mẫu / ảnh placeholder tự sinh (không phụ thuộc mạng ngoài), đánh dấu
 // `isDemo: true`, log warning rõ ràng — KHÔNG throw, không crash toàn app.
-import { buildScriptPrompt, BASE_RENDER, FORMATS, type AxisKey } from "../../shared/engine-data";
+import { buildScriptPrompt, FORMATS, type AxisKey } from "../../shared/engine-data";
 import { generateTextGemini, generateImageGemini } from "./gemini-direct";
 
 export interface GeneratedScriptVariant {
@@ -77,48 +77,6 @@ export async function generateScriptVariants(input: {
   }
 }
 
-// Dịch mô tả khung (tiếng Việt) + phong cách + dàn nhân vật xuất hiện thành 1
-// đoạn prompt ẢNH tiếng Anh có cấu trúc — đòn bẩy chất lượng lớn nhất cho VẼ
-// vì model ảnh (gemini-3.1-flash-image-preview) hiểu prompt tiếng Anh tốt hơn
-// nhiều so với tiếng Việt trực tiếp. Pattern tham khảo tinh thần
-// generateImagePromptsFromJson (share-projects/marcow-crop/src/services/gemini.ts)
-// — yêu cầu Gemini trả JSON { "prompt": "..." } (vì generateTextGemini luôn ép
-// responseMimeType=application/json), rồi lấy field đó ra làm prompt ảnh thô.
-// Lỗi bất kỳ (Gemini fail, JSON không parse được, field rỗng) → trả null, KHÔNG
-// throw — caller (generateImageVariants) fallback về prompt tiếng Việt gốc.
-async function translateSceneToImagePrompt(input: {
-  sceneText: string;
-  characterNames: string[];
-  layoutInstruction: string;
-}): Promise<string | null> {
-  const prompt = `Bạn là chuyên gia Prompt Engineering cho công cụ tạo ảnh AI (text-to-image). Chuyển mô tả cảnh/truyện tranh (tiếng Việt) dưới đây thành MỘT đoạn prompt ẢNH tiếng Anh chuyên ngành minh hoạ (bối cảnh, hành động, biểu cảm, vị trí + bố cục từng khung).
-
-BỐ CỤC KHUNG (BẮT BUỘC tuân theo — quyết định SỐ KHUNG):
-${input.layoutInstruction}
-
-NHÂN VẬT XUẤT HIỆN: ${input.characterNames.join(", ") || "(theo mô tả)"}
-
-MÔ TẢ CẢNH (tiếng Việt):
-${input.sceneText}
-
-YÊU CẦU:
-- Dịch sang tiếng Anh minh hoạ chuyên ngành, mô tả RÕ từng khung theo đúng bố cục ở trên (nếu 4 khung thì mô tả cả 4 khung + tiến trình câu chuyện qua từng khung).
-- Nếu bố cục yêu cầu bám theo ảnh meme mẫu → mô tả tiến trình từng khung khớp với meme đó.
-- TUYỆT ĐỐI KHÔNG đưa chữ/thoại/nhãn cần hiển thị lên ảnh (noText — chữ thêm ở hậu kỳ).
-- Không giải thích, không markdown.
-
-Chỉ trả về DUY NHẤT JSON dạng { "prompt": "<đoạn prompt ảnh tiếng Anh>" }.`;
-
-  try {
-    const text = await generateTextGemini(prompt);
-    const parsed = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
-    const value = typeof parsed?.prompt === "string" ? parsed.prompt.trim() : "";
-    return value || null;
-  } catch {
-    return null;
-  }
-}
-
 export interface GenerateImageResult {
   images: { url: string; source: "social" | "placeholder" }[];
   isDemo: boolean;
@@ -143,74 +101,39 @@ export interface RefImage {
   data: string;
 }
 
+// VẼ — sinh 2 biến thể ảnh từ MỘT prompt JSON có cấu trúc (dựng sẵn ở
+// server/services/prompt-builder.ts) + ảnh tham chiếu đã đánh số #1..#N. Không
+// còn tự dịch/tự ghép prompt ở đây — mọi logic prompt nằm ở prompt-builder để
+// dùng chung cho Studio (và pipeline regenerate). Thiếu GEMINI_API_KEY hoặc gọi
+// Gemini lỗi → fallback 2 ảnh placeholder (demoLabel), log warning, KHÔNG throw.
 export async function generateImageVariants(input: {
-  sceneText: string; // mô tả cảnh (tiếng Việt)
-  characterNames: string[];
-  characterPrompts?: string; // mô tả text các nhân vật (khi không có ảnh ref)
-  stylePrompt: string; // phong cách vẽ đã chọn (ART_STYLES[].prompt)
-  layoutInstruction: string; // bố cục/số khung đã chọn (PANEL_LAYOUTS[].instruction)
+  promptText: string;
+  referenceImages?: RefImage[];
   aspectRatio?: string;
-  // PHÂN VAI ảnh tham chiếu — model xử lý khác nhau:
-  //  characterRefs: "giữ ĐÚNG khuôn mặt/trang phục/màu" (không vẽ lại thiết kế).
-  //  templateRefs : ảnh meme mẫu → "copy BỐ CỤC/số khung/tiến trình" (vẽ lại theo style ta).
-  characterRefs?: RefImage[];
-  templateRefs?: RefImage[];
+  demoLabel?: string;
 }): Promise<GenerateImageResult> {
-  const charRefs = input.characterRefs || [];
-  const tmplRefs = input.templateRefs || [];
+  const label = input.demoLabel || "Ảnh minh hoạ";
 
   if (!process.env.GEMINI_API_KEY) {
     const warning = "[social-proxy] GEMINI_API_KEY chưa cấu hình — dùng ảnh placeholder (demo).";
     console.warn(warning);
     return {
       images: [
-        { url: placeholderImage(input.characterNames.join(", "), "#D97757"), source: "placeholder" },
-        { url: placeholderImage(input.characterNames.join(", "), "#C66545"), source: "placeholder" },
+        { url: placeholderImage(label, "#D97757"), source: "placeholder" },
+        { url: placeholderImage(label, "#C66545"), source: "placeholder" },
       ],
       isDemo: true,
       warning,
     };
   }
 
-  // Ảnh nhân vật ĐỨNG TRƯỚC, ảnh meme mẫu đứng sau; cắt tối đa 4 (model bão hoà).
-  const refs: RefImage[] = [...charRefs, ...tmplRefs].slice(0, 4);
-
-  // Dịch cảnh VN → EN, BÁM theo bố cục đã chọn (quyết định số khung). Lỗi → fallback VN.
-  const translated = await translateSceneToImagePrompt({
-    sceneText: input.sceneText,
-    characterNames: input.characterNames,
-    layoutInstruction: input.layoutInstruction,
-  });
-  const scene = translated || input.sceneText;
-  if (!translated) console.warn("[social-proxy] Dịch prompt ảnh VN→EN thất bại — dùng mô tả tiếng Việt gốc (fallback).");
-
-  // Hướng dẫn vai từng loại ảnh tham chiếu (điểm mấu chốt cho đồng bộ nhân vật +
-  // bám bố cục meme).
-  const charNote = charRefs.length
-    ? `CHARACTER CONSISTENCY (critical): the character(s) in EVERY panel must look IDENTICAL to the provided character reference image(s) — same face, hairstyle, costume, colors and body proportions. Do NOT redesign or restyle the characters.`
-    : input.characterPrompts
-      ? `Characters: ${input.characterPrompts}`
-      : "";
-  const tmplNote = tmplRefs.length
-    ? `LAYOUT TEMPLATE: one provided reference image is a MEME TEMPLATE. Copy its panel layout, number of panels, framing and visual progression EXACTLY — but redraw it in the described art style with our character(s), not the original ones.`
-    : "";
-
-  const prompt = [
-    input.stylePrompt + ".",
-    input.layoutInstruction,
-    `SCENE: ${scene}`,
-    charNote,
-    tmplNote,
-    BASE_RENDER,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+  const refs = input.referenceImages && input.referenceImages.length ? input.referenceImages : undefined;
 
   try {
     // 2 biến thể độc lập từ cùng 1 prompt (FR4.2) — gọi song song.
     const results = await Promise.all(
       [0, 1].map(async () => ({
-        url: await generateImageGemini(prompt, refs.length ? refs : undefined, input.aspectRatio || "1:1"),
+        url: await generateImageGemini(input.promptText, refs, input.aspectRatio || "1:1"),
         source: "social" as const, // "ảnh Gemini thật" (khác "placeholder")
       }))
     );
@@ -220,8 +143,8 @@ export async function generateImageVariants(input: {
     console.warn(warning);
     return {
       images: [
-        { url: placeholderImage(input.characterNames.join(", "), "#D97757"), source: "placeholder" },
-        { url: placeholderImage(input.characterNames.join(", "), "#C66545"), source: "placeholder" },
+        { url: placeholderImage(label, "#D97757"), source: "placeholder" },
+        { url: placeholderImage(label, "#C66545"), source: "placeholder" },
       ],
       isDemo: true,
       warning,

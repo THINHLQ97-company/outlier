@@ -15,7 +15,7 @@
 import dotenv from "dotenv";
 import { eq } from "drizzle-orm";
 import { getDb, getPool, isDbConfigured } from "./client";
-import { characters, rubricVersions, signals, users } from "./schema";
+import { characters, rubricVersions, signals, styles, users } from "./schema";
 import { hashPassword } from "../password";
 import { CHARACTERS, RUBRIC_DEFAULT_WEIGHTS, RUBRIC_DEFAULT_THRESHOLDS } from "../../shared/engine-data";
 
@@ -180,6 +180,76 @@ async function seedDemoSignals() {
   console.log(`[seed] signals: tạo ${demo.length} tín hiệu demo OK (dùng khi chưa có MCP token thật).`);
 }
 
+// Phong cách mặc định (seed) — mỗi phong cách = styleJson mô tả cấu trúc, chưa
+// có ảnh minh hoạ (referenceImageUrl=null; sinh sau bằng /generate-reference).
+// NON-DESTRUCTIVE: chỉ INSERT khi CHƯA có phong cách isDefault nào.
+const DEFAULT_STYLES: { name: string; styleJson: Record<string, string> }[] = [
+  {
+    name: "Comic hành động",
+    styleJson: {
+      medium: "western comic book art blended with manga action energy",
+      linework: "bold heavy black inks, dynamic tapered outlines",
+      shading: "cross-hatching and halftone dots, high contrast",
+      color_palette: "vivid saturated colors, strong primary accents",
+      effects: "action speed lines, impact bursts, onomatopoeia shapes",
+      mood: "dramatic, high-energy, cinematic lighting",
+    },
+  },
+  {
+    name: "Màu nước webcomic",
+    styleJson: {
+      medium: "soft watercolor webcomic",
+      linework: "clean thin ink outlines",
+      shading: "gentle watercolor washes, minimal gradients",
+      color_palette: "warm muted tones on off-white paper",
+      effects: "paper texture, soft edges",
+      mood: "warm, friendly, slice-of-life",
+    },
+  },
+  {
+    name: "Hoạt hình phẳng",
+    styleJson: {
+      medium: "flat vector cartoon",
+      linework: "bold clean uniform outlines",
+      shading: "flat solid color fills, minimal shading",
+      color_palette: "bright solid colors, modern sticker look",
+      effects: "simple geometric shapes",
+      mood: "playful, modern, clean",
+    },
+  },
+  {
+    name: "Manga đen trắng",
+    styleJson: {
+      medium: "black and white manga",
+      linework: "expressive clean linework, varied line weight",
+      shading: "screentone dot shading, hatching",
+      color_palette: "monochrome black and white, high contrast",
+      effects: "speed lines, emotive manga effects",
+      mood: "expressive, dramatic, inky",
+    },
+  },
+];
+
+async function seedStyles() {
+  const db = getDb();
+  const existingDefault = await db.select().from(styles).where(eq(styles.isDefault, true));
+  if (existingDefault.length > 0) {
+    console.log(`[seed] styles: đã có ${existingDefault.length} phong cách mặc định, bỏ qua.`);
+    return;
+  }
+  for (const s of DEFAULT_STYLES) {
+    await db.insert(styles).values({
+      owner: "system",
+      isShared: true,
+      isDefault: true,
+      name: s.name,
+      styleJson: s.styleJson,
+      referenceImageUrl: null,
+    });
+  }
+  console.log(`[seed] styles: tạo ${DEFAULT_STYLES.length} phong cách mặc định OK (mặc định: "${DEFAULT_STYLES[0].name}").`);
+}
+
 async function seedAdminUser() {
   const username = process.env.ADMIN_SEED_USERNAME;
   const password = process.env.ADMIN_SEED_PASSWORD;
@@ -208,6 +278,7 @@ async function main() {
   await seedCharacters();
   await seedRubric();
   await seedDemoSignals();
+  await seedStyles();
   await seedAdminUser();
   console.log("[seed] Done.");
   await getPool().end();

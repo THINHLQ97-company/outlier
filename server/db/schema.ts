@@ -165,6 +165,28 @@ export const assets = pgTable("assets", {
 export type AssetRow = typeof assets.$inferSelect;
 export type NewAssetRow = typeof assets.$inferInsert;
 
+// ===== styles — phong cách vẽ dạng ẢNH THAM CHIẾU + mô tả JSON =====
+// Mỗi phong cách = 1 ảnh minh hoạ (referenceImageUrl) + styleJson (descriptor
+// cấu trúc do Gemini phân tích ảnh sinh ra, hoặc do người dùng nhập). Khi tạo
+// nội dung, ảnh phong cách + styleJson được đính vào prompt để Gemini vẽ ĐỒNG
+// BỘ phong cách. isDefault: phong cách hệ thống seed sẵn.
+export const styles = pgTable("styles", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  owner: text("owner").notNull(),
+  isShared: boolean("is_shared").notNull().default(true), // phong cách thường dùng chung
+  isDefault: boolean("is_default").notNull().default(false), // seed sẵn
+  name: text("name").notNull(),
+  styleJson: jsonb("style_json").$type<Record<string, any>>().default({}), // descriptor phong cách
+  referenceImageUrl: text("reference_image_url"), // "/api/files/styles/<key>" (ảnh minh hoạ)
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  ownerIdx: index("styles_owner_idx").on(t.owner),
+}));
+
+export type StyleRow = typeof styles.$inferSelect;
+export type NewStyleRow = typeof styles.$inferInsert;
+
 // ===== files — lưu file ảnh TRONG Postgres (bền qua redeploy) =====
 // Trước đây lưu filesystem /data/uploads → mất sạch mỗi lần Coolify build lại
 // container (không có volume bền). Postgres là service riêng có volume bền nên

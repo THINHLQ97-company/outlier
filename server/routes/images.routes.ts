@@ -1,32 +1,33 @@
-// VẼ routes (FR4.x) — sinh 2 biến thể ảnh không chữ, chọn ảnh, lưu overlay +
-// export ảnh cuối, gửi vào hàng đợi DUYỆT. Posts.status="draft" cho tới khi
-// /submit chuyển sang "cho_duyet" (Step 6 sở hữu phần kanban/checklist).
+// VẼ routes — chọn ảnh, lưu overlay + ảnh cuối, vẽ lại 2 biến thể. Bản rework:
+// prompt gửi Gemini là JSON CÓ CẤU TRÚC (buildImageGenerationRequest) + phong
+// cách lấy từ thư viện styles (phong cách mặc định). Các endpoint pipeline duyệt/
+// đăng đã gỡ (xem posts.routes.ts); ở đây chỉ còn phần hậu kỳ ảnh mà cả Studio
+// lẫn bài pipeline cũ còn dùng: /regenerate-images, /select-image, /overlay.
 import type { Express } from "express";
 import { and, eq, inArray } from "drizzle-orm";
 import { getDb, isDbConfigured } from "../db/client";
 import { posts, scripts, characters as charactersTable } from "../db/schema";
 import { requireAuth, getAuthUser } from "../auth-mw";
 import { generateImageVariants } from "../services/social-proxy";
-import { readImageAsInlineData, persistDataUrl, internalKeyFromUrl, storage } from "../storage";
+import { readImageAsInlineData, internalKeyFromUrl, storage, persistDataUrl } from "../storage";
 import {
   persistVariantImages,
   deleteInternalVariants,
   normalizeAspectRatio,
   type AspectRatioValue,
 } from "../services/image-store";
-import { generateStudioVariants, type StudioParams } from "./studio.routes";
-import { AXES, ART_STYLES, PANEL_LAYOUTS, WATERMARK_BRANDS, type AxisKey } from "../../shared/engine-data";
+import { generateStudioVariants, resolveStyle, type StudioParams } from "./studio.routes";
+import { buildImageGenerationRequest, type PromptCharacter } from "../services/prompt-builder";
+import { AXES, PANEL_LAYOUTS, type AxisKey } from "../../shared/engine-data";
 
 // Pipeline giữ LUẬT BIÊN TẬP fanpage: ≤2 khung (meme viral). Layout suy theo số
-// panel của phương án kịch bản. Phong cách: tông thương hiệu mặc định.
-const BRAND_STYLE = ART_STYLES[0].prompt;
+// panel của phương án kịch bản.
 const layoutFor = (panelCount: number) =>
   (PANEL_LAYOUTS.find((l) => l.key === (panelCount >= 2 ? "2" : "1")) || PANEL_LAYOUTS[0]).instruction;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Chỉ được chỉnh ảnh/overlay khi bài đang ở khâu VẼ (nháp) hoặc quay lại sửa
-// thoại — KHÔNG cho đụng bài đã vào kanban duyệt / đã duyệt / đã đăng (chống
-// kéo ngược state machine, codex HIGH #1).
+// thoại — KHÔNG cho đụng bài đã vào kanban duyệt / đã duyệt / đã đăng.
 const EDITABLE_STATUSES = ["draft", "sua_thoai"] as const;
 
 function onlyUuids(v: any): string[] {
@@ -41,14 +42,9 @@ function dbDown(res: any): boolean {
   return false;
 }
 
-// Logic build prompt (style + nhân vật + panels) + ảnh tham chiếu + gọi
-// generateImageVariants + lưu 2 biến thể vào storage — dùng chung cho cả
-// /api/images/generate (tạo mới) và /api/posts/:id/regenerate-images (vẽ lại).
-// `script` phải đã có selectedVariant hợp lệ (caller tự kiểm tra).
-//
-// Chọn nhân vật: nếu truyền `characterIds` (mảng UUID không rỗng) → dùng ĐÚNG
-// các nhân vật đó (người vận hành tự chọn dàn diễn). Nếu rỗng/không truyền →
-// giữ hành vi cũ: lấy nhân vật chủ đạo theo trục (AXES.leadCharacters).
+// Vẽ lại ảnh cho bài PIPELINE (từ script) — dựng prompt JSON có cấu trúc từ dàn
+// nhân vật + phong cách mặc định + mô tả khung. Dùng bởi nhánh pipeline của
+// /regenerate-images. `script` phải có selectedVariant hợp lệ (caller kiểm tra).
 async function generateAndStoreImageVariants(
   db: any,
   script: any,
@@ -68,26 +64,34 @@ async function generateAndStoreImageVariants(
     const leadChars = allChars.filter((c: any) => leadCharacterNames.includes(c.name));
     activeChars = leadChars.length ? leadChars : allChars;
   }
-  const characterNames = activeChars.map((c: any) => c.name);
-  const characterPrompts = activeChars.map((c: any) => `${c.name}: ${c.promptDescription}`).join("\n");
 
-  // Đính ảnh nhân vật tham chiếu (nếu đã có trong thư viện) để Gemini giữ
-  // đúng ngoại hình — tối đa 3 ảnh (mục 2.2 v3.md: tối đa 3 AI/khung; giới
-  // hạn để prompt không quá nặng). Nhân vật chưa có ảnh → bỏ qua, chỉ dùng text.
-  const referenceImages = (
-    await Promise.all(activeChars.slice(0, 3).map((c: any) => readImageAsInlineData(c.referenceImageUrl)))
-  ).filter((x: any): x is { mimeType: string; data: string } => x !== null);
+  const characters: PromptCharacter[] = await Promise.all(
+    activeChars.map(async (c: any) => ({
+      name: c.name,
+      personality: c.personality,
+      refImage: await readImageAsInlineData(c.referenceImageUrl),
+    }))
+  );
 
   const panelsText = variant.panels.map((p: string, i: number) => `Khung ${i + 1}: ${p}`).join("\n");
+  const style = await resolveStyle(db, null, script.createdBy || "system"); // phong cách mặc định
 
-  const result = await generateImageVariants({
-    sceneText: panelsText,
-    characterNames,
-    characterPrompts,
-    stylePrompt: BRAND_STYLE,
+  const { promptText, referenceImages } = await buildImageGenerationRequest({
+    scene: panelsText,
+    characters,
+    memeRef: null,
+    style,
+    dialogue: [],
     layoutInstruction: layoutFor(variant.panels?.length || 1),
     aspectRatio,
-    characterRefs: referenceImages,
+    renderDialogue: false,
+  });
+
+  const result = await generateImageVariants({
+    promptText,
+    referenceImages,
+    aspectRatio,
+    demoLabel: characters.map((c) => c.name).join(", ") || "Pipeline",
   });
 
   const storedImages = await persistVariantImages(result.images);
@@ -95,60 +99,8 @@ async function generateAndStoreImageVariants(
 }
 
 export function registerImageRoutes(app: Express) {
-  // FR4.1/4.2 — ghép style chung + mô tả nhân vật (character reference
-  // library) + mô tả khung từ kịch bản đã chọn → sinh 2 biến thể ảnh KHÔNG chữ.
-  app.post("/api/images/generate", requireAuth, async (req, res) => {
-    if (dbDown(res)) return;
-    const user = getAuthUser(req)!;
-    const { scriptId } = req.body || {};
-    if (!scriptId || !UUID_RE.test(scriptId)) return res.status(400).json({ error: "scriptId không hợp lệ." });
-    const aspectRatio = normalizeAspectRatio(req.body?.aspectRatio);
-    // Optional — người vận hành tự chọn dàn nhân vật; rỗng → lấy theo trục (cũ).
-    const characterIds = onlyUuids(req.body?.characterIds);
-
-    try {
-      const db = getDb();
-      const [script] = await db.select().from(scripts).where(eq(scripts.id, scriptId));
-      if (!script) return res.status(404).json({ error: "Không tìm thấy kịch bản." });
-      if (script.selectedVariant === null || script.selectedVariant === undefined) {
-        return res.status(400).json({ error: "Kịch bản chưa chọn phương án (FR3.3)." });
-      }
-      const variant = script.contentJson[script.selectedVariant];
-      if (!variant) return res.status(400).json({ error: "Phương án đã chọn không hợp lệ." });
-
-      const { storedImages, warning } = await generateAndStoreImageVariants(db, script, aspectRatio, characterIds);
-
-      const [row] = await db
-        .insert(posts)
-        .values({
-          scriptId,
-          owner: user,
-          imageVariants: storedImages,
-          selectedImageUrl: null,
-          overlayJson: {
-            textBoxes: [],
-            watermarkBrand: WATERMARK_BRANDS[script.truc as AxisKey] || "MATBAO",
-            aspectRatio,
-            // Lưu lựa chọn nhân vật để /regenerate-images vẽ lại đúng dàn.
-            characterIds,
-          },
-          caption: variant.caption,
-          status: "draft",
-        })
-        .returning();
-
-      res.status(201).json({ ...row, warning });
-    } catch (e: any) {
-      console.error("generate images:", e?.message || e);
-      res.status(500).json({ error: "Sinh ảnh thất bại." });
-    }
-  });
-
-  // B2.4 — vẽ lại 2 biến thể ảnh (dùng lại prompt build + referenceImages +
-  // aspectRatio đã lưu trong overlayJson của post + script tương ứng). Guard:
-  // chỉ khi status ∈ EDITABLE_STATUSES. Xoá ảnh biến thể CŨ khỏi storage sau
-  // khi update DB thành công, set selectedImageUrl=null (ảnh cũ đã chọn không
-  // còn tồn tại nữa).
+  // Vẽ lại 2 biến thể ảnh (dùng lại tham số đã lưu trong overlayJson). Guard: chỉ
+  // khi status ∈ EDITABLE_STATUSES. Xoá ảnh biến thể CŨ sau khi update DB thành công.
   app.post("/api/posts/:id/regenerate-images", requireAuth, async (req, res) => {
     if (dbDown(res)) return;
     const { id } = req.params;
@@ -168,14 +120,14 @@ export function registerImageRoutes(app: Express) {
       let warning: string | undefined;
 
       if (existing.origin === "studio") {
-        // Bài Studio (scriptId null) — vẽ lại từ tham số Studio đã lưu trong overlayJson.
+        // Bài Studio (scriptId null) — vẽ lại từ tham số Studio đã lưu.
         const sp = overlay?.studioParams || {};
         const params: StudioParams = {
           promptText: existing.promptText || "",
-          truc: (existing.truc as any) || null,
           characterIds: onlyUuids(sp.characterIds),
           assetIds: onlyUuids(sp.assetIds),
-          artStyle: sp.artStyle,
+          styleId: typeof sp.styleId === "string" ? sp.styleId : null,
+          dialogue: Array.isArray(sp.dialogue) ? sp.dialogue : [],
           panelLayout: sp.panelLayout,
         };
         const owner = existing.owner || getAuthUser(req)!;
@@ -188,7 +140,6 @@ export function registerImageRoutes(app: Express) {
         }
         const variant = script.contentJson[script.selectedVariant];
         if (!variant) return res.status(400).json({ error: "Phương án đã chọn không hợp lệ." });
-        // Vẽ lại đúng dàn nhân vật đã chọn lúc tạo (nếu có).
         ({ storedImages, warning } = await generateAndStoreImageVariants(
           db,
           script,
@@ -204,11 +155,9 @@ export function registerImageRoutes(app: Express) {
         .where(and(eq(posts.id, id), inArray(posts.status, EDITABLE_STATUSES as any)))
         .returning();
       if (!row) {
-        // Update trượt (status vừa đổi) — dọn ảnh mới vừa sinh để không rác storage.
         await deleteInternalVariants(storedImages);
         return res.status(409).json({ error: "Trạng thái bài vừa thay đổi, thử lại." });
       }
-      // Update DB xong xuôi mới dọn ảnh biến thể CŨ (nếu là file nội bộ).
       await deleteInternalVariants(existing.imageVariants as any[]);
       res.json({ ...row, warning });
     } catch (e: any) {
@@ -232,7 +181,6 @@ export function registerImageRoutes(app: Express) {
       }
       const validUrl = (existing.imageVariants || []).some((v: any) => v.url === imageUrl);
       if (!validUrl) return res.status(400).json({ error: "Ảnh không nằm trong 2 biến thể đã sinh." });
-      // Atomic: chỉ update khi status vẫn nằm trong nhóm được sửa (chống race).
       const [row] = await db
         .update(posts)
         .set({ selectedImageUrl: imageUrl })
@@ -246,9 +194,7 @@ export function registerImageRoutes(app: Express) {
     }
   });
 
-  // FR4.3 — lưu vị trí text box + ảnh PNG cuối (export từ Canvas client-side,
-  // gửi lên dạng data URL). Không giới hạn kích thước ngoài body limit 10mb
-  // (server.ts) — đủ cho ảnh demo/nội bộ <10 người dùng.
+  // Lưu vị trí text box + ảnh PNG cuối (export từ Canvas client-side, data URL).
   app.post("/api/posts/:id/overlay", requireAuth, async (req, res) => {
     if (dbDown(res)) return;
     const { id } = req.params;
@@ -265,56 +211,24 @@ export function registerImageRoutes(app: Express) {
         return res.status(409).json({ error: `Bài đang ở trạng thái "${existing.status}", không thể lưu overlay.` });
       }
 
-      // Ảnh cuối (PNG từ Canvas) → lưu storage, chỉ giữ URL trong DB.
       const finalUrl = (await persistDataUrl("posts", finalImageDataUrl)) || finalImageDataUrl;
 
-      // Atomic: chỉ update khi status vẫn nằm trong nhóm được sửa (chống race).
       const [row] = await db
         .update(posts)
         .set({ overlayJson, finalImageUrl: finalUrl, caption: typeof caption === "string" ? caption : undefined })
         .where(and(eq(posts.id, id), inArray(posts.status, EDITABLE_STATUSES as any)))
         .returning();
       if (!row) {
-        // Update trượt (status vừa đổi) — dọn ảnh mới vừa ghi để không rác storage.
-        const newKey = internalKeyFromUrl(finalUrl);
-        if (newKey) await storage.delete(newKey).catch(() => {});
+        const newInternalKey = internalKeyFromUrl(finalUrl);
+        if (newInternalKey) await storage.delete(newInternalKey).catch(() => {});
         return res.status(409).json({ error: "Trạng thái bài vừa thay đổi, thử lại." });
       }
-      // Update DB xong xuôi mới dọn ảnh cuối CŨ (nếu là file nội bộ) — tránh mất
-      // ảnh khi update fail giữa chừng (codex MEDIUM #5).
       const oldKey = internalKeyFromUrl(existing.finalImageUrl);
       if (oldKey && finalUrl !== existing.finalImageUrl) await storage.delete(oldKey).catch(() => {});
       res.json(row);
     } catch (e: any) {
       console.error("save overlay:", e?.message || e);
       res.status(500).json({ error: "Lưu overlay thất bại." });
-    }
-  });
-
-  // Đưa bài vào kanban "Chờ duyệt" (FR5.1) — kết thúc bước VẼ.
-  app.post("/api/posts/:id/submit", requireAuth, async (req, res) => {
-    if (dbDown(res)) return;
-    const { id } = req.params;
-    if (!UUID_RE.test(id)) return res.status(400).json({ error: "ID không hợp lệ." });
-    try {
-      const db = getDb();
-      const [existing] = await db.select().from(posts).where(eq(posts.id, id));
-      if (!existing) return res.status(404).json({ error: "Không tìm thấy bài." });
-      if (!EDITABLE_STATUSES.includes(existing.status as any)) {
-        return res.status(409).json({ error: `Bài đang ở trạng thái "${existing.status}", không thể gửi duyệt.` });
-      }
-      if (!existing.finalImageUrl) return res.status(400).json({ error: "Chưa có ảnh cuối (hoàn tất text-overlay trước)." });
-      // Atomic: draft|sua_thoai → cho_duyet.
-      const [row] = await db
-        .update(posts)
-        .set({ status: "cho_duyet" })
-        .where(and(eq(posts.id, id), inArray(posts.status, EDITABLE_STATUSES as any)))
-        .returning();
-      if (!row) return res.status(409).json({ error: "Trạng thái bài vừa thay đổi, thử lại." });
-      res.json(row);
-    } catch (e: any) {
-      console.error("submit post:", e?.message || e);
-      res.status(500).json({ error: "Gửi duyệt thất bại." });
     }
   });
 }

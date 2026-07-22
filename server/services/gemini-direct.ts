@@ -61,6 +61,33 @@ export async function generateTextGemini(prompt: string): Promise<string> {
   }
 }
 
+// PHÂN TÍCH ẢNH (vision) — gửi ảnh + prompt tới model text đa phương thức
+// (gemini-3.1-pro-preview nhận ảnh), ép responseMimeType JSON, trả về text JSON
+// thô (caller tự parse). Dùng để "đọc" một ảnh phong cách vẽ và mô tả lại thành
+// styleJson có cấu trúc (server/routes/styles.routes.ts). Thiếu key / lỗi API →
+// throw GeminiError (caller chịu trách nhiệm fallback, KHÔNG crash).
+export async function analyzeImageGemini(
+  prompt: string,
+  image: { mimeType: string; data: string }
+): Promise<string> {
+  const apiKey = getApiKey();
+  try {
+    const { GoogleGenAI } = await import("@google/genai");
+    const ai = new GoogleGenAI({ apiKey });
+    const response = await ai.models.generateContent({
+      model: TEXT_MODEL,
+      contents: { parts: [{ inlineData: image }, { text: prompt }] },
+      config: { responseMimeType: "application/json" },
+    });
+    const text = response.text;
+    if (!text) throw new Error("Phản hồi Gemini rỗng.");
+    return text;
+  } catch (e: any) {
+    if (e instanceof GeminiError) throw e;
+    throw normalizeGeminiError(e);
+  }
+}
+
 // VẼ — sinh ảnh, trả về data URL base64 (data:image/png;base64,...).
 // referenceImages: ảnh nhân vật tham chiếu (thư viện Nhân vật) đính kèm để
 // giữ đúng ngoại hình đã duyệt (mục 2.4 v3.md).
