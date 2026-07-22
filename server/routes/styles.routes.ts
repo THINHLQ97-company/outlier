@@ -14,7 +14,7 @@ import { and, desc, eq, or } from "drizzle-orm";
 import { getDb, isDbConfigured } from "../db/client";
 import { styles } from "../db/schema";
 import { requireAuth, getAuthUser } from "../auth-mw";
-import { storage, newKey, parseDataUrl, internalKeyFromUrl } from "../storage";
+import { storage, newKey, parseDataUrl, internalKeyFromUrl, readImageAsInlineData } from "../storage";
 import { analyzeImageGemini, generateImageGemini, GeminiError } from "../services/gemini-direct";
 import { isActiveAdmin } from "./studio.routes";
 
@@ -244,6 +244,38 @@ Art style name: ${existing.name}. Single illustrated panel, clean composition. A
     } catch (e: any) {
       console.error("generate style reference:", e?.message || e);
       res.status(500).json({ error: "Lỗi sinh ảnh minh hoạ phong cách." });
+    }
+  });
+
+  // POST /api/styles/:id/analyze — PHÂN TÍCH LẠI nét vẽ từ ảnh phong cách hiện có
+  // (Gemini vision → styleJson). Dùng khi phong cách chưa có/thiếu mô tả nét vẽ.
+  app.post("/api/styles/:id/analyze", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const me = getAuthUser(req)!;
+    const { id } = req.params;
+    if (!UUID_RE.test(id)) return res.status(400).json({ error: "ID không hợp lệ." });
+    try {
+      const db = getDb();
+      const [existing] = await db.select().from(styles).where(eq(styles.id, id));
+      if (!existing) return res.status(404).json({ error: "Không tìm thấy phong cách." });
+      const canView = existing.owner === me || existing.isShared || existing.isDefault;
+      if (!canView) return res.status(403).json({ error: "Bạn không có quyền với phong cách này." });
+
+      const inline = await readImageAsInlineData(existing.referenceImageUrl);
+      if (!inline) return res.status(400).json({ error: "Phong cách chưa có ảnh minh hoạ để phân tích. Tải ảnh hoặc bấm 'Vẽ minh hoạ' trước." });
+
+      const { styleJson, warning } = await analyzeStyleImage(inline);
+      if (warning) return res.status(502).json({ error: warning });
+
+      const [row] = await db
+        .update(styles)
+        .set({ styleJson, updatedAt: new Date() })
+        .where(eq(styles.id, id))
+        .returning();
+      res.json({ ...row, isMine: row.owner === me });
+    } catch (e: any) {
+      console.error("analyze style:", e?.message || e);
+      res.status(500).json({ error: "Phân tích nét vẽ thất bại." });
     }
   });
 }

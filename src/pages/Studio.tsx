@@ -14,7 +14,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { studioGenerate, suggestScenario, type ScenarioVariant } from "../services/studio";
-import { regenerateImages, selectImage, saveOverlay, getPost } from "../services/posts";
+import { regenerateImages, selectImage, saveOverlay, getPost, editImage } from "../services/posts";
 import { listCharacters, fileToDataUrl } from "../services/characters";
 import { listAssets, createAsset, deleteAsset } from "../services/assets";
 import { listStyles } from "../services/styles";
@@ -30,11 +30,10 @@ const ASPECT_RATIO_OPTIONS: { value: string; label: string }[] = [
   { value: "3:4", label: "3:4 (dọc)" },
   { value: "9:16", label: "9:16 (dọc cao)" },
 ];
-// Chọn BAO NHIÊU nhân vật cũng được — mọi nhân vật đã chọn đều vào prompt (tên +
-// tính cách). Giới hạn chỉ ở số ẢNH MẪU đính cho Gemini: model ảnh chỉ giữ đúng
-// mặt được ~4 nhân vật đầu (khớp MAX_REFERENCE_IMAGES=6 ở prompt-builder trừ chỗ
-// cho ảnh meme + phong cách); nhân vật còn lại vẫn xuất hiện, vẽ theo mô tả.
-const MAX_PEOPLE_REF = 4;
+// Mỗi nhân vật/ảnh tham chiếu đều được đính ảnh mẫu để giữ đúng nét → giới hạn
+// bằng ngân sách ảnh của model: MAX_REFERENCE_IMAGES=6 (prompt-builder) trừ 1 chỗ
+// cho ảnh mẫu meme (phong cách nay dùng MÔ TẢ text, không chiếm chỗ ảnh).
+const MAX_PEOPLE_REF = 5;
 
 const KIND_BADGE: Record<AssetKind, string> = {
   meme_template: "bg-amber-50 text-amber-700",
@@ -327,6 +326,25 @@ export default function Studio() {
       setError(e?.message || "Lưu ảnh thất bại.");
     } finally {
       setExporting(false);
+    }
+  }
+
+  // Vòng chỉnh sửa bằng câu lệnh (như ChatGPT): gõ câu chỉnh → Gemini sửa trên
+  // ảnh hiện tại → lặp tới khi ưng.
+  const [editInstruction, setEditInstruction] = useState("");
+  const [editing, setEditing] = useState(false);
+  async function handleEditImage() {
+    if (!post || !editInstruction.trim()) return;
+    setEditing(true);
+    setError(null);
+    try {
+      const updated = await editImage(post.id, editInstruction.trim());
+      setPost(updated);
+      setEditInstruction("");
+    } catch (e: any) {
+      setError(e?.message || "Chỉnh ảnh thất bại.");
+    } finally {
+      setEditing(false);
     }
   }
 
@@ -758,6 +776,59 @@ export default function Studio() {
 
       {post && post.selectedImageUrl && (
         <div className="flex flex-col gap-3 max-w-xl">
+          {/* Vòng chỉnh sửa bằng câu lệnh (như ChatGPT) */}
+          <div className="bg-white border border-stone-200 rounded-xl p-4 flex flex-col gap-3">
+            <div>
+              <p className="text-sm font-semibold text-stone-800 flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-storm-600" aria-hidden="true" /> Chỉnh sửa bằng câu lệnh
+              </p>
+              <p className="text-xs text-stone-500 mt-0.5">
+                Gõ điều muốn đổi trên ảnh hiện tại (Gemini sẽ chỉnh, giữ nguyên phần còn lại) — chỉnh nhiều lần tới khi ưng.
+              </p>
+            </div>
+            <img
+              src={imageDisplayUrl(post.selectedImageUrl) || undefined}
+              alt="Ảnh hiện tại"
+              className="w-full max-w-sm rounded-xl border border-stone-200"
+              style={{ aspectRatio: (post.overlayJson?.aspectRatio || "1:1").replace(":", " / ") }}
+            />
+            {Array.isArray(post.overlayJson?.editHistory) && post.overlayJson.editHistory.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {post.overlayJson.editHistory.map((h: string, i: number) => (
+                  <span key={i} className="text-[11px] bg-stone-100 text-stone-500 px-1.5 py-0.5 rounded">
+                    {i + 1}. {h}
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="flex items-start gap-2">
+              <textarea
+                rows={2}
+                value={editInstruction}
+                onChange={(e) => setEditInstruction(e.target.value)}
+                disabled={editing}
+                placeholder="VD: chuyển sang góc nhìn thứ nhất từ Gàn, nền trắng, bỏ bớt chi tiết ở background..."
+                className="flex-1 rounded-lg border border-stone-300 px-3 py-2 text-sm disabled:opacity-60"
+              />
+              <button
+                onClick={handleEditImage}
+                disabled={editing || !editInstruction.trim()}
+                className="shrink-0 flex items-center gap-1.5 text-sm font-medium text-white bg-storm-600 hover:bg-storm-700 px-3 py-2 rounded-lg disabled:opacity-60"
+              >
+                {editing ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Sparkles className="w-4 h-4" aria-hidden="true" />}
+                Chỉnh
+              </button>
+            </div>
+            {editing && (
+              <p className="text-[11px] text-storm-600 flex items-center gap-1.5">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> Gemini đang chỉnh ảnh (thường 15–40 giây)...
+              </p>
+            )}
+            <p className="text-[11px] text-stone-400">
+              Dưới đây là bước gắn chữ/watermark (tuỳ chọn) trên ảnh này rồi lưu.
+            </p>
+          </div>
+
           <div>
             <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="st-caption-2">
               Caption (tối đa 2 câu, không giải thích trò đùa)

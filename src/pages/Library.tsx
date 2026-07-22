@@ -27,7 +27,7 @@ import {
   fileToDataUrl,
   type CharacterInput,
 } from "../services/characters";
-import { listStyles, createStyle, updateStyle, deleteStyle, generateStyleReference } from "../services/styles";
+import { listStyles, createStyle, updateStyle, deleteStyle, generateStyleReference, analyzeStyle } from "../services/styles";
 import { imageDisplayUrl } from "../services/http";
 import { useAppContext } from "../AppContext";
 import { AXES } from "../../shared/engine-data";
@@ -809,6 +809,20 @@ function StylesTab() {
     }
   }
 
+  // Phân tích lại nét vẽ từ ảnh phong cách (Gemini vision → styleJson).
+  async function handleAnalyze(s: StyleRow) {
+    setBusyId(s.id);
+    setError(null);
+    try {
+      const updated = await analyzeStyle(s.id);
+      setItems((prev) => prev.map((x) => (x.id === s.id ? updated : x)));
+    } catch (e: any) {
+      setError(e?.message || "Phân tích nét vẽ thất bại.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   // Vẽ minh hoạ cả bộ — lặp qua style chưa có ảnh (hoặc ảnh mất file), giống
   // pattern "Vẽ cả bộ" của tab Nhân vật.
   async function handleGenerateAll() {
@@ -907,6 +921,7 @@ function StylesTab() {
               onEdit={() => setFormTarget(s)}
               onDelete={() => setDeleteTarget(s)}
               onGenerate={() => handleGenerateOne(s)}
+              onAnalyze={() => handleAnalyze(s)}
             />
           ))}
         </div>
@@ -945,6 +960,7 @@ function StyleCard({
   onEdit,
   onDelete,
   onGenerate,
+  onAnalyze,
 }: {
   style: StyleRow;
   canManage: boolean;
@@ -952,10 +968,12 @@ function StyleCard({
   onEdit: () => void;
   onDelete: () => void;
   onGenerate: () => void;
+  onAnalyze: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const img = !s.imageMissing ? imageDisplayUrl(s.referenceImageUrl) : null;
   const fields = Object.entries(s.styleJson || {});
+  const hasImage = !!s.referenceImageUrl && !s.imageMissing;
 
   return (
     <div className="flex flex-col gap-3 bg-white p-3 rounded-xl border border-stone-200 shadow-sm hover:border-stone-300 transition-all">
@@ -971,6 +989,12 @@ function StyleCard({
         {s.isDefault && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-storm-100 text-storm-700">Mặc định</span>}
         {s.isMine && !s.isDefault && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">Của tôi</span>}
       </div>
+
+      {fields.length === 0 && (
+        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 leading-snug">
+          Chưa có mô tả nét vẽ. {hasImage ? 'Bấm "Phân tích lại nét vẽ" để AI đọc ảnh và tạo mô tả.' : "Tải/vẽ ảnh minh hoạ trước rồi phân tích."}
+        </p>
+      )}
 
       {fields.length > 0 && (
         <div>
@@ -1004,6 +1028,16 @@ function StyleCard({
           {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> : <Wand2 className="w-3.5 h-3.5" aria-hidden="true" />}
           Vẽ minh hoạ
         </button>
+        {hasImage && (
+          <button
+            onClick={onAnalyze}
+            disabled={busy}
+            className="flex items-center gap-1 text-xs font-medium text-stone-600 hover:bg-stone-100 px-2 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+            title="AI đọc ảnh minh hoạ và tạo/cập nhật mô tả nét vẽ (styleJson)"
+          >
+            <Sparkles className="w-3.5 h-3.5" aria-hidden="true" /> Phân tích nét vẽ
+          </button>
+        )}
         {canManage && (
           <>
             <button

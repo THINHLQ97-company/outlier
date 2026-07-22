@@ -134,6 +134,8 @@ export interface OverlayConfig {
   characterIds?: string[];
   // Studio: tham số vẽ tự do đã lưu (để vẽ lại đúng).
   studioParams?: StudioParams;
+  // Lịch sử các câu chỉnh sửa ảnh bằng câu lệnh (vòng chỉnh sửa như ChatGPT).
+  editHistory?: string[];
 }
 
 export interface PostRow {

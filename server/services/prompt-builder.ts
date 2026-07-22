@@ -71,15 +71,16 @@ export async function buildImageGenerationRequest(input: BuildImageInput): Promi
   const scene = await translateScene(input.scene);
 
   const hasMeme = !!input.memeRef;
-  const styleRef = input.style?.refImage || null;
-  const hasStyleImg = !!styleRef;
 
-  // Ảnh nhân vật có ref — cắt để tổng ≤ 5, ưu tiên giữ style + meme.
+  // PHONG CÁCH: chỉ dùng MÔ TẢ (styleJson) trong prompt — KHÔNG đính ảnh phong
+  // cách vào ảnh tham chiếu (theo yêu cầu: ảnh phong cách chỉ để xem + để sinh
+  // styleJson; lúc vẽ dùng text là đủ, đỡ tốn 1 chỗ ảnh cho nhân vật).
+  // Ảnh nhân vật có ref — cắt để tổng ≤ MAX, chỉ trừ chỗ cho ảnh meme.
   const charsWithImg = input.characters.filter((c) => c.refImage);
-  const maxChars = Math.max(0, MAX_REFERENCE_IMAGES - (hasMeme ? 1 : 0) - (hasStyleImg ? 1 : 0));
+  const maxChars = Math.max(0, MAX_REFERENCE_IMAGES - (hasMeme ? 1 : 0));
   const keptCharImgs = charsWithImg.slice(0, maxChars);
 
-  // Đánh số #1..#N theo thứ tự cố định [chars] + [meme] + [style].
+  // Đánh số #1..#N theo thứ tự cố định [chars] + [meme].
   const referenceImages: RefImage[] = [];
   const charNumber = new Map<PromptCharacter, number>();
   for (const c of keptCharImgs) {
@@ -91,11 +92,6 @@ export async function buildImageGenerationRequest(input: BuildImageInput): Promi
     referenceImages.push(input.memeRef as RefImage);
     memeNumber = referenceImages.length;
   }
-  let styleNumber: number | null = null;
-  if (hasStyleImg) {
-    referenceImages.push(styleRef as RefImage);
-    styleNumber = referenceImages.length;
-  }
 
   const spec: Record<string, any> = {
     role: "comic_illustration",
@@ -103,7 +99,6 @@ export async function buildImageGenerationRequest(input: BuildImageInput): Promi
       ? {
           name: input.style.name,
           descriptor: input.style.styleJson || {},
-          match_reference_image: styleNumber ? `#${styleNumber}` : undefined,
         }
       : undefined,
     layout: input.layoutInstruction,
@@ -124,9 +119,9 @@ export async function buildImageGenerationRequest(input: BuildImageInput): Promi
   };
 
   const rules: string[] = [];
-  if (styleNumber) {
+  if (input.style && Object.keys(input.style.styleJson || {}).length) {
     rules.push(
-      `Match the art style EXACTLY to reference image #${styleNumber} (linework, shading, color palette, texture and mood).`
+      `Render EXACTLY in the art style described in art_style.descriptor (linework, shading, color palette, texture and mood). Apply this style consistently to the whole image.`
     );
   }
   for (const c of keptCharImgs) {

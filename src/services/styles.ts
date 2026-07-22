@@ -53,3 +53,13 @@ export async function generateStyleReference(id: string): Promise<StyleRow> {
   if (!res.ok) return asError(res, "Sinh ảnh minh hoạ phong cách thất bại.");
   return res.json();
 }
+
+// Phân tích lại nét vẽ (Gemini vision) từ ảnh phong cách hiện có → styleJson.
+export async function analyzeStyle(id: string): Promise<StyleRow> {
+  const res = await fetch(`/api/styles/${id}/analyze`, {
+    method: "POST",
+    headers: authHeaders(false),
+  });
+  if (!res.ok) return asError(res, "Phân tích nét vẽ thất bại.");
+  return res.json();
+}

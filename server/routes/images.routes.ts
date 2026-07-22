@@ -8,7 +8,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { getDb, isDbConfigured } from "../db/client";
 import { posts, scripts, characters as charactersTable } from "../db/schema";
 import { requireAuth, getAuthUser } from "../auth-mw";
-import { generateImageVariants } from "../services/social-proxy";
+import { generateImageVariants, editImage } from "../services/social-proxy";
 import { readImageAsInlineData, internalKeyFromUrl, storage, persistDataUrl } from "../storage";
 import {
   persistVariantImages,
@@ -191,6 +191,74 @@ export function registerImageRoutes(app: Express) {
     } catch (e: any) {
       console.error("select image:", e?.message || e);
       res.status(500).json({ error: "Chọn ảnh thất bại." });
+    }
+  });
+
+  // CHỈNH SỬA ảnh bằng câu lệnh (image-to-image edit) — luồng iterative như
+  // ChatGPT: gõ 1 câu chỉnh → Gemini sửa trên ẢNH HIỆN TẠI → lặp tới khi ưng.
+  // Sửa ảnh đang chọn (finalImageUrl > selectedImageUrl > biến thể đầu); kết quả
+  // thành ảnh hiện tại mới (selectedImageUrl + finalImageUrl). Guard editable.
+  app.post("/api/posts/:id/edit-image", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const { id } = req.params;
+    if (!UUID_RE.test(id)) return res.status(400).json({ error: "ID không hợp lệ." });
+    const instruction = typeof req.body?.instruction === "string" ? req.body.instruction.trim() : "";
+    if (!instruction) return res.status(400).json({ error: "Nhập câu chỉnh sửa (VD: chuyển POV thứ nhất, nền trắng)." });
+    try {
+      const db = getDb();
+      const [existing] = await db.select().from(posts).where(eq(posts.id, id));
+      if (!existing) return res.status(404).json({ error: "Không tìm thấy bài." });
+      if (!EDITABLE_STATUSES.includes(existing.status as any)) {
+        return res.status(409).json({ error: `Bài đang ở trạng thái "${existing.status}", không thể chỉnh ảnh.` });
+      }
+
+      const sourceUrl =
+        existing.finalImageUrl ||
+        existing.selectedImageUrl ||
+        (existing.imageVariants as any[])?.[0]?.url ||
+        null;
+      const sourceInline = await readImageAsInlineData(sourceUrl);
+      if (!sourceInline) {
+        return res.status(400).json({ error: "Ảnh hiện tại không chỉnh được (ảnh demo hoặc chưa lưu). Tạo ảnh thật trước." });
+      }
+
+      const overlay = (existing.overlayJson as any) || {};
+      const result = await editImage({
+        sourceImage: sourceInline,
+        instruction,
+        aspectRatio: overlay.aspectRatio || "1:1",
+      });
+      if (result.isDemo) {
+        return res.status(502).json({ error: result.warning || "Không chỉnh được ảnh (thiếu GEMINI_API_KEY hoặc lỗi Gemini)." });
+      }
+
+      const newUrl = (await persistDataUrl("posts", result.url)) || result.url;
+      const editHistory = [...(Array.isArray(overlay.editHistory) ? overlay.editHistory : []), instruction].slice(-10);
+
+      const [row] = await db
+        .update(posts)
+        .set({
+          selectedImageUrl: newUrl,
+          finalImageUrl: newUrl,
+          overlayJson: { ...overlay, editHistory },
+        })
+        .where(and(eq(posts.id, id), inArray(posts.status, EDITABLE_STATUSES as any)))
+        .returning();
+      if (!row) {
+        const k = internalKeyFromUrl(newUrl);
+        if (k) await storage.delete(k).catch(() => {});
+        return res.status(409).json({ error: "Trạng thái bài vừa thay đổi, thử lại." });
+      }
+      // Dọn ảnh cũ nhưng GIỮ ảnh biến thể gốc (còn dùng ở lưới chọn / re-select).
+      const variantUrls = new Set(((existing.imageVariants as any[]) || []).map((v) => v?.url));
+      for (const oldUrl of [existing.finalImageUrl, existing.selectedImageUrl]) {
+        const k = internalKeyFromUrl(oldUrl);
+        if (k && oldUrl !== newUrl && !variantUrls.has(oldUrl)) await storage.delete(k).catch(() => {});
+      }
+      res.json(row);
+    } catch (e: any) {
+      console.error("edit image:", e?.message || e);
+      res.status(500).json({ error: "Chỉnh ảnh thất bại." });
     }
   });
 

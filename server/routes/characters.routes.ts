@@ -177,7 +177,14 @@ export function registerCharacterRoutes(app: Express) {
       const [existing] = await db.select().from(characters).where(eq(characters.id, id));
       if (!existing) return res.status(404).json({ error: "Không tìm thấy nhân vật." });
 
-      const prompt = `${STYLE_PROMPT}\n\nCharacter reference sheet, single character, plain neutral background, front-facing, full body or waist-up, clean lines, no text.\n\n${existing.name}: ${existing.promptDescription}`;
+      // Ảnh mẫu nhân vật: TÔN TRỌNG mô tả (một số nhân vật có ràng buộc đặc biệt,
+      // vd Sếp "KHÔNG bao giờ lộ mặt — chỉ bóng lưng/bàn tay"). KHÔNG ép front-facing.
+      const prompt = `${STYLE_PROMPT}
+
+Character reference sheet for a single character, plain neutral background, clean lines, no text.
+IMPORTANT: Follow the character description below EXACTLY, including any constraints. If the description says the face is never shown / only the back, silhouette or hands are shown, then DRAW IT THAT WAY (do not invent a face). Otherwise show a clear front/three-quarter view.
+
+${existing.name}: ${existing.promptDescription}`;
 
       let dataUrl: string;
       try {

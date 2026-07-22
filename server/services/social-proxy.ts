@@ -101,6 +101,38 @@ export interface RefImage {
   data: string;
 }
 
+// CHỈNH SỬA ảnh bằng câu lệnh (image-to-image edit) — như luồng iterative của
+// ChatGPT: đưa ảnh hiện tại + 1 câu chỉnh ("chuyển POV thứ nhất, nền trắng, bỏ
+// bớt...") → Gemini vẽ lại CHỈ thay đổi phần đó, giữ nguyên phần còn lại. Trả về
+// 1 ảnh data URL. Thiếu key/lỗi → giữ nguyên ảnh cũ (trả về source), warning.
+export async function editImage(input: {
+  sourceImage: RefImage;
+  instruction: string;
+  aspectRatio?: string;
+}): Promise<{ url: string; source: "social" | "placeholder"; isDemo: boolean; warning?: string }> {
+  const sourceUrl = `data:${input.sourceImage.mimeType};base64,${input.sourceImage.data}`;
+  if (!process.env.GEMINI_API_KEY) {
+    const warning = "GEMINI_API_KEY chưa cấu hình — không chỉnh được ảnh (demo).";
+    console.warn(`[social-proxy] ${warning}`);
+    return { url: sourceUrl, source: "placeholder", isDemo: true, warning };
+  }
+
+  const prompt = `You are editing the attached comic illustration. Apply ONLY the following change and keep EVERYTHING ELSE identical — the characters and their exact appearance/costume/colors, the art style, and the overall composition must stay the same. Do NOT redraw from scratch or change the character designs.
+
+CHANGE TO APPLY: ${input.instruction}
+
+Output the full edited image at the same art style. If the change asks to remove/hide something, remove it cleanly and fill the area naturally.`;
+
+  try {
+    const url = await generateImageGemini(prompt, [input.sourceImage], input.aspectRatio || "1:1");
+    return { url, source: "social", isDemo: false };
+  } catch (e: any) {
+    const warning = `Chỉnh ảnh thất bại (${e?.message || e}) — giữ nguyên ảnh cũ.`;
+    console.warn(`[social-proxy] ${warning}`);
+    return { url: sourceUrl, source: "placeholder", isDemo: true, warning };
+  }
+}
+
 // VẼ — sinh 2 biến thể ảnh từ MỘT prompt JSON có cấu trúc (dựng sẵn ở
 // server/services/prompt-builder.ts) + ảnh tham chiếu đã đánh số #1..#N. Không
 // còn tự dịch/tự ghép prompt ở đây — mọi logic prompt nằm ở prompt-builder để
