@@ -20,7 +20,7 @@ import { listAssets, createAsset, deleteAsset } from "../services/assets";
 import { listStyles } from "../services/styles";
 import { imageDisplayUrl } from "../services/http";
 import type { PostRow, CharacterRow, AssetRow, AssetKind, StyleRow, DialogueLine } from "../types";
-import { PANEL_LAYOUTS } from "../../shared/engine-data";
+import { PANEL_LAYOUTS, BACKGROUND_OPTIONS } from "../../shared/engine-data";
 import CharacterPicker from "../components/CharacterPicker";
 import TextOverlayEditor from "../components/TextOverlayEditor";
 
@@ -66,6 +66,7 @@ export default function Studio() {
   const [stylesLoading, setStylesLoading] = useState(true);
   const [styleId, setStyleId] = useState<string | null>(null);
   const [panelLayout, setPanelLayout] = useState("1"); // 1/2/4/auto
+  const [background, setBackground] = useState("scene"); // scene/white/minimal
   const [aspectRatio, setAspectRatio] = useState("1:1");
   const [isShared, setIsShared] = useState(false);
 
@@ -268,6 +269,7 @@ export default function Studio() {
         styleId,
         dialogue: cleanDialogue,
         panelLayout,
+        background,
         aspectRatio,
         isShared,
       });
@@ -677,6 +679,24 @@ export default function Studio() {
                   {PANEL_LAYOUTS.map((l) => (
                     <option key={l.key} value={l.key}>
                       {l.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="st-bg">
+                  Nền ảnh
+                </label>
+                <select
+                  id="st-bg"
+                  value={background}
+                  onChange={(e) => setBackground(e.target.value)}
+                  className="rounded-lg border border-stone-300 px-3 py-2 text-sm"
+                  title="Nền trắng / tối giản giúp ảnh sạch hơn (bớt chi tiết thừa gây rối)"
+                >
+                  {BACKGROUND_OPTIONS.map((b) => (
+                    <option key={b.key} value={b.key}>
+                      {b.label}
                     </option>
                   ))}
                 </select>

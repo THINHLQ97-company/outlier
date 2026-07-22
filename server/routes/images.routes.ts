@@ -129,6 +129,7 @@ export function registerImageRoutes(app: Express) {
           styleId: typeof sp.styleId === "string" ? sp.styleId : null,
           dialogue: Array.isArray(sp.dialogue) ? sp.dialogue : [],
           panelLayout: sp.panelLayout,
+          background: sp.background,
         };
         const owner = existing.owner || getAuthUser(req)!;
         ({ storedImages, warning } = await generateStudioVariants(db, owner, params, aspectRatio));

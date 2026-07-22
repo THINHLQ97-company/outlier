@@ -22,10 +22,13 @@ import {
 } from "../services/prompt-builder";
 import { persistVariantImages, normalizeAspectRatio, type AspectRatioValue } from "../services/image-store";
 import { writeScenarios } from "../services/scenario-writer";
-import { PANEL_LAYOUTS } from "../../shared/engine-data";
+import { PANEL_LAYOUTS, BACKGROUND_OPTIONS } from "../../shared/engine-data";
 
 function resolvePanelLayout(key: any): (typeof PANEL_LAYOUTS)[number] {
   return PANEL_LAYOUTS.find((l) => l.key === key) || PANEL_LAYOUTS[0];
+}
+function resolveBackground(key: any): (typeof BACKGROUND_OPTIONS)[number] {
+  return BACKGROUND_OPTIONS.find((b) => b.key === key) || BACKGROUND_OPTIONS[0];
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -67,6 +70,7 @@ export interface StudioParams {
   styleId?: string | null;
   dialogue: DialogueLine[];
   panelLayout?: string; // key PANEL_LAYOUTS (1/2/4/auto)
+  background?: string; // key BACKGROUND_OPTIONS (scene/white/minimal)
 }
 
 // Chọn phong cách: styleId (owner==user | isShared | isDefault) → phong cách đó;
@@ -158,6 +162,7 @@ export async function generateStudioVariants(
     layoutInstruction: layout.instruction,
     aspectRatio,
     renderDialogue: dialogue.length > 0,
+    backgroundInstruction: resolveBackground(params.background).instruction,
   });
 
   const result = await generateImageVariants({
@@ -213,12 +218,13 @@ export function registerStudioRoutes(app: Express) {
     const isShared = body.isShared === true;
     const caption = typeof body.caption === "string" ? body.caption : "";
     const panelLayout = resolvePanelLayout(body.panelLayout).key;
+    const background = resolveBackground(body.background).key;
     // Lời thoại thô (chuẩn hoá lại theo nhân vật thực tế bên trong generateStudioVariants).
     const dialogueRaw = Array.isArray(body.dialogue) ? body.dialogue : [];
 
     try {
       const db = getDb();
-      const params: StudioParams = { promptText, characterIds, assetIds, styleId, dialogue: dialogueRaw, panelLayout };
+      const params: StudioParams = { promptText, characterIds, assetIds, styleId, dialogue: dialogueRaw, panelLayout, background };
       const { storedImages, warning } = await generateStudioVariants(db, user, params, aspectRatio);
 
       const [row] = await db
@@ -237,7 +243,7 @@ export function registerStudioRoutes(app: Express) {
             watermarkBrand: "MATBAO",
             aspectRatio,
             // Lưu tham số Studio để /regenerate-images vẽ lại đúng (scriptId null).
-            studioParams: { characterIds, assetIds, styleId, dialogue: dialogueRaw, panelLayout },
+            studioParams: { characterIds, assetIds, styleId, dialogue: dialogueRaw, panelLayout, background },
           },
           caption,
           status: "draft",

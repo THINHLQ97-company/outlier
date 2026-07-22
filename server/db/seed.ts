@@ -23,21 +23,26 @@ dotenv.config();
 
 async function seedCharacters() {
   const db = getDb();
-  let inserted = 0;
+  // CHỈ seed khi bảng characters còn TRỐNG (lần bootstrap đầu). Sau đó KHÔNG bao
+  // giờ tự thêm nữa — nếu người dùng đã XOÁ 1 nhân vật (vd "Cơn Bão") thì nó
+  // KHÔNG bị seed lại mỗi lần deploy. (Trước đây insert-if-missing-by-name làm
+  // nhân vật đã xoá cứ hiện lại — đã sửa 2026-07-22.)
+  const existing = await db.select({ id: characters.id }).from(characters).limit(1);
+  if (existing.length > 0) {
+    console.log("[seed] characters: đã có dữ liệu — bỏ qua (không tự thêm/không đè).");
+    return;
+  }
   for (const c of CHARACTERS) {
-    const [existing] = await db.select().from(characters).where(eq(characters.name, c.name));
-    if (existing) continue; // ĐÃ CÓ → giữ nguyên (không đè mô tả/ảnh người dùng chỉnh).
     await db.insert(characters).values({
       name: c.name,
       kind: c.kind,
       promptDescription: c.promptDescription,
       personality: c.personality,
       catchphrase: c.catchphrase,
-      referenceImageUrl: null, // chưa có ảnh — generate qua "AI vẽ ảnh"/"Vẽ cả bộ".
+      referenceImageUrl: null, // chưa có ảnh — generate qua "AI vẽ ảnh".
     });
-    inserted++;
   }
-  console.log(`[seed] characters: thêm ${inserted} nhân vật mới (giữ nguyên ${CHARACTERS.length - inserted} đã có).`);
+  console.log(`[seed] characters: tạo ${CHARACTERS.length} nhân vật ban đầu OK.`);
 }
 
 async function seedRubric() {

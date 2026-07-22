@@ -19,6 +19,29 @@ flat lighting, no gradients on characters. Leave clean empty space for text over
 // chừa chỗ cho text overlay hậu kỳ).
 export const BASE_RENDER = `Expressive, exaggerated cartoon faces. Clear thin black borders around each panel. Leave clean empty space for later text overlay. Absolutely NO text, letters, words, numbers, speech bubbles or captions rendered in the image.`;
 
+// Tuỳ chọn NỀN ảnh — giúp ra ảnh "sạch" hơn (bỏ nền/bớt chi tiết thừa gây rối,
+// hoặc nền trắng). instruction rỗng = giữ nền theo bối cảnh.
+export interface BackgroundOption {
+  key: string;
+  label: string;
+  instruction: string;
+}
+export const BACKGROUND_OPTIONS: BackgroundOption[] = [
+  { key: "scene", label: "Theo bối cảnh (mặc định)", instruction: "" },
+  {
+    key: "white",
+    label: "Nền trắng",
+    instruction:
+      "Use a plain solid WHITE background. Remove ALL background scenery, props and environment — keep ONLY the characters (and their essential held items).",
+  },
+  {
+    key: "minimal",
+    label: "Nền tối giản (ít chi tiết)",
+    instruction:
+      "Use a clean, minimal background with very few details. Remove clutter and distracting background elements so the characters clearly stand out; simple flat or softly blurred backdrop.",
+  },
+];
+
 export interface ArtStyle {
   key: string;
   label: string; // hiện trên UI

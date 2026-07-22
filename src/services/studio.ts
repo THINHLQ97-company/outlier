@@ -13,6 +13,7 @@ export interface StudioGenerateInput {
   dialogue?: DialogueLine[]; // lời thoại gắn nhân vật (có thoại → model vẽ bong bóng)
   aspectRatio?: string; // "1:1" | "3:4" | "9:16" (mặc định 1:1)
   panelLayout?: string; // key PANEL_LAYOUTS (1/2/4/auto)
+  background?: string; // key BACKGROUND_OPTIONS (scene/white/minimal)
   isShared?: boolean; // hiện trong thư viện chung (mặc định false)
   caption?: string;
 }

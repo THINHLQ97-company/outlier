@@ -40,6 +40,7 @@ export interface BuildImageInput {
   layoutInstruction: string;
   aspectRatio: string;
   renderDialogue: boolean; // true → model tự vẽ bong bóng thoại; false → chừa chỗ overlay
+  backgroundInstruction?: string; // yêu cầu về nền (nền trắng / tối giản...); rỗng = theo bối cảnh
 }
 
 export interface BuiltImageRequest {
@@ -114,6 +115,7 @@ export async function buildImageGenerationRequest(input: BuildImageInput): Promi
       keep_appearance_from_reference_image: `#${charNumber.get(c)}`,
     })),
     meme_layout_reference: memeNumber ? `#${memeNumber}` : undefined,
+    background: input.backgroundInstruction || undefined,
     dialogue: input.dialogue.map((d) => ({ character: d.character, text: d.text })),
     rules: [] as string[],
   };
@@ -133,6 +135,9 @@ export async function buildImageGenerationRequest(input: BuildImageInput): Promi
     rules.push(
       `Reproduce the panel layout, number of panels and visual progression of meme reference image #${memeNumber}; only replace the original characters with ours.`
     );
+  }
+  if (input.backgroundInstruction) {
+    rules.push(input.backgroundInstruction);
   }
   if (input.renderDialogue) {
     rules.push(
