@@ -335,9 +335,6 @@ function CharactersTab() {
   const [deleteTarget, setDeleteTarget] = useState<CharacterRow | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<"upload" | "generate" | "delete" | null>(null);
-  const [drawingAll, setDrawingAll] = useState(false);
-  const [drawAllProgress, setDrawAllProgress] = useState<string | null>(null);
-  const [drawAllResult, setDrawAllResult] = useState<string | null>(null);
 
   async function reload() {
     setLoading(true);
@@ -386,37 +383,6 @@ function CharactersTab() {
     }
   }
 
-  // Vẽ cả bộ — lặp TUẦN TỰ qua các nhân vật chưa có referenceImageUrl (kể cả
-  // ảnh mất file, imageMissing), lỗi 1 nhân vật thì ghi lại và tiếp tục cái kế.
-  async function handleGenerateAll() {
-    const todo = items.filter((c) => !c.referenceImageUrl || c.imageMissing);
-    if (todo.length === 0) return;
-    setDrawingAll(true);
-    setDrawAllResult(null);
-    setError(null);
-    let okCount = 0;
-    const failedNames: string[] = [];
-    for (let i = 0; i < todo.length; i++) {
-      const c = todo[i];
-      setDrawAllProgress(`Đang vẽ ${i + 1}/${todo.length}: ${c.name}...`);
-      try {
-        const updated = await generateCharacterReference(c.id);
-        setItems((prev) => prev.map((x) => (x.id === c.id ? updated : x)));
-        okCount++;
-      } catch (e: any) {
-        failedNames.push(c.name);
-        console.warn(`[characters] Vẽ cả bộ — lỗi nhân vật "${c.name}":`, e?.message || e);
-      }
-    }
-    setDrawAllProgress(null);
-    setDrawAllResult(
-      failedNames.length
-        ? `Xong: vẽ được ${okCount}, lỗi ${failedNames.length} (${failedNames.join(", ")}).`
-        : `Xong: vẽ được ${okCount}, lỗi 0.`
-    );
-    setDrawingAll(false);
-  }
-
   async function handleDelete() {
     if (!deleteTarget) return;
     setBusyId(deleteTarget.id);
@@ -444,25 +410,6 @@ function CharactersTab() {
         </p>
         <div className="flex items-center gap-2">
           <button
-            onClick={handleGenerateAll}
-            disabled={isDemoMode || drawingAll || items.every((c) => !!c.referenceImageUrl && !c.imageMissing)}
-            className="flex items-center gap-1.5 text-sm font-medium text-storm-700 bg-storm-50 hover:bg-storm-100 px-3 py-2 rounded-lg transition-colors disabled:opacity-60"
-            title={
-              isDemoMode
-                ? "Chưa cấu hình DATABASE_URL — chỉ xem được dữ liệu demo."
-                : items.every((c) => !!c.referenceImageUrl && !c.imageMissing)
-                  ? "Tất cả nhân vật đã có ảnh reference."
-                  : "Lần lượt cho AI vẽ ảnh reference cho các nhân vật chưa có ảnh (kể cả ảnh bị mất file)."
-            }
-          >
-            {drawingAll ? (
-              <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
-            ) : (
-              <Wand2 className="w-4 h-4" aria-hidden="true" />
-            )}
-            Vẽ cả bộ (nhân vật chưa có ảnh)
-          </button>
-          <button
             onClick={() => setFormTarget("new")}
             className="flex items-center gap-1.5 text-sm font-medium text-white bg-storm-600 hover:bg-storm-700 px-3 py-2 rounded-lg transition-colors disabled:opacity-60"
             disabled={isDemoMode}
@@ -472,17 +419,6 @@ function CharactersTab() {
           </button>
         </div>
       </div>
-
-      {drawAllProgress && (
-        <div className="text-sm text-storm-700 bg-storm-50 border border-storm-200 rounded-lg px-3 py-2 flex items-center gap-2">
-          <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> {drawAllProgress}
-        </div>
-      )}
-      {drawAllResult && !drawingAll && (
-        <div className="text-sm text-stone-700 bg-stone-100 border border-stone-200 rounded-lg px-3 py-2">
-          {drawAllResult}
-        </div>
-      )}
 
       {isDemoMode && (
         <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
