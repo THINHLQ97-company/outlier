@@ -2,10 +2,10 @@ import { UserRound } from "lucide-react";
 import { imageDisplayUrl } from "../services/http";
 import type { CharacterRow } from "../types";
 
-// Multi-select dàn nhân vật — dùng chung cho Studio (vẽ tự do) và ImageStudio
-// (chọn nhân vật tuỳ chọn trước khi sinh ảnh từ kịch bản). Hiện avatar
-// (imageDisplayUrl(referenceImageUrl), placeholder icon nếu chưa có ảnh) +
-// tên, click để chọn/bỏ chọn. Cho phép chọn 0 nhân vật.
+// Multi-select dàn nhân vật — dùng ở trang Sáng tạo (Studio) để chọn nhân vật
+// làm tham chiếu khi tạo ảnh. Hiện avatar (imageDisplayUrl(referenceImageUrl),
+// placeholder icon nếu chưa có ảnh) + tên, click để chọn/bỏ chọn. Cho phép
+// chọn 0 nhân vật.
 interface Props {
   characters: CharacterRow[];
   selectedIds: string[];

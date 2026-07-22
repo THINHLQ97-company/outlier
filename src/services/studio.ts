@@ -1,11 +1,12 @@
-// Studio "Vẽ tự do" client — sinh ảnh trực tiếp từ mô tả + nhân vật + assets.
-// Endpoint: server/routes/studio.routes.ts. Kết quả là 1 PostRow origin="studio",
-// status="draft" → dùng tiếp selectImage/saveOverlay/submitForApproval (posts.ts).
+// Studio "Sáng tạo" client — sinh ảnh trực tiếp từ mô tả + nhân vật + assets +
+// phong cách + lời thoại. Endpoint: server/routes/studio.routes.ts. Kết quả là
+// 1 PostRow origin="studio", status="draft" → dùng tiếp selectImage/saveOverlay
+// (services/posts.ts) rồi lưu thẳng vào Thư viện (không còn khâu gửi duyệt).
 import { authHeaders, asError } from "./http";
-import type { PostRow, AxisKey, DialogueLine } from "../types";
+import type { PostRow, DialogueLine } from "../types";
 
 export interface StudioGenerateInput {
-  promptText: string; // bắt buộc
+  promptText: string; // bắt buộc — mô tả bối cảnh
   characterIds?: string[]; // uuid nhân vật đã chọn (có thể rỗng)
   assetIds?: string[]; // uuid asset tham chiếu (meme_template/reference)
   styleId?: string | null; // uuid phong cách (thư viện styles); rỗng → mặc định
@@ -14,11 +15,6 @@ export interface StudioGenerateInput {
   panelLayout?: string; // key PANEL_LAYOUTS (1/2/4/auto)
   isShared?: boolean; // hiện trong thư viện chung (mặc định false)
   caption?: string;
-  // Deprecated (server bỏ qua): Studio không còn chọn trục / phong cách ART_STYLES
-  // cứng — phong cách nay lấy từ thư viện styles qua styleId. Giữ optional để
-  // trang Studio hiện tại còn build được trong lúc frontend chưa cập nhật.
-  truc?: AxisKey | null;
-  artStyle?: string;
 }
 
 export async function studioGenerate(input: StudioGenerateInput): Promise<PostRow> {

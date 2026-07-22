@@ -4,14 +4,8 @@ import { AppProvider, useAppContext } from "./AppContext";
 import Login from "./components/Login";
 import Layout from "./components/Layout";
 import SignalsQueue from "./pages/SignalsQueue";
-import ScriptEditor from "./pages/ScriptEditor";
-import ImageStudio from "./pages/ImageStudio";
 import Studio from "./pages/Studio";
 import Library from "./pages/Library";
-import ApprovalQueue from "./pages/ApprovalQueue";
-import ReadyToPost from "./pages/ReadyToPost";
-import Calendar from "./pages/Calendar";
-import Characters from "./pages/Characters";
 import AdminUsers from "./pages/AdminUsers";
 
 function Gate() {
@@ -30,18 +24,12 @@ function Gate() {
   return (
     <Layout>
       <Routes>
-        <Route path="/" element={<Navigate to="/signals" replace />} />
-        <Route path="/signals" element={<SignalsQueue />} />
-        <Route path="/scripts" element={<ScriptEditor />} />
-        <Route path="/image-studio" element={<ImageStudio />} />
+        <Route path="/" element={<Navigate to="/studio" replace />} />
         <Route path="/studio" element={<Studio />} />
         <Route path="/library" element={<Library />} />
-        <Route path="/approval" element={<ApprovalQueue />} />
-        <Route path="/ready" element={<ReadyToPost />} />
-        <Route path="/calendar" element={<Calendar />} />
-        <Route path="/characters" element={<Characters />} />
+        <Route path="/signals" element={<SignalsQueue />} />
         <Route path="/admin/users" element={<AdminUsers />} />
-        <Route path="*" element={<Navigate to="/signals" replace />} />
+        <Route path="*" element={<Navigate to="/studio" replace />} />
       </Routes>
     </Layout>
   );

@@ -268,7 +268,7 @@ export default function TextOverlayEditor({
         )}
 
         <div>
-          <label className="text-xs font-medium text-stone-600 block mb-1" htmlFor="wm-brand">Watermark (mục 2.4)</label>
+          <label className="text-xs font-medium text-stone-600 block mb-1" htmlFor="wm-brand">Watermark</label>
           <select
             id="wm-brand"
             value={watermarkBrand}

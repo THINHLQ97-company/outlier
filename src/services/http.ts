@@ -22,7 +22,7 @@ export async function asError(res: Response, fallback: string): Promise<never> {
 // "/api/files/<key>" (requireAuth) — <img> không gửi được header Authorization
 // nên phải đính token qua query string (extractToken hỗ trợ sẵn, xem
 // server/auth-shared.ts). data:/http(s) URL ngoài giữ nguyên. Dùng chung cho
-// ảnh nhân vật (Characters) lẫn ảnh bài viết (ImageStudio/Approval/Ready).
+// ảnh nhân vật/phong cách (Thư viện) lẫn ảnh bài viết (Sáng tạo/Thư viện).
 export function imageDisplayUrl(url: string | null | undefined): string | null {
   if (!url) return null;
   if (!url.startsWith("/api/files/")) return url;
