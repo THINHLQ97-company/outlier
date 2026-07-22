@@ -111,7 +111,12 @@ export async function generateStudioVariants(
   owner: string,
   params: StudioParams,
   aspectRatio: AspectRatioValue
-): Promise<{ storedImages: { url: string; source: "social" | "placeholder" }[]; warning?: string }> {
+): Promise<{
+  storedImages: { url: string; source: "social" | "placeholder" }[];
+  warning?: string;
+  promptText: string;
+  charactersUsed: string[];
+}> {
   const chosenChars = params.characterIds.length
     ? await db.select().from(charactersTable).where(inArray(charactersTable.id, params.characterIds))
     : [];
@@ -153,7 +158,7 @@ export async function generateStudioVariants(
   const characterNames = characters.map((c) => c.name);
   const dialogue = normalizeDialogue(params.dialogue, characterNames);
 
-  const { promptText, referenceImages } = await buildImageGenerationRequest({
+  const { promptText, referenceImages, charactersUsed } = await buildImageGenerationRequest({
     scene: params.promptText,
     characters,
     memeRef,
@@ -173,7 +178,7 @@ export async function generateStudioVariants(
   });
 
   const storedImages = await persistVariantImages(result.images);
-  return { storedImages, warning: result.warning };
+  return { storedImages, warning: result.warning, promptText, charactersUsed };
 }
 
 export function registerStudioRoutes(app: Express) {
@@ -225,7 +230,8 @@ export function registerStudioRoutes(app: Express) {
     try {
       const db = getDb();
       const params: StudioParams = { promptText, characterIds, assetIds, styleId, dialogue: dialogueRaw, panelLayout, background };
-      const { storedImages, warning } = await generateStudioVariants(db, user, params, aspectRatio);
+      const gen = await generateStudioVariants(db, user, params, aspectRatio);
+      const { storedImages, warning } = gen;
 
       const [row] = await db
         .insert(posts)
@@ -244,6 +250,8 @@ export function registerStudioRoutes(app: Express) {
             aspectRatio,
             // Lưu tham số Studio để /regenerate-images vẽ lại đúng (scriptId null).
             studioParams: { characterIds, assetIds, styleId, dialogue: dialogueRaw, panelLayout, background },
+            // Minh bạch: prompt JSON đã gửi Gemini + nhân vật thực sự vào ảnh.
+            promptDebug: { prompt: gen.promptText, characters: gen.charactersUsed },
           },
           caption,
           status: "draft",

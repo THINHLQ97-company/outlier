@@ -46,6 +46,7 @@ export interface BuildImageInput {
 export interface BuiltImageRequest {
   promptText: string;
   referenceImages: RefImage[];
+  charactersUsed: string[]; // tên các nhân vật THỰC SỰ vào ảnh (có ảnh tham chiếu)
 }
 
 // Dịch mô tả cảnh VN → EN (model text ép JSON { "scene_en": "..." }). Lỗi bất kỳ
@@ -151,5 +152,5 @@ export async function buildImageGenerationRequest(input: BuildImageInput): Promi
   const preamble = `You are an AI comic illustration engine. Attached reference images are numbered #1..#${referenceImages.length} in order. Follow this JSON spec exactly:`;
   const promptText = preamble + "\n\n" + JSON.stringify(spec, null, 2);
 
-  return { promptText, referenceImages };
+  return { promptText, referenceImages, charactersUsed: keptCharImgs.map((c) => c.name) };
 }

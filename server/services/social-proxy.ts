@@ -109,6 +109,9 @@ export async function editImage(input: {
   sourceImage: RefImage;
   instruction: string;
   aspectRatio?: string;
+  // Ảnh + tên các nhân vật CÓ trong khung — để model biết "Grok/Gemini..." là ai
+  // khi câu lệnh nhắc tới nhân vật cụ thể, và giữ đúng ngoại hình khi sửa.
+  characters?: { name: string; refImage: RefImage }[];
 }): Promise<{ url: string; source: "social" | "placeholder"; isDemo: boolean; warning?: string }> {
   const sourceUrl = `data:${input.sourceImage.mimeType};base64,${input.sourceImage.data}`;
   if (!process.env.GEMINI_API_KEY) {
@@ -117,14 +120,24 @@ export async function editImage(input: {
     return { url: sourceUrl, source: "placeholder", isDemo: true, warning };
   }
 
-  const prompt = `You are editing the attached comic illustration. Apply ONLY the following change and keep EVERYTHING ELSE identical — the characters and their exact appearance/costume/colors, the art style, and the overall composition must stay the same. Do NOT redraw from scratch or change the character designs.
+  const chars = input.characters || [];
+  // Ảnh: #1 = ảnh hiện tại cần sửa; #2..#N = ảnh mẫu từng nhân vật.
+  const images: RefImage[] = [input.sourceImage, ...chars.map((c) => c.refImage)];
+  const charLines = chars.map((c, i) => `#${i + 2} = ${c.name}`).join("; ");
+  const charBlock = chars.length
+    ? `The characters that appear in image #1, with their reference designs attached: ${charLines}. When the change mentions a character by name, use these references to identify them, and keep EVERY character's face, costume and colors IDENTICAL to their reference.`
+    : "";
+
+  const prompt = `You are editing the attached comic illustration (image #1). ${charBlock}
+
+Apply ONLY the following change and keep EVERYTHING ELSE identical — the other characters, the art style, and the overall composition must stay the same. Do NOT redraw from scratch.
 
 CHANGE TO APPLY: ${input.instruction}
 
 Output the full edited image at the same art style. If the change asks to remove/hide something, remove it cleanly and fill the area naturally.`;
 
   try {
-    const url = await generateImageGemini(prompt, [input.sourceImage], input.aspectRatio || "1:1");
+    const url = await generateImageGemini(prompt, images, input.aspectRatio || "1:1");
     return { url, source: "social", isDemo: false };
   } catch (e: any) {
     const warning = `Chỉnh ảnh thất bại (${e?.message || e}) — giữ nguyên ảnh cũ.`;

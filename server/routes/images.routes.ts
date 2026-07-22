@@ -118,6 +118,7 @@ export function registerImageRoutes(app: Express) {
 
       let storedImages: { url: string; source: "social" | "placeholder" }[];
       let warning: string | undefined;
+      let promptDebug: { prompt: string; characters: string[] } | undefined;
 
       if (existing.origin === "studio") {
         // Bài Studio (scriptId null) — vẽ lại từ tham số Studio đã lưu.
@@ -132,7 +133,10 @@ export function registerImageRoutes(app: Express) {
           background: sp.background,
         };
         const owner = existing.owner || getAuthUser(req)!;
-        ({ storedImages, warning } = await generateStudioVariants(db, owner, params, aspectRatio));
+        const gen = await generateStudioVariants(db, owner, params, aspectRatio);
+        storedImages = gen.storedImages;
+        warning = gen.warning;
+        promptDebug = { prompt: gen.promptText, characters: gen.charactersUsed };
       } else {
         const [script] = await db.select().from(scripts).where(eq(scripts.id, existing.scriptId));
         if (!script) return res.status(404).json({ error: "Không tìm thấy kịch bản gốc." });
@@ -149,10 +153,12 @@ export function registerImageRoutes(app: Express) {
         ));
       }
 
+      // Vẽ lại → ảnh mới hoàn toàn: reset lịch sử chỉnh + cập nhật promptDebug.
+      const newOverlay = { ...overlay, editHistory: [], ...(promptDebug ? { promptDebug } : {}) };
       // Atomic: chỉ update khi status vẫn nằm trong nhóm được sửa (chống race).
       const [row] = await db
         .update(posts)
-        .set({ imageVariants: storedImages, selectedImageUrl: null })
+        .set({ imageVariants: storedImages, selectedImageUrl: null, finalImageUrl: null, overlayJson: newOverlay })
         .where(and(eq(posts.id, id), inArray(posts.status, EDITABLE_STATUSES as any)))
         .returning();
       if (!row) {
@@ -224,17 +230,37 @@ export function registerImageRoutes(app: Express) {
       }
 
       const overlay = (existing.overlayJson as any) || {};
+
+      // Nạp ảnh + tên nhân vật của bài (studioParams.characterIds) để model biết
+      // "Grok/Gemini..." là ai khi câu lệnh nhắc tới nhân vật cụ thể.
+      const charIds = onlyUuids(overlay?.studioParams?.characterIds);
+      let editChars: { name: string; refImage: any }[] = [];
+      if (charIds.length) {
+        const rows = await db.select().from(charactersTable).where(inArray(charactersTable.id, charIds));
+        editChars = (
+          await Promise.all(
+            rows.map(async (c: any) => {
+              const refImage = await readImageAsInlineData(c.referenceImageUrl);
+              return refImage ? { name: c.name, refImage } : null;
+            })
+          )
+        ).filter(Boolean) as any[];
+      }
+
       const result = await editImage({
         sourceImage: sourceInline,
         instruction,
         aspectRatio: overlay.aspectRatio || "1:1",
+        characters: editChars.slice(0, 5),
       });
       if (result.isDemo) {
         return res.status(502).json({ error: result.warning || "Không chỉnh được ảnh (thiếu GEMINI_API_KEY hoặc lỗi Gemini)." });
       }
 
       const newUrl = (await persistDataUrl("posts", result.url)) || result.url;
-      const editHistory = [...(Array.isArray(overlay.editHistory) ? overlay.editHistory : []), instruction].slice(-10);
+      // Lịch sử: lưu CẢ ảnh kết quả từng bước (để xem lại/quay lại), tối đa 12 bước.
+      const prevHistory = Array.isArray(overlay.editHistory) ? overlay.editHistory : [];
+      const editHistory = [...prevHistory, { instruction, url: newUrl }].slice(-12);
 
       const [row] = await db
         .update(posts)
@@ -250,16 +276,45 @@ export function registerImageRoutes(app: Express) {
         if (k) await storage.delete(k).catch(() => {});
         return res.status(409).json({ error: "Trạng thái bài vừa thay đổi, thử lại." });
       }
-      // Dọn ảnh cũ nhưng GIỮ ảnh biến thể gốc (còn dùng ở lưới chọn / re-select).
-      const variantUrls = new Set(((existing.imageVariants as any[]) || []).map((v) => v?.url));
-      for (const oldUrl of [existing.finalImageUrl, existing.selectedImageUrl]) {
-        const k = internalKeyFromUrl(oldUrl);
-        if (k && oldUrl !== newUrl && !variantUrls.has(oldUrl)) await storage.delete(k).catch(() => {});
-      }
+      // KHÔNG xoá ảnh cũ nữa — giữ lại làm lịch sử để người dùng xem/quay lại.
       res.json(row);
     } catch (e: any) {
       console.error("edit image:", e?.message || e);
       res.status(500).json({ error: "Chỉnh ảnh thất bại." });
+    }
+  });
+
+  // Quay lại 1 bản ảnh trong lịch sử (biến thể gốc hoặc bước chỉnh trước) — đặt
+  // làm ảnh hiện tại. Chỉ chấp nhận URL nằm trong imageVariants hoặc editHistory.
+  app.post("/api/posts/:id/revert-image", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const { id } = req.params;
+    if (!UUID_RE.test(id)) return res.status(400).json({ error: "ID không hợp lệ." });
+    const imageUrl = typeof req.body?.imageUrl === "string" ? req.body.imageUrl : "";
+    if (!imageUrl) return res.status(400).json({ error: "Thiếu imageUrl." });
+    try {
+      const db = getDb();
+      const [existing] = await db.select().from(posts).where(eq(posts.id, id));
+      if (!existing) return res.status(404).json({ error: "Không tìm thấy bài." });
+      if (!EDITABLE_STATUSES.includes(existing.status as any)) {
+        return res.status(409).json({ error: `Bài đang ở trạng thái "${existing.status}", không thể đổi ảnh.` });
+      }
+      const overlay = (existing.overlayJson as any) || {};
+      const validUrls = new Set<string>([
+        ...((existing.imageVariants as any[]) || []).map((v) => v?.url),
+        ...(Array.isArray(overlay.editHistory) ? overlay.editHistory.map((h: any) => h?.url) : []),
+      ]);
+      if (!validUrls.has(imageUrl)) return res.status(400).json({ error: "Ảnh không nằm trong lịch sử của bài." });
+      const [row] = await db
+        .update(posts)
+        .set({ selectedImageUrl: imageUrl, finalImageUrl: imageUrl })
+        .where(and(eq(posts.id, id), inArray(posts.status, EDITABLE_STATUSES as any)))
+        .returning();
+      if (!row) return res.status(409).json({ error: "Trạng thái bài vừa thay đổi, thử lại." });
+      res.json(row);
+    } catch (e: any) {
+      console.error("revert image:", e?.message || e);
+      res.status(500).json({ error: "Quay lại ảnh thất bại." });
     }
   });
 

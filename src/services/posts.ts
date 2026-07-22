@@ -32,6 +32,17 @@ export async function editImage(postId: string, instruction: string): Promise<Po
   return res.json();
 }
 
+// Quay lại 1 bản ảnh trong lịch sử (biến thể gốc hoặc bước chỉnh trước).
+export async function revertImage(postId: string, imageUrl: string): Promise<PostRow> {
+  const res = await fetch(`/api/posts/${postId}/revert-image`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ imageUrl }),
+  });
+  if (!res.ok) return asError(res, "Quay lại ảnh thất bại.");
+  return res.json();
+}
+
 export async function regenerateImages(postId: string): Promise<PostRow> {
   const res = await fetch(`/api/posts/${postId}/regenerate-images`, {
     method: "POST",

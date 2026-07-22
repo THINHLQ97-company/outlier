@@ -134,8 +134,10 @@ export interface OverlayConfig {
   characterIds?: string[];
   // Studio: tham số vẽ tự do đã lưu (để vẽ lại đúng).
   studioParams?: StudioParams;
-  // Lịch sử các câu chỉnh sửa ảnh bằng câu lệnh (vòng chỉnh sửa như ChatGPT).
-  editHistory?: string[];
+  // Lịch sử chỉnh sửa: mỗi bước = câu lệnh + ảnh kết quả (để xem lại/quay lại).
+  editHistory?: { instruction: string; url: string }[];
+  // Minh bạch: prompt JSON đã gửi Gemini + nhân vật thực sự vào ảnh.
+  promptDebug?: { prompt: string; characters: string[] };
 }
 
 export interface PostRow {
