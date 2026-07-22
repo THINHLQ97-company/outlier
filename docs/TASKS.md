@@ -41,6 +41,16 @@ Nguồn: chuyển đổi từ `docs/PLAN.md` (iMVP, 7 step, tất cả đã hoà
 - [x] **Quản lý user** (`/admin/users`, chỉ admin) — CRUD user, đổi role, khoá/mở, reset mật khẩu; chặn tự-khoá/tự-hạ-quyền; không lộ passwordHash
 - [x] **Ownership model** — owner + isShared cho posts/assets (pipeline mặc định shared team; Studio chọn riêng/chung); migration `0003`
 
+## Đợt tinh giản + làm lại tạo ảnh (2026-07-22)
+
+- [x] **Tinh giản nav** còn 4 menu: Sáng tạo · Thư viện · Tín hiệu (gọn) · Quản trị. Bỏ hẳn trang: Kịch bản, Ảnh (pipeline), Duyệt, Sẵn sàng đăng, Lịch (+ endpoint backend duyệt/đăng/pipeline-image/calendar)
+- [x] **Studio 2 cột**: cột trái nhân vật + ảnh tham chiếu; cột phải mô tả + lời thoại (gắn nhân vật) + phong cách + bố cục/tỉ lệ. Bỏ "trục"
+- [x] **Thư viện 3 tab**: Ảnh (gallery) · Nhân vật (CRUD) · Phong cách (mới)
+- [x] **Phong cách = ảnh tham chiếu + JSON**: upload ảnh → Gemini vision phân tích ra styleJson; sinh ảnh minh hoạ từ styleJson; 4 phong cách mặc định seed sẵn ("Comic hành động" primary)
+- [x] **Prompt JSON có cấu trúc** gửi Gemini (`server/services/prompt-builder.ts`): scene · characters (personality + ảnh ref #N) · meme_layout_reference #N · art_style (styleJson + ảnh ref #N) · dialogue (gắn nhân vật) · rules; ảnh tham chiếu đánh số #1..#N
+- [x] **Lời thoại**: model vẽ bong bóng (renderDialogue) + giữ text-overlay editor để sửa dấu
+- [x] **Dọn từ ngữ**: bỏ jargon .md (trục/mục X.X/F1-F7/FR/ngưỡng) → tiếng Việt phổ thông
+
 ## Rủi ro đã biết (chấp nhận cho iMVP nội bộ, fix sau nếu go-live rộng)
 
 - Token đăng nhập (7 ngày) truyền qua query string `?token=` cho `GET /api/files/*` (vì `<img>` không gửi được header Authorization) — có thể lọt vào access log/history/Referer. Chấp nhận cho công cụ nội bộ; nếu go-live rộng nên đổi sang cookie HttpOnly same-origin hoặc token ngắn hạn scope theo file.
