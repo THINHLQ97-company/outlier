@@ -13,7 +13,7 @@ import {
   CheckCircle2,
   Sparkles,
 } from "lucide-react";
-import { studioGenerate } from "../services/studio";
+import { studioGenerate, suggestScenario, type ScenarioVariant } from "../services/studio";
 import { regenerateImages, selectImage, saveOverlay, getPost } from "../services/posts";
 import { listCharacters, fileToDataUrl } from "../services/characters";
 import { listAssets, createAsset, deleteAsset } from "../services/assets";
@@ -193,6 +193,43 @@ export default function Studio() {
   }
   function removeDialogueLine(index: number) {
     setDialogueLines((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  // ----- AI viết kịch bản hài -----
+  const [suggesting, setSuggesting] = useState(false);
+  const [scenarios, setScenarios] = useState<ScenarioVariant[] | null>(null);
+  const [suggestWarning, setSuggestWarning] = useState<string | null>(null);
+
+  async function handleSuggestScenario() {
+    if (!promptText.trim()) {
+      setError("Nhập một ý tưởng/chủ đề trước để AI viết kịch bản.");
+      return;
+    }
+    setSuggesting(true);
+    setError(null);
+    setSuggestWarning(null);
+    try {
+      const hintNames = selectedCharacters.map((c) => c.name);
+      const result = await suggestScenario(promptText.trim(), hintNames);
+      setScenarios(result.variants);
+      if (result.warning) setSuggestWarning(result.warning);
+    } catch (e: any) {
+      setError(e?.message || "AI viết kịch bản thất bại.");
+    } finally {
+      setSuggesting(false);
+    }
+  }
+
+  // Áp 1 phương án AI vào form: mô tả + nhân vật (map tên→id) + lời thoại + bố cục.
+  function applyScenario(v: ScenarioVariant) {
+    setPromptText(v.scene || promptText);
+    const ids = v.characters
+      .map((name) => characters.find((c) => c.name === name)?.id)
+      .filter((x): x is string => !!x);
+    if (ids.length) setSelectedCharacterIds(ids);
+    setDialogueLines(v.dialogue || []);
+    if (v.panelLayout === "1" || v.panelLayout === "2") setPanelLayout(v.panelLayout);
+    setScenarios(null);
   }
 
   async function handleGenerate() {
@@ -446,17 +483,32 @@ export default function Studio() {
             <h2 className="text-sm font-semibold text-stone-800">Nội dung & phong cách</h2>
 
             <div>
-              <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="st-prompt">
-                Mô tả bối cảnh
-              </label>
+              <div className="flex items-center justify-between mb-1 gap-2">
+                <label className="block text-xs font-medium text-stone-600" htmlFor="st-prompt">
+                  Mô tả bối cảnh
+                </label>
+                <button
+                  type="button"
+                  onClick={handleSuggestScenario}
+                  disabled={suggesting}
+                  title="Nhập ý tưởng/chủ đề thô, AI sẽ viết thành kịch bản hài (bối cảnh + nhân vật + lời thoại)"
+                  className="flex items-center gap-1 text-xs font-medium text-storm-700 bg-storm-50 hover:bg-storm-100 px-2 py-1 rounded-lg disabled:opacity-60"
+                >
+                  {suggesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> : <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />}
+                  AI viết kịch bản hài
+                </button>
+              </div>
               <textarea
                 id="st-prompt"
                 rows={4}
                 value={promptText}
                 onChange={(e) => setPromptText(e.target.value)}
-                placeholder="VD: Gàn ngồi trước 2 nút to 'AI làm hộ' và 'Tự làm', mồ hôi nhễ nhại, Gèn đứng sau lắc đầu..."
+                placeholder="Gõ ý tưởng/chủ đề thô (VD: ChatGPT hay bịa số liệu) rồi bấm 'AI viết kịch bản hài' để dựng cảnh cụ thể — hoặc tự mô tả chi tiết bối cảnh."
                 className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
               />
+              {suggestWarning && (
+                <p className="text-[11px] text-amber-700 mt-1">{suggestWarning}</p>
+              )}
             </div>
 
             <div>
@@ -716,6 +768,72 @@ export default function Studio() {
           )}
         </div>
       )}
+
+      {scenarios && (
+        <ScenarioPickerModal
+          scenarios={scenarios}
+          onPick={applyScenario}
+          onClose={() => setScenarios(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Modal chọn 1 trong 3 kịch bản hài AI vừa viết → điền vào form Studio.
+function ScenarioPickerModal({
+  scenarios,
+  onPick,
+  onClose,
+}: {
+  scenarios: ScenarioVariant[];
+  onPick: (v: ScenarioVariant) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-5 border-b border-stone-100 sticky top-0 bg-white">
+          <h3 className="font-semibold text-stone-800 font-display">AI gợi ý kịch bản — chọn 1 phương án</h3>
+          <button onClick={onClose} className="p-1.5 text-stone-400 hover:bg-stone-100 rounded-full" aria-label="Đóng">
+            <X className="w-4 h-4" aria-hidden="true" />
+          </button>
+        </div>
+        <div className="p-5 flex flex-col gap-3">
+          {scenarios.length === 0 && (
+            <p className="text-sm text-stone-400">AI chưa gợi ý được kịch bản nào. Thử mô tả ý tưởng rõ hơn.</p>
+          )}
+          {scenarios.map((v, i) => (
+            <div key={i} className="border border-stone-200 rounded-xl p-4 flex flex-col gap-2 hover:border-storm-300 transition-colors">
+              <div className="flex items-center justify-between gap-2">
+                <h4 className="text-sm font-semibold text-stone-800">{v.title}</h4>
+                <span className="text-[11px] text-stone-400 shrink-0">{v.panelLayout === "2" ? "2 khung" : "1 khung"}</span>
+              </div>
+              <p className="text-sm text-stone-600">{v.scene}</p>
+              {v.characters.length > 0 && (
+                <p className="text-xs text-stone-500">
+                  <span className="font-medium">Nhân vật:</span> {v.characters.join(", ")}
+                </p>
+              )}
+              {v.dialogue.length > 0 && (
+                <div className="flex flex-col gap-0.5 bg-stone-50 rounded-lg p-2.5">
+                  {v.dialogue.map((d, j) => (
+                    <p key={j} className="text-xs text-stone-600">
+                      <span className="font-medium text-storm-700">{d.character}:</span> "{d.text}"
+                    </p>
+                  ))}
+                </div>
+              )}
+              <button
+                onClick={() => onPick(v)}
+                className="self-start mt-1 flex items-center gap-1.5 text-sm font-medium text-white bg-storm-600 hover:bg-storm-700 px-3 py-1.5 rounded-lg"
+              >
+                <Check className="w-4 h-4" aria-hidden="true" /> Dùng phương án này
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

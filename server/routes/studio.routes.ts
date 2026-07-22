@@ -21,6 +21,7 @@ import {
   type DialogueLine,
 } from "../services/prompt-builder";
 import { persistVariantImages, normalizeAspectRatio, type AspectRatioValue } from "../services/image-store";
+import { writeScenarios } from "../services/scenario-writer";
 import { PANEL_LAYOUTS } from "../../shared/engine-data";
 
 function resolvePanelLayout(key: any): (typeof PANEL_LAYOUTS)[number] {
@@ -171,6 +172,32 @@ export async function generateStudioVariants(
 }
 
 export function registerStudioRoutes(app: Express) {
+  // POST /api/studio/suggest-scenario — "AI viết kịch bản hài": biến 1 ý tưởng
+  // thô thành 3 kịch bản comic cụ thể (bối cảnh + nhân vật + lời thoại) dùng dàn
+  // nhân vật cố định. Kết quả điền vào form Studio. Thiếu key → kịch bản mẫu (demo).
+  app.post("/api/studio/suggest-scenario", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const body = req.body || {};
+    const idea = typeof body.idea === "string" ? body.idea.trim() : "";
+    if (!idea) return res.status(400).json({ error: "Thiếu ý tưởng/mô tả để AI viết kịch bản." });
+    try {
+      const db = getDb();
+      const cast = await db.select().from(charactersTable);
+      const characterHints = Array.isArray(body.characterHints)
+        ? body.characterHints.filter((n: any) => typeof n === "string")
+        : [];
+      const result = await writeScenarios({
+        idea,
+        cast: cast.map((c: any) => ({ name: c.name, kind: c.kind, personality: c.personality, catchphrase: c.catchphrase })),
+        characterHints,
+      });
+      res.json(result);
+    } catch (e: any) {
+      console.error("suggest-scenario:", e?.message || e);
+      res.status(500).json({ error: "Viết kịch bản thất bại." });
+    }
+  });
+
   // POST /api/studio/generate — sinh ảnh trực tiếp → post draft origin="studio".
   app.post("/api/studio/generate", requireAuth, async (req, res) => {
     if (dbDown(res)) return;

@@ -26,3 +26,29 @@ export async function studioGenerate(input: StudioGenerateInput): Promise<PostRo
   if (!res.ok) return asError(res, "Vẽ ảnh Studio thất bại.");
   return res.json();
 }
+
+export interface ScenarioVariant {
+  title: string;
+  scene: string;
+  characters: string[]; // tên nhân vật
+  dialogue: DialogueLine[];
+  panelLayout: string; // "1" | "2"
+}
+
+export interface ScenarioResult {
+  variants: ScenarioVariant[];
+  isDemo: boolean;
+  warning?: string;
+}
+
+// "AI viết kịch bản hài" — biến ý tưởng thô thành 3 kịch bản (bối cảnh + nhân
+// vật + lời thoại) để điền vào form Studio.
+export async function suggestScenario(idea: string, characterHints?: string[]): Promise<ScenarioResult> {
+  const res = await fetch("/api/studio/suggest-scenario", {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ idea, characterHints }),
+  });
+  if (!res.ok) return asError(res, "AI viết kịch bản thất bại.");
+  return res.json();
+}
