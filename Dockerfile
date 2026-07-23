@@ -10,6 +10,12 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 
+# Client ID Google cho nút "Sign in with Google" — Vite NHÚNG biến VITE_* vào
+# bundle LÚC BUILD, nên phải truyền dạng build arg (Coolify: đánh dấu env
+# VITE_GOOGLE_CLIENT_ID là "Build Variable"). Rỗng = trang login ẩn nút Google.
+ARG VITE_GOOGLE_CLIENT_ID=""
+ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
+
 # Copy source and build the client bundle.
 COPY . .
 RUN npm run build
