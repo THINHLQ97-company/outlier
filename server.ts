@@ -15,6 +15,7 @@ import { registerAssetRoutes } from "./server/routes/assets.routes";
 import { registerStudioRoutes } from "./server/routes/studio.routes";
 import { registerStyleRoutes } from "./server/routes/styles.routes";
 import { registerGalleryRoutes } from "./server/routes/gallery.routes";
+import { registerRagRoutes } from "./server/routes/rag.routes";
 
 dotenv.config();
 
@@ -72,6 +73,9 @@ async function startServer() {
 
   // ===== GALLERY — thư viện ảnh + lưu ảnh thành asset =====
   registerGalleryRoutes(app);
+
+  // ===== RAG — kho "ảnh đã thích" (❤️) + hồ sơ sở thích để prompt thông minh hơn =====
+  registerRagRoutes(app);
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

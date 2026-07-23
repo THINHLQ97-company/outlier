@@ -202,3 +202,38 @@ export const files = pgTable("files", {
 
 export type FileRow = typeof files.$inferSelect;
 export type NewFileRow = typeof files.$inferInsert;
+
+// ===== rag_examples — kho "ảnh đã thích" cho RAG =====
+// Khi người dùng ❤️ 1 ảnh → lưu prompt + thông số + mô tả cảnh + embedding để
+// các lần tạo sau (bật RAG) truy hồi ví dụ giống nhất làm gợi ý. owner/isShared:
+// riêng mình / chia sẻ team (giống asset). Không FK tới posts (giữ được ví dụ
+// kể cả khi ảnh gốc bị xoá). embedding: vector Gemini (mảng float) để tính gần.
+export const ragExamples = pgTable("rag_examples", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  owner: text("owner").notNull(),
+  isShared: boolean("is_shared").notNull().default(false),
+  postId: uuid("post_id"), // tham chiếu informational (không cascade)
+  scene: text("scene"), // mô tả cảnh / promptText
+  promptJson: text("prompt_json"), // prompt đầy đủ đã gửi Gemini
+  paramsJson: jsonb("params_json").$type<Record<string, any>>().default({}), // style/nhân vật/bố cục/nền/thoại
+  imageUrl: text("image_url"), // ảnh đã thích (để xem trong Thư viện RAG)
+  embedding: jsonb("embedding").$type<number[]>(), // vector để truy hồi
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  ownerIdx: index("rag_examples_owner_idx").on(t.owner),
+  postIdx: index("rag_examples_post_idx").on(t.postId),
+}));
+
+export type RagExampleRow = typeof ragExamples.$inferSelect;
+export type NewRagExampleRow = typeof ragExamples.$inferInsert;
+
+// ===== rag_profiles — "hồ sơ sở thích" chưng cất từ ảnh đã thích (mỗi owner 1) =====
+export const ragProfiles = pgTable("rag_profiles", {
+  owner: text("owner").primaryKey(),
+  profileText: text("profile_text"), // mô tả gu (phong cách/nền/bố cục hay chọn...) tiếng Việt
+  exampleCount: integer("example_count").notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type RagProfileRow = typeof ragProfiles.$inferSelect;
+export type NewRagProfileRow = typeof ragProfiles.$inferInsert;

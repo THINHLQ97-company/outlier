@@ -14,9 +14,12 @@ import {
   Sparkles,
   ChevronUp,
   ChevronDown,
+  Heart,
+  Brain,
 } from "lucide-react";
 import { studioGenerate, suggestScenario, type ScenarioVariant } from "../services/studio";
 import { regenerateImages, selectImage, saveOverlay, getPost, editImage, revertImage } from "../services/posts";
+import { favoriteImage, unfavoriteImage, getFavoriteIds } from "../services/rag";
 import { listCharacters, fileToDataUrl } from "../services/characters";
 import { listAssets, createAsset, deleteAsset } from "../services/assets";
 import { listStyles } from "../services/styles";
@@ -71,6 +74,7 @@ export default function Studio() {
   const [background, setBackground] = useState("scene"); // scene/white/minimal
   const [aspectRatio, setAspectRatio] = useState("1:1");
   const [isShared, setIsShared] = useState(false);
+  const [useRag, setUseRag] = useState(false); // bật RAG: đọc thêm "gu đã học"
 
   const [generating, setGenerating] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
@@ -83,6 +87,10 @@ export default function Studio() {
 
   const [searchParams] = useSearchParams();
   const [loadingExisting, setLoadingExisting] = useState(false);
+
+  // ----- RAG: trạng thái đã thả tim ảnh hiện tại -----
+  const [favorited, setFavorited] = useState(false);
+  const [favoriting, setFavoriting] = useState(false);
 
   // Mở lại 1 bài đã có (link "Mở lại để sửa" từ Thư viện, ?postId=<id>) — bỏ
   // qua form chọn nhân vật/mô tả, đi thẳng vào bước chọn ảnh/chỉnh chữ (post đã
@@ -132,6 +140,38 @@ export default function Studio() {
       })
       .finally(() => setStylesLoading(false));
   }, []);
+
+  // Đồng bộ trạng thái "đã thả tim" cho ảnh hiện tại (khi tạo mới / mở lại bài).
+  useEffect(() => {
+    if (!post?.id) {
+      setFavorited(false);
+      return;
+    }
+    getFavoriteIds()
+      .then((ids) => setFavorited(ids.includes(post.id)))
+      .catch(() => {
+        /* best-effort */
+      });
+  }, [post?.id]);
+
+  async function handleToggleFavorite() {
+    if (!post) return;
+    setFavoriting(true);
+    setError(null);
+    try {
+      if (favorited) {
+        await unfavoriteImage(post.id);
+        setFavorited(false);
+      } else {
+        await favoriteImage(post.id, post.isShared);
+        setFavorited(true);
+      }
+    } catch (e: any) {
+      setError(e?.message || "Thao tác yêu thích thất bại.");
+    } finally {
+      setFavoriting(false);
+    }
+  }
 
   const selectedCharacters = characters.filter((c) => selectedCharacterIds.includes(c.id));
   // Nhân vật + ảnh tham chiếu (KHÔNG tính ảnh mẫu meme) dùng chung ngân sách ảnh
@@ -273,6 +313,7 @@ export default function Studio() {
         panelLayout,
         background,
         aspectRatio,
+        useRag,
         isShared,
       });
       setPost(result);
@@ -741,6 +782,23 @@ export default function Studio() {
               </label>
             </div>
 
+            {/* RAG — học từ ảnh đã thích (❤️) để prompt hợp gu hơn */}
+            <label
+              className={`flex items-start gap-2 text-sm rounded-lg border px-3 py-2.5 cursor-pointer transition-colors ${
+                useRag ? "border-storm-300 bg-storm-50" : "border-stone-200 bg-white hover:border-stone-300"
+              }`}
+            >
+              <input type="checkbox" checked={useRag} onChange={(e) => setUseRag(e.target.checked)} className="accent-storm-600 mt-0.5" />
+              <span>
+                <span className="flex items-center gap-1.5 font-medium text-stone-700">
+                  <Brain className="w-4 h-4 text-storm-600" aria-hidden="true" /> Học theo ảnh tôi đã thích (RAG)
+                </span>
+                <span className="block text-[11px] text-stone-500 mt-0.5">
+                  Khi bật, AI đọc thêm "gu" từ các ảnh bạn đã thả tim (bố cục, phong cách, kiểu hài) để vẽ hợp ý hơn. Quản lý ở Thư viện → tab RAG.
+                </span>
+              </span>
+            </label>
+
             <button
               onClick={handleGenerate}
               disabled={generating}
@@ -819,14 +877,37 @@ export default function Studio() {
 
           {/* Vòng chỉnh sửa bằng câu lệnh (như ChatGPT) */}
           <div className="bg-white border border-stone-200 rounded-xl p-4 flex flex-col gap-3">
-            <div>
-              <p className="text-sm font-semibold text-stone-800 flex items-center gap-1.5">
-                <Sparkles className="w-4 h-4 text-storm-600" aria-hidden="true" /> Chỉnh sửa bằng câu lệnh
-              </p>
-              <p className="text-xs text-stone-500 mt-0.5">
-                Gõ điều muốn đổi trên ảnh hiện tại — Gemini chỉnh, giữ nguyên phần còn lại. Có thể nhắc tên nhân vật (AI biết ai là ai trong khung).
-              </p>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <p className="text-sm font-semibold text-stone-800 flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-storm-600" aria-hidden="true" /> Chỉnh sửa bằng câu lệnh
+                </p>
+                <p className="text-xs text-stone-500 mt-0.5">
+                  Gõ điều muốn đổi trên ảnh hiện tại — Gemini chỉnh, giữ nguyên phần còn lại. Có thể nhắc tên nhân vật (AI biết ai là ai trong khung).
+                </p>
+              </div>
+              <button
+                onClick={handleToggleFavorite}
+                disabled={favoriting}
+                title={favorited ? "Bỏ thích — gỡ khỏi thư viện RAG" : "Thả tim — lưu prompt & thông số vào thư viện RAG để học gu"}
+                aria-pressed={favorited}
+                className={`shrink-0 flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border transition-colors ${
+                  favorited ? "bg-rose-50 border-rose-200 text-rose-600" : "bg-white border-stone-200 text-stone-500 hover:border-rose-200 hover:text-rose-500"
+                }`}
+              >
+                {favoriting ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Heart className={`w-3.5 h-3.5 ${favorited ? "fill-rose-500 text-rose-500" : ""}`} aria-hidden="true" />
+                )}
+                {favorited ? "Đã thích" : "Thích"}
+              </button>
             </div>
+
+            {/* Panel context: prompt trước + nhân vật + style của ảnh đang sửa. Gemini
+                cũng nhận lại các nhân vật này + bối cảnh gốc khi chỉnh tiếp. */}
+            <EditContextPanel post={post} characters={characters} />
+
             <img
               src={imageDisplayUrl(post.selectedImageUrl) || undefined}
               alt="Ảnh hiện tại"
@@ -946,6 +1027,69 @@ export default function Studio() {
           onPick={applyScenario}
           onClose={() => setScenarios(null)}
         />
+      )}
+    </div>
+  );
+}
+
+// Panel context của ảnh đang chỉnh: mô tả (prompt) trước + nhân vật đã dùng (kèm
+// ảnh) + phong cách + cờ RAG. Cho người dùng thấy rõ khung này gồm những gì, và
+// nhắc rằng Gemini cũng nhận lại đúng các nhân vật + bối cảnh này khi chỉnh tiếp.
+function EditContextPanel({ post, characters }: { post: PostRow; characters: CharacterRow[] }) {
+  const debug = post.overlayJson?.promptDebug;
+  const usedNames = debug?.characters || [];
+  const styleName = debug?.style || null;
+  const ragUsed = debug?.ragUsed || 0;
+  const scene = post.promptText || "";
+  // Map tên nhân vật → row (để lấy ảnh); tên không khớp vẫn hiện dạng chip chữ.
+  const charRows = usedNames.map((name) => ({ name, row: characters.find((c) => c.name === name) || null }));
+
+  if (!scene && !usedNames.length && !styleName) return null;
+
+  return (
+    <div className="bg-stone-50 border border-stone-200 rounded-lg p-3 flex flex-col gap-2.5">
+      <p className="text-[11px] font-semibold text-stone-500 uppercase tracking-wide">Ảnh này gồm những gì (Gemini nhớ khi chỉnh tiếp)</p>
+
+      {scene && (
+        <div>
+          <p className="text-[11px] font-medium text-stone-500 mb-0.5">Mô tả đã dùng</p>
+          <p className="text-xs text-stone-700 leading-snug line-clamp-3">{scene}</p>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-3">
+        {usedNames.length > 0 && (
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium text-stone-500 mb-1">Nhân vật trong khung</p>
+            <div className="flex flex-wrap gap-1.5">
+              {charRows.map(({ name, row }) => (
+                <span key={name} className="flex items-center gap-1 text-[11px] bg-white border border-stone-200 text-stone-700 px-1.5 py-1 rounded-lg">
+                  <span className="w-4 h-4 rounded-full overflow-hidden bg-stone-100 shrink-0">
+                    {row?.referenceImageUrl && (
+                      <img src={imageDisplayUrl(row.referenceImageUrl) || undefined} alt="" className="w-full h-full object-cover" />
+                    )}
+                  </span>
+                  {name}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {styleName && (
+          <div>
+            <p className="text-[11px] font-medium text-stone-500 mb-1">Phong cách</p>
+            <span className="inline-flex items-center gap-1 text-[11px] bg-white border border-stone-200 text-stone-700 px-2 py-1 rounded-lg">
+              <Sparkles className="w-3 h-3 text-storm-500" aria-hidden="true" /> {styleName}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {ragUsed > 0 && (
+        <p className="text-[11px] text-storm-600 flex items-center gap-1">
+          <Brain className="w-3.5 h-3.5" aria-hidden="true" /> Đã tham khảo {ragUsed} ảnh bạn từng thích (RAG) khi vẽ.
+        </p>
       )}
     </div>
   );

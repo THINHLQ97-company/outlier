@@ -22,6 +22,7 @@ import {
 } from "../services/prompt-builder";
 import { persistVariantImages, normalizeAspectRatio, type AspectRatioValue } from "../services/image-store";
 import { writeScenarios } from "../services/scenario-writer";
+import { retrieveRagExamples, getRagProfile, buildRagGuidance } from "../services/rag";
 import { PANEL_LAYOUTS, BACKGROUND_OPTIONS } from "../../shared/engine-data";
 
 function resolvePanelLayout(key: any): (typeof PANEL_LAYOUTS)[number] {
@@ -71,6 +72,7 @@ export interface StudioParams {
   dialogue: DialogueLine[];
   panelLayout?: string; // key PANEL_LAYOUTS (1/2/4/auto)
   background?: string; // key BACKGROUND_OPTIONS (scene/white/minimal)
+  useRag?: boolean; // bật RAG: đọc thêm "gu đã học" từ ảnh đã thích
 }
 
 // Chọn phong cách: styleId (owner==user | isShared | isDefault) → phong cách đó;
@@ -116,6 +118,8 @@ export async function generateStudioVariants(
   warning?: string;
   promptText: string;
   charactersUsed: string[];
+  styleName: string | null;
+  ragUsed: number; // số ví dụ RAG đã chèn (0 = không dùng)
 }> {
   const chosenChars = params.characterIds.length
     ? await db.select().from(charactersTable).where(inArray(charactersTable.id, params.characterIds))
@@ -158,6 +162,22 @@ export async function generateStudioVariants(
   const characterNames = characters.map((c) => c.name);
   const dialogue = normalizeDialogue(params.dialogue, characterNames);
 
+  // RAG: bật → truy hồi ví dụ đã thích giống cảnh này + hồ sơ sở thích, chèn text.
+  let ragGuidance = "";
+  let ragUsed = 0;
+  if (params.useRag) {
+    try {
+      const [examples, profileText] = await Promise.all([
+        retrieveRagExamples(db, owner, params.promptText),
+        getRagProfile(db, owner),
+      ]);
+      ragGuidance = buildRagGuidance(examples, profileText);
+      ragUsed = examples.length;
+    } catch (e: any) {
+      console.warn("[studio] RAG retrieval lỗi — bỏ qua:", e?.message || e);
+    }
+  }
+
   const { promptText, referenceImages, charactersUsed } = await buildImageGenerationRequest({
     scene: params.promptText,
     characters,
@@ -168,6 +188,7 @@ export async function generateStudioVariants(
     aspectRatio,
     renderDialogue: dialogue.length > 0,
     backgroundInstruction: resolveBackground(params.background).instruction,
+    ragGuidance,
   });
 
   const result = await generateImageVariants({
@@ -178,7 +199,7 @@ export async function generateStudioVariants(
   });
 
   const storedImages = await persistVariantImages(result.images);
-  return { storedImages, warning: result.warning, promptText, charactersUsed };
+  return { storedImages, warning: result.warning, promptText, charactersUsed, styleName: style?.name || null, ragUsed };
 }
 
 export function registerStudioRoutes(app: Express) {
@@ -224,12 +245,13 @@ export function registerStudioRoutes(app: Express) {
     const caption = typeof body.caption === "string" ? body.caption : "";
     const panelLayout = resolvePanelLayout(body.panelLayout).key;
     const background = resolveBackground(body.background).key;
+    const useRag = body.useRag === true;
     // Lời thoại thô (chuẩn hoá lại theo nhân vật thực tế bên trong generateStudioVariants).
     const dialogueRaw = Array.isArray(body.dialogue) ? body.dialogue : [];
 
     try {
       const db = getDb();
-      const params: StudioParams = { promptText, characterIds, assetIds, styleId, dialogue: dialogueRaw, panelLayout, background };
+      const params: StudioParams = { promptText, characterIds, assetIds, styleId, dialogue: dialogueRaw, panelLayout, background, useRag };
       const gen = await generateStudioVariants(db, user, params, aspectRatio);
       const { storedImages, warning } = gen;
 
@@ -249,9 +271,9 @@ export function registerStudioRoutes(app: Express) {
             watermarkBrand: "MATBAO",
             aspectRatio,
             // Lưu tham số Studio để /regenerate-images vẽ lại đúng (scriptId null).
-            studioParams: { characterIds, assetIds, styleId, dialogue: dialogueRaw, panelLayout, background },
-            // Minh bạch: prompt JSON đã gửi Gemini + nhân vật thực sự vào ảnh.
-            promptDebug: { prompt: gen.promptText, characters: gen.charactersUsed },
+            studioParams: { characterIds, assetIds, styleId, dialogue: dialogueRaw, panelLayout, background, useRag },
+            // Minh bạch: prompt JSON đã gửi Gemini + nhân vật + style + RAG đã dùng.
+            promptDebug: { prompt: gen.promptText, characters: gen.charactersUsed, style: gen.styleName, ragUsed: gen.ragUsed },
           },
           caption,
           status: "draft",

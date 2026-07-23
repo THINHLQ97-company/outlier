@@ -41,6 +41,7 @@ export interface BuildImageInput {
   aspectRatio: string;
   renderDialogue: boolean; // true → model tự vẽ bong bóng thoại; false → chừa chỗ overlay
   backgroundInstruction?: string; // yêu cầu về nền (nền trắng / tối giản...); rỗng = theo bối cảnh
+  ragGuidance?: string; // "gu đã học" từ RAG (hồ sơ + ví dụ đã thích) — chèn dạng text
 }
 
 export interface BuiltImageRequest {
@@ -117,6 +118,7 @@ export async function buildImageGenerationRequest(input: BuildImageInput): Promi
     })),
     meme_layout_reference: memeNumber ? `#${memeNumber}` : undefined,
     background: input.backgroundInstruction || undefined,
+    learned_preferences: input.ragGuidance?.trim() || undefined,
     dialogue: input.dialogue.map((d) => ({ character: d.character, text: d.text })),
     rules: [] as string[],
   };
@@ -139,6 +141,11 @@ export async function buildImageGenerationRequest(input: BuildImageInput): Promi
   }
   if (input.backgroundInstruction) {
     rules.push(input.backgroundInstruction);
+  }
+  if (input.ragGuidance?.trim()) {
+    rules.push(
+      "Take learned_preferences as soft guidance for composition, art direction and humor tone (the creator's taste from images they loved). It must NOT override the explicit scene, characters or dialogue above."
+    );
   }
   if (input.renderDialogue) {
     rules.push(

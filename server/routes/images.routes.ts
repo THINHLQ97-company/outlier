@@ -118,7 +118,7 @@ export function registerImageRoutes(app: Express) {
 
       let storedImages: { url: string; source: "social" | "placeholder" }[];
       let warning: string | undefined;
-      let promptDebug: { prompt: string; characters: string[] } | undefined;
+      let promptDebug: { prompt: string; characters: string[]; style?: string | null; ragUsed?: number } | undefined;
 
       if (existing.origin === "studio") {
         // Bài Studio (scriptId null) — vẽ lại từ tham số Studio đã lưu.
@@ -131,12 +131,13 @@ export function registerImageRoutes(app: Express) {
           dialogue: Array.isArray(sp.dialogue) ? sp.dialogue : [],
           panelLayout: sp.panelLayout,
           background: sp.background,
+          useRag: sp.useRag === true,
         };
         const owner = existing.owner || getAuthUser(req)!;
         const gen = await generateStudioVariants(db, owner, params, aspectRatio);
         storedImages = gen.storedImages;
         warning = gen.warning;
-        promptDebug = { prompt: gen.promptText, characters: gen.charactersUsed };
+        promptDebug = { prompt: gen.promptText, characters: gen.charactersUsed, style: gen.styleName, ragUsed: gen.ragUsed };
       } else {
         const [script] = await db.select().from(scripts).where(eq(scripts.id, existing.scriptId));
         if (!script) return res.status(404).json({ error: "Không tìm thấy kịch bản gốc." });
@@ -247,11 +248,19 @@ export function registerImageRoutes(app: Express) {
         ).filter(Boolean) as any[];
       }
 
+      // Bối cảnh gốc để Gemini hiểu ý đồ khi chỉnh tiếp: mô tả cảnh người dùng đã
+      // nhập (promptText) — gọn hơn cả prompt JSON, đủ để model biết "ai là ai".
+      const previousContext =
+        (typeof existing.promptText === "string" && existing.promptText.trim()) ||
+        overlay?.promptDebug?.prompt ||
+        "";
+
       const result = await editImage({
         sourceImage: sourceInline,
         instruction,
         aspectRatio: overlay.aspectRatio || "1:1",
         characters: editChars.slice(0, 5),
+        previousContext,
       });
       if (result.isDemo) {
         return res.status(502).json({ error: result.warning || "Không chỉnh được ảnh (thiếu GEMINI_API_KEY hoặc lỗi Gemini)." });

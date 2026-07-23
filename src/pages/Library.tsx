@@ -16,8 +16,20 @@ import {
   Wand2,
   ChevronDown,
   ChevronUp,
+  Heart,
+  Brain,
+  RefreshCw,
 } from "lucide-react";
-import { getGallery, savePostAsAsset, deleteGalleryPost } from "../services/posts";
+import { getGallery, savePostAsAsset, deleteGalleryPost, getPost } from "../services/posts";
+import {
+  favoriteImage,
+  unfavoriteImage,
+  getFavoriteIds,
+  listRagExamples,
+  deleteRagExample,
+  getRagProfile,
+  rebuildRagProfile,
+} from "../services/rag";
 import {
   listCharacters,
   createCharacter,
@@ -32,24 +44,25 @@ import { imageDisplayUrl } from "../services/http";
 import { useAppContext } from "../AppContext";
 import { AXES } from "../../shared/engine-data";
 import ConfirmDialog from "../components/ConfirmDialog";
-import type { GalleryPost, PostStatus, AxisKey, CharacterRow, CharacterKind, StyleRow, AssetKind } from "../types";
+import type { GalleryPost, PostStatus, AxisKey, CharacterRow, CharacterKind, StyleRow, AssetKind, RagExample, RagProfile } from "../types";
 
 const TABS = [
   { key: "gallery", label: "Ảnh" },
   { key: "characters", label: "Nhân vật" },
   { key: "styles", label: "Phong cách" },
+  { key: "rag", label: "RAG (ảnh đã thích)" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
-// Thư viện — 3 tab: Ảnh (bài đã tạo, pipeline + Studio), Nhân vật (dàn nhân vật
-// cố định), Phong cách (thư viện phong cách vẽ chọn ở Studio).
+// Thư viện — 4 tab: Ảnh (bài đã tạo, pipeline + Studio), Nhân vật (dàn nhân vật
+// cố định), Phong cách (thư viện phong cách vẽ), RAG (kho ảnh đã thích + hồ sơ gu).
 export default function Library() {
   const [tab, setTab] = useState<TabKey>("gallery");
   return (
     <div className="flex flex-col gap-4">
       <div>
         <h1 className="text-lg font-bold text-stone-800 font-display">Thư viện</h1>
-        <p className="text-sm text-stone-500">Ảnh đã tạo, dàn nhân vật và thư viện phong cách vẽ.</p>
+        <p className="text-sm text-stone-500">Ảnh đã tạo, dàn nhân vật, phong cách vẽ và kho RAG (ảnh đã thích).</p>
       </div>
       <div className="flex gap-1 border-b border-stone-200">
         {TABS.map((t) => (
@@ -67,6 +80,7 @@ export default function Library() {
       {tab === "gallery" && <GalleryTab />}
       {tab === "characters" && <CharactersTab />}
       {tab === "styles" && <StylesTab />}
+      {tab === "rag" && <RagTab />}
     </div>
   );
 }
@@ -103,6 +117,8 @@ function GalleryTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<GalleryPost | null>(null);
+  const [favIds, setFavIds] = useState<Set<string>>(new Set());
+  const [favBusyId, setFavBusyId] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -112,6 +128,36 @@ function GalleryTab() {
       .catch((e) => setError(e?.message || "Lỗi tải thư viện ảnh."))
       .finally(() => setLoading(false));
   }, [scope]);
+
+  useEffect(() => {
+    getFavoriteIds()
+      .then((ids) => setFavIds(new Set(ids)))
+      .catch(() => {
+        /* best-effort */
+      });
+  }, []);
+
+  async function toggleFav(p: GalleryPost) {
+    setFavBusyId(p.id);
+    setError(null);
+    try {
+      if (favIds.has(p.id)) {
+        await unfavoriteImage(p.id);
+        setFavIds((prev) => {
+          const next = new Set(prev);
+          next.delete(p.id);
+          return next;
+        });
+      } else {
+        await favoriteImage(p.id, p.isShared);
+        setFavIds((prev) => new Set(prev).add(p.id));
+      }
+    } catch (e: any) {
+      setError(e?.message || "Thao tác yêu thích thất bại.");
+    } finally {
+      setFavBusyId(null);
+    }
+  }
 
   function thumbUrl(p: GalleryPost): string | null {
     return imageDisplayUrl(p.finalImageUrl || p.selectedImageUrl || p.imageVariants[0]?.url);
@@ -145,38 +191,55 @@ function GalleryTab() {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           {items.map((p) => {
             const url = thumbUrl(p);
+            const faved = favIds.has(p.id);
             return (
-              <button
+              <div
                 key={p.id}
-                onClick={() => setDetail(p)}
-                className="text-left rounded-xl overflow-hidden border border-stone-200 bg-white hover:border-storm-300 transition-colors"
+                className="relative text-left rounded-xl overflow-hidden border border-stone-200 bg-white hover:border-storm-300 transition-colors"
               >
-                <div className="aspect-square bg-stone-100 flex items-center justify-center">
-                  {url ? (
-                    <img src={url} alt="" className="w-full h-full object-cover" />
+                <button onClick={() => setDetail(p)} className="block w-full text-left">
+                  <div className="aspect-square bg-stone-100 flex items-center justify-center">
+                    {url ? (
+                      <img src={url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <ImageOff className="w-6 h-6 text-stone-300" aria-hidden="true" />
+                    )}
+                  </div>
+                  <div className="p-2 flex flex-col gap-1">
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-stone-100 text-stone-600">
+                        {ORIGIN_LABEL[p.origin] || p.origin}
+                      </span>
+                      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${STATUS_BADGE[p.status]}`}>
+                        {STATUS_LABEL[p.status]}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[10px] text-stone-400 truncate">
+                        {p.truc ? AXES[p.truc as AxisKey]?.label ?? p.truc : "—"}
+                      </span>
+                      <span className="text-[10px] text-storm-600 font-medium shrink-0">
+                        {p.isMine ? "Của tôi" : "Chung"}
+                      </span>
+                    </div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => toggleFav(p)}
+                  disabled={favBusyId === p.id}
+                  aria-pressed={faved}
+                  title={faved ? "Bỏ thích (gỡ khỏi RAG)" : "Thả tim — lưu vào RAG để học gu"}
+                  className={`absolute top-1.5 right-1.5 rounded-full p-1.5 shadow-sm transition-colors ${
+                    faved ? "bg-rose-500 text-white" : "bg-white/85 text-stone-500 hover:bg-white hover:text-rose-500"
+                  }`}
+                >
+                  {favBusyId === p.id ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
                   ) : (
-                    <ImageOff className="w-6 h-6 text-stone-300" aria-hidden="true" />
+                    <Heart className={`w-3.5 h-3.5 ${faved ? "fill-white" : ""}`} aria-hidden="true" />
                   )}
-                </div>
-                <div className="p-2 flex flex-col gap-1">
-                  <div className="flex items-center gap-1 flex-wrap">
-                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-stone-100 text-stone-600">
-                      {ORIGIN_LABEL[p.origin] || p.origin}
-                    </span>
-                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${STATUS_BADGE[p.status]}`}>
-                      {STATUS_LABEL[p.status]}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="text-[10px] text-stone-400 truncate">
-                      {p.truc ? AXES[p.truc as AxisKey]?.label ?? p.truc : "—"}
-                    </span>
-                    <span className="text-[10px] text-storm-600 font-medium shrink-0">
-                      {p.isMine ? "Của tôi" : "Chung"}
-                    </span>
-                  </div>
-                </div>
-              </button>
+                </button>
+              </div>
             );
           })}
         </div>
@@ -185,6 +248,9 @@ function GalleryTab() {
       {detail && (
         <GalleryDetailModal
           post={detail}
+          isFavorite={favIds.has(detail.id)}
+          onToggleFavorite={() => toggleFav(detail)}
+          favBusy={favBusyId === detail.id}
           onClose={() => setDetail(null)}
           onDeleted={(id) => {
             setItems((prev) => prev.filter((p) => p.id !== id));
@@ -198,10 +264,16 @@ function GalleryTab() {
 
 function GalleryDetailModal({
   post,
+  isFavorite,
+  onToggleFavorite,
+  favBusy,
   onClose,
   onDeleted,
 }: {
   post: GalleryPost;
+  isFavorite: boolean;
+  onToggleFavorite: () => void;
+  favBusy: boolean;
   onClose: () => void;
   onDeleted: (id: string) => void;
 }) {
@@ -216,6 +288,22 @@ function GalleryDetailModal({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const canDelete = post.isMine || isAdmin;
+
+  // Nạp thêm chi tiết (prompt trước + nhân vật + style) — gallery list không kèm
+  // overlayJson để nhẹ, nên fetch full post khi mở chi tiết.
+  const [debug, setDebug] = useState<{ prompt: string; characters: string[]; style?: string | null; ragUsed?: number } | null>(null);
+  const [scene, setScene] = useState<string | null>(null);
+  const [showPrompt, setShowPrompt] = useState(false);
+  useEffect(() => {
+    getPost(post.id)
+      .then((full) => {
+        setDebug((full.overlayJson?.promptDebug as any) || null);
+        setScene(full.promptText || null);
+      })
+      .catch(() => {
+        /* best-effort — không có prompt vẫn xem ảnh được */
+      });
+  }, [post.id]);
 
   async function handleDelete() {
     setDeleting(true);
@@ -264,9 +352,27 @@ function GalleryDetailModal({
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-stone-100">
           <h3 className="font-semibold text-stone-800 font-display">Chi tiết ảnh</h3>
-          <button onClick={onClose} className="p-1.5 text-stone-400 hover:bg-stone-100 rounded-full" aria-label="Đóng">
-            <X className="w-4 h-4" aria-hidden="true" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={onToggleFavorite}
+              disabled={favBusy}
+              aria-pressed={isFavorite}
+              title={isFavorite ? "Bỏ thích (gỡ khỏi RAG)" : "Thả tim — lưu prompt & thông số vào RAG"}
+              className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border transition-colors ${
+                isFavorite ? "bg-rose-50 border-rose-200 text-rose-600" : "bg-white border-stone-200 text-stone-500 hover:border-rose-200 hover:text-rose-500"
+              }`}
+            >
+              {favBusy ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+              ) : (
+                <Heart className={`w-3.5 h-3.5 ${isFavorite ? "fill-rose-500 text-rose-500" : ""}`} aria-hidden="true" />
+              )}
+              {isFavorite ? "Đã thích" : "Thích"}
+            </button>
+            <button onClick={onClose} className="p-1.5 text-stone-400 hover:bg-stone-100 rounded-full" aria-label="Đóng">
+              <X className="w-4 h-4" aria-hidden="true" />
+            </button>
+          </div>
         </div>
         <div className="p-5 flex flex-col gap-3">
           <div className="rounded-lg overflow-hidden bg-stone-100 flex items-center justify-center">
@@ -281,6 +387,62 @@ function GalleryDetailModal({
             </span>
             <span className="px-1.5 py-0.5 rounded bg-storm-50 text-storm-700">{post.isMine ? "Của tôi" : "Chung"}</span>
           </div>
+
+          {/* Prompt trước + nhân vật đã dùng + phong cách đã chọn */}
+          {(scene || debug) && (
+            <div className="bg-stone-50 border border-stone-200 rounded-lg p-3 flex flex-col gap-2">
+              <p className="text-[11px] font-semibold text-stone-500 uppercase tracking-wide">Đã tạo bằng</p>
+              {scene && (
+                <div>
+                  <p className="text-[11px] font-medium text-stone-500 mb-0.5">Mô tả (prompt)</p>
+                  <p className="text-xs text-stone-700 leading-snug">{scene}</p>
+                </div>
+              )}
+              <div className="flex flex-wrap gap-3">
+                {debug?.characters && debug.characters.length > 0 && (
+                  <div>
+                    <p className="text-[11px] font-medium text-stone-500 mb-0.5">Nhân vật</p>
+                    <div className="flex flex-wrap gap-1">
+                      {debug.characters.map((n) => (
+                        <span key={n} className="text-[11px] bg-white border border-stone-200 text-stone-700 px-1.5 py-0.5 rounded">
+                          {n}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {debug?.style && (
+                  <div>
+                    <p className="text-[11px] font-medium text-stone-500 mb-0.5">Phong cách</p>
+                    <span className="inline-flex items-center gap-1 text-[11px] bg-white border border-stone-200 text-stone-700 px-1.5 py-0.5 rounded">
+                      <Sparkles className="w-3 h-3 text-storm-500" aria-hidden="true" /> {debug.style}
+                    </span>
+                  </div>
+                )}
+              </div>
+              {debug?.ragUsed ? (
+                <p className="text-[11px] text-storm-600 flex items-center gap-1">
+                  <Brain className="w-3.5 h-3.5" aria-hidden="true" /> Đã tham khảo {debug.ragUsed} ảnh đã thích (RAG).
+                </p>
+              ) : null}
+              {debug?.prompt && (
+                <div>
+                  <button
+                    onClick={() => setShowPrompt((v) => !v)}
+                    className="flex items-center gap-1 text-[11px] font-medium text-stone-500 hover:text-stone-700"
+                  >
+                    {showPrompt ? <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" /> : <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />}
+                    Xem prompt JSON đã gửi Gemini
+                  </button>
+                  {showPrompt && (
+                    <pre className="text-[10px] leading-snug text-stone-500 bg-white border border-stone-200 rounded-lg p-2 mt-1 overflow-auto max-h-60 whitespace-pre-wrap">
+                      {debug.prompt}
+                    </pre>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {saveErr && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{saveErr}</div>}
           {saveMsg && <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">{saveMsg}</div>}
@@ -1059,6 +1221,178 @@ function StyleCard({
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// ===== Tab "RAG" — kho ảnh đã thích (❤️) + hồ sơ sở thích =====
+
+function RagTab() {
+  const [scope, setScope] = useState<"all" | "mine" | "shared">("all");
+  const [items, setItems] = useState<RagExample[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [profile, setProfile] = useState<RagProfile | null>(null);
+  const [rebuilding, setRebuilding] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<RagExample | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  function reloadItems(s: "all" | "mine" | "shared") {
+    setLoading(true);
+    setError(null);
+    listRagExamples(s)
+      .then(setItems)
+      .catch((e) => setError(e?.message || "Lỗi tải thư viện RAG."))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    reloadItems(scope);
+  }, [scope]);
+
+  useEffect(() => {
+    getRagProfile()
+      .then(setProfile)
+      .catch(() => {
+        /* best-effort */
+      });
+  }, []);
+
+  async function handleRebuild() {
+    setRebuilding(true);
+    setError(null);
+    try {
+      const result = await rebuildRagProfile();
+      const fresh = await getRagProfile();
+      setProfile(fresh);
+      if (result.exampleCount === 0) setError("Chưa có ảnh nào được thích — hãy thả tim vài ảnh trước để AI học gu.");
+    } catch (e: any) {
+      setError(e?.message || "Cập nhật hồ sơ RAG thất bại.");
+    } finally {
+      setRebuilding(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await deleteRagExample(deleteTarget.id);
+      setItems((prev) => prev.filter((x) => x.id !== deleteTarget.id));
+      setDeleteTarget(null);
+    } catch (e: any) {
+      setError(e?.message || "Xoá ví dụ RAG thất bại.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-sm text-stone-500 max-w-2xl">
+        Mỗi ảnh bạn thả tim (❤️) được lưu vào đây kèm prompt + thông số. Khi bật <b>RAG</b> ở trang Sáng tạo, AI đọc thêm
+        "gu" từ các ảnh này để vẽ hợp ý hơn. Bấm <b>Cập nhật hồ sơ</b> để AI đọc lại toàn bộ ảnh đã thích và chưng cất thành mô tả gu.
+      </p>
+
+      {/* Hồ sơ sở thích đã chưng cất */}
+      <div className="bg-white border border-stone-200 rounded-xl p-4 flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <p className="text-sm font-semibold text-stone-800 flex items-center gap-1.5">
+            <Brain className="w-4 h-4 text-storm-600" aria-hidden="true" /> Hồ sơ gu của bạn
+          </p>
+          <button
+            onClick={handleRebuild}
+            disabled={rebuilding}
+            className="flex items-center gap-1.5 text-xs font-medium text-storm-700 bg-storm-50 hover:bg-storm-100 px-3 py-1.5 rounded-lg disabled:opacity-60"
+            title="AI đọc lại các ảnh đã thích và chưng cất thành mô tả gu (phong cách/nền/bố cục hay chọn...)"
+          >
+            {rebuilding ? <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> : <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />}
+            Cập nhật hồ sơ
+          </button>
+        </div>
+        {profile?.profileText ? (
+          <p className="text-sm text-stone-600 leading-relaxed bg-stone-50 rounded-lg p-3">{profile.profileText}</p>
+        ) : (
+          <p className="text-xs text-stone-400">
+            Chưa có hồ sơ — thả tim vài ảnh bạn ưng rồi bấm "Cập nhật hồ sơ" để AI học gu.
+          </p>
+        )}
+        {profile && profile.exampleCount > 0 && (
+          <p className="text-[11px] text-stone-400">Chưng cất từ {profile.exampleCount} ảnh đã thích.</p>
+        )}
+      </div>
+
+      <div className="flex items-center gap-1.5">
+        {SCOPE_OPTIONS.map((o) => (
+          <button
+            key={o.value}
+            onClick={() => setScope(o.value)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              scope === o.value ? "bg-storm-100 text-storm-800" : "bg-stone-100 text-stone-500 hover:bg-stone-200"
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+
+      {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+
+      {loading ? (
+        <div className="flex items-center justify-center py-16 text-stone-400 gap-2">
+          <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+        </div>
+      ) : items.length === 0 ? (
+        <div className="text-center py-16 text-stone-400 text-sm">
+          Chưa có ảnh đã thích. Vào Thư viện → tab Ảnh (hoặc trang Sáng tạo) và bấm ❤️ trên ảnh bạn ưng.
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          {items.map((ex) => {
+            const url = imageDisplayUrl(ex.imageUrl);
+            const p = ex.paramsJson || {};
+            return (
+              <div key={ex.id} className="relative rounded-xl overflow-hidden border border-stone-200 bg-white flex flex-col">
+                <div className="aspect-square bg-stone-100 flex items-center justify-center">
+                  {url ? <img src={url} alt="" className="w-full h-full object-cover" /> : <ImageOff className="w-6 h-6 text-stone-300" aria-hidden="true" />}
+                </div>
+                <div className="p-2 flex flex-col gap-1 flex-1">
+                  {ex.scene && <p className="text-[11px] text-stone-600 line-clamp-2 leading-snug">{ex.scene}</p>}
+                  <div className="flex items-center gap-1 flex-wrap mt-auto pt-1">
+                    {p.styleName && (
+                      <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-storm-50 text-storm-700 truncate max-w-full">{p.styleName}</span>
+                    )}
+                    {Array.isArray(p.characters) && p.characters.length > 0 && (
+                      <span className="text-[9px] text-stone-400 truncate">{p.characters.join(", ")}</span>
+                    )}
+                  </div>
+                  <span className="text-[9px] text-storm-600 font-medium">{ex.isMine ? "Của tôi" : "Chung"}</span>
+                </div>
+                {ex.isMine && (
+                  <button
+                    onClick={() => setDeleteTarget(ex)}
+                    aria-label="Xoá khỏi RAG"
+                    title="Xoá ví dụ này khỏi RAG"
+                    className="absolute top-1.5 right-1.5 bg-white/85 hover:bg-red-600 hover:text-white text-stone-500 rounded-full p-1.5 shadow-sm transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        title="Xoá khỏi thư viện RAG?"
+        message="AI sẽ không còn học từ ví dụ này nữa (ảnh gốc trong Thư viện ảnh vẫn giữ)."
+        confirmText={deleting ? "Đang xoá..." : "Xoá"}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

@@ -112,6 +112,9 @@ export async function editImage(input: {
   // Ảnh + tên các nhân vật CÓ trong khung — để model biết "Grok/Gemini..." là ai
   // khi câu lệnh nhắc tới nhân vật cụ thể, và giữ đúng ngoại hình khi sửa.
   characters?: { name: string; refImage: RefImage }[];
+  // Mô tả cảnh/ý đồ của prompt ĐÃ tạo ra ảnh này — để Gemini hiểu bối cảnh gốc
+  // khi chỉnh tiếp (vd người dùng nói "bỏ nhân vật thừa" thì biết ai là thừa).
+  previousContext?: string;
 }): Promise<{ url: string; source: "social" | "placeholder"; isDemo: boolean; warning?: string }> {
   const sourceUrl = `data:${input.sourceImage.mimeType};base64,${input.sourceImage.data}`;
   if (!process.env.GEMINI_API_KEY) {
@@ -128,7 +131,11 @@ export async function editImage(input: {
     ? `The characters that appear in image #1, with their reference designs attached: ${charLines}. When the change mentions a character by name, use these references to identify them, and keep EVERY character's face, costume and colors IDENTICAL to their reference.`
     : "";
 
-  const prompt = `You are editing the attached comic illustration (image #1). ${charBlock}
+  const contextBlock = input.previousContext?.trim()
+    ? `\nORIGINAL BRIEF that produced image #1 (for context — do NOT re-render it, only use it to understand the scene and who is who): ${input.previousContext.trim()}\n`
+    : "";
+
+  const prompt = `You are editing the attached comic illustration (image #1). ${charBlock}${contextBlock}
 
 Apply ONLY the following change and keep EVERYTHING ELSE identical — the other characters, the art style, and the overall composition must stay the same. Do NOT redraw from scratch.
 

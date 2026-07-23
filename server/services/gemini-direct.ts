@@ -40,6 +40,25 @@ function normalizeGeminiError(e: any): GeminiError {
   return new GeminiError(`Gọi Gemini API thất bại: ${msg}`);
 }
 
+const EMBED_MODEL = "text-embedding-004";
+
+// Sinh embedding (vector) cho 1 đoạn text — dùng cho RAG (truy hồi ảnh đã thích
+// giống nhất). Lỗi/thiếu key → throw GeminiError (caller tự bỏ qua RAG).
+export async function embedTextGemini(text: string): Promise<number[]> {
+  const apiKey = getApiKey();
+  try {
+    const { GoogleGenAI } = await import("@google/genai");
+    const ai = new GoogleGenAI({ apiKey });
+    const response: any = await ai.models.embedContent({ model: EMBED_MODEL, contents: text });
+    const values = response?.embeddings?.[0]?.values || response?.embedding?.values;
+    if (!Array.isArray(values) || values.length === 0) throw new Error("Embedding rỗng.");
+    return values as number[];
+  } catch (e: any) {
+    if (e instanceof GeminiError) throw e;
+    throw normalizeGeminiError(e);
+  }
+}
+
 // DỊCH — sinh text (kịch bản). Trả về text thô (caller tự parse JSON nếu cần,
 // xem buildScriptPrompt trong shared/engine-data.ts).
 export async function generateTextGemini(prompt: string): Promise<string> {

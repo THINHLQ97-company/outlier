@@ -118,6 +118,8 @@ export interface StudioParams {
   styleId?: string | null; // phong cách đã chọn (thư viện styles)
   dialogue?: DialogueLine[]; // lời thoại đã nhập
   panelLayout?: string; // key PANEL_LAYOUTS (1/2/4/auto)
+  background?: string; // key BACKGROUND_OPTIONS (scene/white/minimal)
+  useRag?: boolean; // đã bật RAG khi vẽ
   // Deprecated: Studio không còn sinh caption theo trục (posts.truc = null). Giữ
   // optional để không phá bài Studio cũ đã lưu studioParams.truc.
   truc?: AxisKey | null;
@@ -136,8 +138,34 @@ export interface OverlayConfig {
   studioParams?: StudioParams;
   // Lịch sử chỉnh sửa: mỗi bước = câu lệnh + ảnh kết quả (để xem lại/quay lại).
   editHistory?: { instruction: string; url: string }[];
-  // Minh bạch: prompt JSON đã gửi Gemini + nhân vật thực sự vào ảnh.
-  promptDebug?: { prompt: string; characters: string[] };
+  // Minh bạch: prompt JSON đã gửi Gemini + nhân vật thực sự vào ảnh + style + RAG.
+  promptDebug?: { prompt: string; characters: string[]; style?: string | null; ragUsed?: number };
+}
+
+// ===== RAG — kho "ảnh đã thích" + hồ sơ sở thích =====
+export interface RagExample {
+  id: string;
+  owner: string;
+  isShared: boolean;
+  postId: string | null;
+  scene: string | null;
+  paramsJson: {
+    styleName?: string | null;
+    characters?: string[];
+    background?: string | null;
+    panelLayout?: string | null;
+    dialogue?: DialogueLine[];
+    aspectRatio?: string | null;
+  };
+  imageUrl: string | null;
+  createdAt: string;
+  isMine: boolean;
+}
+
+export interface RagProfile {
+  profileText: string | null;
+  exampleCount: number;
+  updatedAt: string | null;
 }
 
 export interface PostRow {
@@ -224,4 +252,5 @@ export interface GalleryPost {
   caption: string | null;
   createdAt: string;
   isMine: boolean;
+  isFavorite?: boolean; // client đính: user đã thả tim ảnh này (từ /api/rag/favorite-ids)
 }
