@@ -30,6 +30,17 @@ export async function createUser(input: {
   return res.json();
 }
 
+// Cấp quyền đăng nhập Google cho 1 email (mời / duyệt nhanh).
+export async function inviteUser(email: string, role: Role = "member"): Promise<UserRow> {
+  const res = await fetch("/api/users/invite", {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ email, role }),
+  });
+  if (!res.ok) return asError(res, "Cấp quyền email thất bại.");
+  return res.json();
+}
+
 export async function updateUser(
   id: string,
   patch: { role?: Role; isActive?: boolean; password?: string }

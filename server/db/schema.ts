@@ -4,13 +4,19 @@
 // status/checklist_json) → ĐĂNG (posts.fb_post_url, thủ công trong iMVP).
 import { pgTable, uuid, text, boolean, timestamp, jsonb, integer, index } from "drizzle-orm/pg-core";
 
-// ===== users — theo pattern marcow-crop (username/password → HMAC token) =====
+// ===== users — username/password (HMAC token) HOẶC đăng nhập Google (SSO) =====
+// authProvider: "local" (username+password) | "google" (Google SSO, không mật khẩu).
+// Google user: username = email, passwordHash = null. isActive=false = chờ admin duyệt.
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   username: text("username").notNull().unique(),
-  passwordHash: text("password_hash").notNull(), // scrypt: "salt:hash" hex
+  passwordHash: text("password_hash"), // scrypt "salt:hash" hex — null với user Google
   role: text("role").notNull().default("member"), // "admin" | "member"
   isActive: boolean("is_active").notNull().default(true),
+  authProvider: text("auth_provider").notNull().default("local"), // "local" | "google"
+  email: text("email").unique(), // email Google (duy nhất)
+  googleSub: text("google_sub"), // Google user id ("sub")
+  avatarUrl: text("avatar_url"), // ảnh đại diện Google
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

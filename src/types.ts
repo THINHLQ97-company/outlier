@@ -243,6 +243,9 @@ export interface UserRow {
   username: string;
   role: Role;
   isActive: boolean;
+  authProvider?: "local" | "google";
+  email?: string | null;
+  avatarUrl?: string | null;
   createdAt: string;
   updatedAt: string;
 }

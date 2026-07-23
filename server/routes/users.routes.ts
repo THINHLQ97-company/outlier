@@ -18,6 +18,8 @@ function dbDown(res: any): boolean {
   return false;
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 // Loại passwordHash khỏi payload trả về (không bao giờ lộ hash ra client).
 function publicUser(u: any) {
   return {
@@ -25,6 +27,9 @@ function publicUser(u: any) {
     username: u.username,
     role: u.role,
     isActive: u.isActive,
+    authProvider: u.authProvider || "local",
+    email: u.email || null,
+    avatarUrl: u.avatarUrl || null,
     createdAt: u.createdAt,
     updatedAt: u.updatedAt,
   };
@@ -65,6 +70,35 @@ export function registerUserRoutes(app: Express) {
     } catch (e: any) {
       console.error("create user:", e?.message || e);
       res.status(500).json({ error: "Lỗi tạo tài khoản." });
+    }
+  });
+
+  // Cấp quyền đăng nhập Google cho 1 email (mời trước khi họ đăng nhập). Nếu email
+  // đã tồn tại (vd đang "chờ duyệt") → duyệt luôn (isActive=true) + đặt role.
+  app.post("/api/users/invite", requireAdmin, async (req, res) => {
+    if (dbDown(res)) return;
+    const emailRaw = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+    const role = ROLE_VALUES.includes(req.body?.role) ? req.body.role : "member";
+    if (!EMAIL_RE.test(emailRaw)) return res.status(400).json({ error: "Email không hợp lệ." });
+    try {
+      const db = getDb();
+      const [existing] = await db.select().from(users).where(eq(users.email, emailRaw));
+      if (existing) {
+        const [row] = await db
+          .update(users)
+          .set({ isActive: true, role, updatedAt: new Date() })
+          .where(eq(users.id, existing.id))
+          .returning();
+        return res.json(publicUser(row));
+      }
+      const [row] = await db
+        .insert(users)
+        .values({ username: emailRaw, email: emailRaw, role, isActive: true, authProvider: "google" })
+        .returning();
+      res.status(201).json(publicUser(row));
+    } catch (e: any) {
+      console.error("invite user:", e?.message || e);
+      res.status(500).json({ error: "Cấp quyền email thất bại." });
     }
   });
 

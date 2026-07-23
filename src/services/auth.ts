@@ -20,6 +20,23 @@ export async function login(username: string, password: string): Promise<LoginRe
   return data;
 }
 
+// Đăng nhập Google — gửi credential (ID token từ Google Identity Services).
+// 403 kèm { pending:true } = tài khoản chờ admin duyệt.
+export async function googleLogin(credential: string): Promise<LoginResult> {
+  const res = await fetch("/api/auth/google", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ credential }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err: any = new Error(data.error || "Đăng nhập Google thất bại.");
+    err.pending = !!data.pending;
+    throw err;
+  }
+  return data;
+}
+
 export async function verifyToken(token: string): Promise<{ valid: boolean; username?: string }> {
   const res = await fetch("/api/verify", {
     method: "POST",

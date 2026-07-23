@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Loader2, ShieldAlert, Plus, X, KeyRound } from "lucide-react";
-import { listUsers, createUser, updateUser } from "../services/users";
+import { Loader2, ShieldAlert, Plus, X, KeyRound, Mail, Check } from "lucide-react";
+import { listUsers, createUser, updateUser, inviteUser } from "../services/users";
 import { useAppContext } from "../AppContext";
 import type { UserRow, Role } from "../types";
 
@@ -28,6 +28,7 @@ function AdminUsersInner() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
   const [resetTarget, setResetTarget] = useState<UserRow | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -79,15 +80,31 @@ function AdminUsersInner() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-lg font-bold text-stone-800 font-display">Quản lý tài khoản</h1>
-          <p className="text-sm text-stone-500">Thêm/sửa quyền, khoá/mở khoá, đặt lại mật khẩu.</p>
+          <p className="text-sm text-stone-500">Cấp quyền đăng nhập Google, duyệt tài khoản chờ, đổi quyền/khoá.</p>
         </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-1.5 text-sm font-medium text-white bg-storm-600 hover:bg-storm-700 px-3 py-2 rounded-lg"
-        >
-          <Plus className="w-4 h-4" aria-hidden="true" /> Thêm user
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowInvite(true)}
+            className="flex items-center gap-1.5 text-sm font-medium text-white bg-storm-600 hover:bg-storm-700 px-3 py-2 rounded-lg"
+          >
+            <Mail className="w-4 h-4" aria-hidden="true" /> Cấp quyền email (Google)
+          </button>
+          <button
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-1.5 text-sm font-medium text-storm-700 bg-storm-50 hover:bg-storm-100 px-3 py-2 rounded-lg"
+            title="Tạo tài khoản nội bộ (username/mật khẩu)"
+          >
+            <Plus className="w-4 h-4" aria-hidden="true" /> Tài khoản nội bộ
+          </button>
+        </div>
       </div>
+
+      {/* Nhắc admin nếu có tài khoản Google đang chờ duyệt */}
+      {items.some((u) => !u.isActive && u.authProvider === "google") && (
+        <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          Có {items.filter((u) => !u.isActive && u.authProvider === "google").length} tài khoản Google đang <b>chờ duyệt</b> — bấm "Duyệt" ở cột Hành động để cho phép đăng nhập.
+        </div>
+      )}
 
       {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
 
@@ -100,7 +117,8 @@ function AdminUsersInner() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-stone-50 text-left text-xs font-medium text-stone-500 border-b border-stone-200">
-                <th className="px-4 py-2.5">Tên đăng nhập</th>
+                <th className="px-4 py-2.5">Tài khoản</th>
+                <th className="px-4 py-2.5">Đăng nhập</th>
                 <th className="px-4 py-2.5">Quyền</th>
                 <th className="px-4 py-2.5">Trạng thái</th>
                 <th className="px-4 py-2.5">Ngày tạo</th>
@@ -112,7 +130,27 @@ function AdminUsersInner() {
                 const busy = busyId === u.id;
                 return (
                   <tr key={u.id} className="border-b border-stone-100 last:border-0">
-                    <td className="px-4 py-2.5 font-medium text-stone-800">{u.username}</td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-center gap-2">
+                        {u.avatarUrl ? (
+                          <img src={u.avatarUrl} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
+                        ) : (
+                          <span className="w-6 h-6 rounded-full bg-stone-100 text-stone-400 flex items-center justify-center text-[11px] font-medium shrink-0">
+                            {(u.email || u.username).charAt(0).toUpperCase()}
+                          </span>
+                        )}
+                        <span className="font-medium text-stone-800 truncate">{u.email || u.username}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <span
+                        className={`text-xs font-medium px-1.5 py-0.5 rounded ${
+                          u.authProvider === "google" ? "bg-blue-50 text-blue-700" : "bg-stone-100 text-stone-600"
+                        }`}
+                      >
+                        {u.authProvider === "google" ? "Google" : "Nội bộ"}
+                      </span>
+                    </td>
                     <td className="px-4 py-2.5">
                       <span
                         className={`text-xs font-medium px-1.5 py-0.5 rounded ${
@@ -144,19 +182,21 @@ function AdminUsersInner() {
                         <button
                           onClick={() => handleActiveToggle(u)}
                           disabled={busy}
-                          className={`text-xs font-medium px-2 py-1 rounded-lg disabled:opacity-50 ${
+                          className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg disabled:opacity-50 ${
                             u.isActive ? "text-red-600 hover:bg-red-50" : "text-green-700 hover:bg-green-50"
                           }`}
                         >
-                          {u.isActive ? "Khoá" : "Mở khoá"}
+                          {u.isActive ? "Khoá" : (<><Check className="w-3.5 h-3.5" aria-hidden="true" /> Duyệt</>)}
                         </button>
-                        <button
-                          onClick={() => setResetTarget(u)}
-                          disabled={busy}
-                          className="flex items-center gap-1 text-xs font-medium text-stone-600 hover:bg-stone-100 px-2 py-1 rounded-lg disabled:opacity-50"
-                        >
-                          <KeyRound className="w-3.5 h-3.5" aria-hidden="true" /> Đặt lại mật khẩu
-                        </button>
+                        {u.authProvider !== "google" && (
+                          <button
+                            onClick={() => setResetTarget(u)}
+                            disabled={busy}
+                            className="flex items-center gap-1 text-xs font-medium text-stone-600 hover:bg-stone-100 px-2 py-1 rounded-lg disabled:opacity-50"
+                          >
+                            <KeyRound className="w-3.5 h-3.5" aria-hidden="true" /> Đặt lại mật khẩu
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -165,6 +205,19 @@ function AdminUsersInner() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {showInvite && (
+        <InviteUserModal
+          onClose={() => setShowInvite(false)}
+          onDone={(row) => {
+            setItems((prev) => {
+              const exists = prev.some((x) => x.id === row.id);
+              return exists ? prev.map((x) => (x.id === row.id ? row : x)) : [row, ...prev];
+            });
+            setShowInvite(false);
+          }}
+        />
       )}
 
       {showCreate && (
@@ -187,6 +240,77 @@ function AdminUsersInner() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+function InviteUserModal({ onClose, onDone }: { onClose: () => void; onDone: (row: UserRow) => void }) {
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<Role>("member");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      const row = await inviteUser(email.trim().toLowerCase(), role);
+      onDone(row);
+    } catch (e: any) {
+      setError(e?.message || "Cấp quyền email thất bại.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+        <div className="flex items-center justify-between p-5 border-b border-stone-100">
+          <h3 className="font-semibold text-stone-800 font-display">Cấp quyền đăng nhập Google</h3>
+          <button onClick={onClose} className="p-1.5 text-stone-400 hover:bg-stone-100 rounded-full" aria-label="Đóng">
+            <X className="w-4 h-4" aria-hidden="true" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
+          <p className="text-xs text-stone-500">
+            Nhập email Google của người bạn muốn cho đăng nhập. Họ vào trang đăng nhập → bấm "Đăng nhập bằng Google" bằng đúng email này là vào được (không cần mật khẩu).
+          </p>
+          <div>
+            <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="iv-email">Email Google</label>
+            <input
+              id="iv-email"
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="ten@gmail.com"
+              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="iv-role">Quyền</label>
+            <select
+              id="iv-role"
+              value={role}
+              onChange={(e) => setRole(e.target.value as Role)}
+              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
+            >
+              <option value="member">Thành viên</option>
+              <option value="admin">Quản trị viên</option>
+            </select>
+          </div>
+          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+          <button
+            type="submit"
+            disabled={saving}
+            className="mt-2 flex items-center justify-center gap-2 bg-storm-600 hover:bg-storm-700 text-white text-sm font-medium rounded-lg py-2.5 disabled:opacity-60"
+          >
+            {saving && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />} Cấp quyền
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
