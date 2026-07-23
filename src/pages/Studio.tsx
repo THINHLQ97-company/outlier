@@ -29,6 +29,7 @@ import type { PostRow, CharacterRow, AssetRow, AssetKind, StyleRow, DialogueLine
 import { PANEL_LAYOUTS, BACKGROUND_OPTIONS } from "../../shared/engine-data";
 import CharacterPicker from "../components/CharacterPicker";
 import TextOverlayEditor from "../components/TextOverlayEditor";
+import ImageRegionEditor from "../components/ImageRegionEditor";
 
 const WATERMARK_OPTIONS = ["MATBAO", "MATBAO INVOICE"];
 const ASPECT_RATIO_OPTIONS: { value: string; label: string }[] = [
@@ -377,19 +378,17 @@ export default function Studio() {
 
   // Vòng chỉnh sửa bằng câu lệnh (như ChatGPT): gõ câu chỉnh → Gemini sửa trên
   // ảnh hiện tại → lặp tới khi ưng.
-  const [editInstruction, setEditInstruction] = useState("");
   const [editing, setEditing] = useState(false);
   const [reverting, setReverting] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
   const [showFinish, setShowFinish] = useState(false);
-  async function handleEditImage() {
-    if (!post || !editInstruction.trim()) return;
+  async function handleEditImage(instruction: string, mask: string | null) {
+    if (!post || !instruction.trim()) return;
     setEditing(true);
     setError(null);
     try {
-      const updated = await editImage(post.id, editInstruction.trim());
+      const updated = await editImage(post.id, instruction.trim(), mask);
       setPost(updated);
-      setEditInstruction("");
     } catch (e: any) {
       setError(e?.message || "Chỉnh ảnh thất bại.");
     } finally {
@@ -871,153 +870,130 @@ export default function Studio() {
       )}
 
       {post && post.selectedImageUrl && (
-        <div className="flex flex-col gap-3 max-w-xl">
+        <div className="flex flex-col gap-3">
           <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
             <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" /> Ảnh tự động lưu trong Thư viện — chỉnh tiếp bao nhiêu lần cũng được.
           </div>
 
-          {/* Vòng chỉnh sửa bằng câu lệnh (như ChatGPT) */}
-          <div className="bg-white border border-stone-200 rounded-xl p-4 flex flex-col gap-3">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <p className="text-sm font-semibold text-stone-800 flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-storm-600" aria-hidden="true" /> Chỉnh sửa bằng câu lệnh
-                </p>
-                <p className="text-xs text-stone-500 mt-0.5">
-                  Gõ điều muốn đổi trên ảnh hiện tại — Gemini chỉnh, giữ nguyên phần còn lại. Có thể nhắc tên nhân vật (AI biết ai là ai trong khung).
-                </p>
-              </div>
-              <button
-                onClick={handleToggleFavorite}
-                disabled={favoriting}
-                title={favorited ? "Bỏ thích — gỡ khỏi thư viện RAG" : "Thả tim — lưu prompt & thông số vào thư viện RAG để học gu"}
-                aria-pressed={favorited}
-                className={`shrink-0 flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border transition-colors ${
-                  favorited ? "bg-rose-50 border-rose-200 text-rose-600" : "bg-white border-stone-200 text-stone-500 hover:border-rose-200 hover:text-rose-500"
-                }`}
-              >
-                {favoriting ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
-                ) : (
-                  <Heart className={`w-3.5 h-3.5 ${favorited ? "fill-rose-500 text-rose-500" : ""}`} aria-hidden="true" />
-                )}
-                {favorited ? "Đã thích" : "Thích"}
-              </button>
-            </div>
-
-            {/* Panel context: prompt trước + nhân vật + style của ảnh đang sửa. Gemini
-                cũng nhận lại các nhân vật này + bối cảnh gốc khi chỉnh tiếp. */}
-            <EditContextPanel post={post} characters={characters} />
-
-            <img
-              src={imageDisplayUrl(post.selectedImageUrl) || undefined}
-              alt="Ảnh hiện tại"
-              className="w-full max-w-sm rounded-xl border border-stone-200"
-              style={{ aspectRatio: (post.overlayJson?.aspectRatio || "1:1").replace(":", " / ") }}
-            />
-            <div className="flex items-start gap-2">
-              <textarea
-                rows={2}
-                value={editInstruction}
-                onChange={(e) => setEditInstruction(e.target.value)}
-                disabled={editing}
-                placeholder="VD: Grok đang quỳ lạy (không đứng), nền trắng, bỏ 2 nhân vật không xác định ở góc..."
-                className="flex-1 rounded-lg border border-stone-300 px-3 py-2 text-sm disabled:opacity-60"
-              />
-              <button
-                onClick={handleEditImage}
-                disabled={editing || !editInstruction.trim()}
-                className="shrink-0 flex items-center gap-1.5 text-sm font-medium text-white bg-storm-600 hover:bg-storm-700 px-3 py-2 rounded-lg disabled:opacity-60"
-              >
-                {editing ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Sparkles className="w-4 h-4" aria-hidden="true" />}
-                Chỉnh
-              </button>
-            </div>
-            {editing && (
-              <p className="text-[11px] text-storm-600 flex items-center gap-1.5">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> Gemini đang chỉnh ảnh (thường 15–40 giây)...
-              </p>
-            )}
-          </div>
-
-          {/* Lịch sử ảnh — biến thể gốc + từng bước chỉnh; bấm để quay lại */}
-          {(() => {
-            const items = [
-              ...post.imageVariants.map((v, i) => ({ label: `Biến thể ${i + 1}`, url: v.url })),
-              ...(Array.isArray(post.overlayJson?.editHistory) ? post.overlayJson.editHistory : []).map(
-                (h, i) => ({ label: `Chỉnh ${i + 1}: ${h.instruction}`, url: h.url })
-              ),
-            ];
-            if (items.length <= 1) return null;
-            return (
-              <div className="bg-white border border-stone-200 rounded-xl p-3">
-                <p className="text-xs font-medium text-stone-600 mb-2">Lịch sử ảnh — bấm để quay lại một bản trước</p>
-                <div className="flex gap-2 overflow-x-auto pb-1">
-                  {items.map((it, i) => {
-                    const current = it.url === post.selectedImageUrl;
-                    return (
-                      <button
-                        key={i}
-                        onClick={() => !current && handleRevert(it.url)}
-                        disabled={reverting || current}
-                        title={it.label}
-                        className={`shrink-0 w-20 rounded-lg overflow-hidden border-2 ${current ? "border-storm-500" : "border-transparent hover:border-storm-300"}`}
-                      >
-                        <img src={imageDisplayUrl(it.url) || undefined} alt={it.label} className="w-20 h-20 object-cover bg-stone-100" />
-                        <span className="block text-[9px] text-stone-500 px-1 py-0.5 truncate">{current ? "Hiện tại" : it.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* Minh bạch: prompt JSON đã gửi Gemini + nhân vật đã dùng */}
-          {post.overlayJson?.promptDebug && (
-            <div className="bg-white border border-stone-200 rounded-xl p-3">
-              <button
-                onClick={() => setShowPrompt((v) => !v)}
-                className="flex items-center gap-1 text-xs font-medium text-stone-500 hover:text-stone-700"
-              >
-                {showPrompt ? <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" /> : <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />}
-                Xem prompt đã gửi Gemini + nhân vật đã dùng
-              </button>
-              {showPrompt && (
-                <div className="mt-2 flex flex-col gap-2">
-                  <p className="text-xs text-stone-600">
-                    <span className="font-medium">Nhân vật đã dùng:</span>{" "}
-                    {post.overlayJson.promptDebug.characters?.length ? post.overlayJson.promptDebug.characters.join(", ") : "(không có ảnh nhân vật)"}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+            {/* CỘT TRÁI — ảnh + khoanh vùng + câu lệnh chỉnh */}
+            <div className="bg-white border border-stone-200 rounded-xl p-4 flex flex-col gap-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-stone-800 flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-storm-600" aria-hidden="true" /> Chỉnh sửa bằng câu lệnh
                   </p>
-                  <pre className="text-[10px] leading-snug text-stone-500 bg-stone-50 rounded-lg p-2 overflow-auto max-h-72 whitespace-pre-wrap">
-                    {post.overlayJson.promptDebug.prompt}
-                  </pre>
+                  <p className="text-xs text-stone-500 mt-0.5">
+                    Gõ điều muốn đổi — hoặc bấm <b>Khoanh vùng</b> rồi kéo chuột để chỉ chỉnh/xóa đúng chỗ đó. Có thể nhắc tên nhân vật.
+                  </p>
+                </div>
+                <button
+                  onClick={handleToggleFavorite}
+                  disabled={favoriting}
+                  title={favorited ? "Bỏ thích — gỡ khỏi thư viện RAG" : "Thả tim — lưu prompt & thông số vào thư viện RAG để học gu"}
+                  aria-pressed={favorited}
+                  className={`shrink-0 flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border transition-colors ${
+                    favorited ? "bg-rose-50 border-rose-200 text-rose-600" : "bg-white border-stone-200 text-stone-500 hover:border-rose-200 hover:text-rose-500"
+                  }`}
+                >
+                  {favoriting ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Heart className={`w-3.5 h-3.5 ${favorited ? "fill-rose-500 text-rose-500" : ""}`} aria-hidden="true" />
+                  )}
+                  {favorited ? "Đã thích" : "Thích"}
+                </button>
+              </div>
+
+              <ImageRegionEditor
+                key={post.selectedImageUrl}
+                imageUrl={imageDisplayUrl(post.selectedImageUrl) || post.selectedImageUrl}
+                aspectRatio={post.overlayJson?.aspectRatio || "1:1"}
+                editing={editing}
+                onSubmit={handleEditImage}
+              />
+            </div>
+
+            {/* CỘT PHẢI — bối cảnh, lịch sử, prompt, chữ & watermark */}
+            <div className="flex flex-col gap-3">
+              {/* Panel context: prompt trước + nhân vật + style. Gemini cũng nhận
+                  lại các nhân vật này + bối cảnh gốc khi chỉnh tiếp. */}
+              <EditContextPanel post={post} characters={characters} />
+
+              {/* Lịch sử ảnh — biến thể gốc + từng bước chỉnh; bấm để quay lại */}
+              {(() => {
+                const items = [
+                  ...post.imageVariants.map((v, i) => ({ label: `Biến thể ${i + 1}`, url: v.url })),
+                  ...(Array.isArray(post.overlayJson?.editHistory) ? post.overlayJson.editHistory : []).map(
+                    (h, i) => ({ label: `Chỉnh ${i + 1}: ${h.instruction}`, url: h.url })
+                  ),
+                ];
+                if (items.length <= 1) return null;
+                return (
+                  <div className="bg-white border border-stone-200 rounded-xl p-3">
+                    <p className="text-xs font-medium text-stone-600 mb-2">Lịch sử ảnh — bấm để quay lại một bản trước</p>
+                    <div className="flex gap-2 overflow-x-auto pb-1">
+                      {items.map((it, i) => {
+                        const current = it.url === post.selectedImageUrl;
+                        return (
+                          <button
+                            key={i}
+                            onClick={() => !current && handleRevert(it.url)}
+                            disabled={reverting || current}
+                            title={it.label}
+                            className={`shrink-0 w-20 rounded-lg overflow-hidden border-2 ${current ? "border-storm-500" : "border-transparent hover:border-storm-300"}`}
+                          >
+                            <img src={imageDisplayUrl(it.url) || undefined} alt={it.label} className="w-20 h-20 object-cover bg-stone-100" />
+                            <span className="block text-[9px] text-stone-500 px-1 py-0.5 truncate">{current ? "Hiện tại" : it.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Minh bạch: prompt JSON đã gửi Gemini + nhân vật đã dùng */}
+              {post.overlayJson?.promptDebug && (
+                <div className="bg-white border border-stone-200 rounded-xl p-3">
+                  <button
+                    onClick={() => setShowPrompt((v) => !v)}
+                    className="flex items-center gap-1 text-xs font-medium text-stone-500 hover:text-stone-700"
+                  >
+                    {showPrompt ? <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" /> : <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />}
+                    Xem prompt JSON đã gửi Gemini
+                  </button>
+                  {showPrompt && (
+                    <pre className="mt-2 text-[10px] leading-snug text-stone-500 bg-stone-50 rounded-lg p-2 overflow-auto max-h-72 whitespace-pre-wrap">
+                      {post.overlayJson.promptDebug.prompt}
+                    </pre>
+                  )}
                 </div>
               )}
-            </div>
-          )}
 
-          {/* Bước riêng: gắn chữ & watermark (tuỳ chọn) */}
-          <div className="bg-white border border-stone-200 rounded-xl p-3">
-            <button
-              onClick={() => setShowFinish((v) => !v)}
-              className="flex items-center gap-1.5 text-sm font-medium text-stone-700"
-            >
-              {showFinish ? <ChevronUp className="w-4 h-4" aria-hidden="true" /> : <ChevronDown className="w-4 h-4" aria-hidden="true" />}
-              Gắn chữ &amp; watermark (tuỳ chọn)
-            </button>
-            {showFinish && (
-              <div className="mt-3">
-                <TextOverlayEditor
-                  imageUrl={imageDisplayUrl(post.selectedImageUrl) || post.selectedImageUrl}
-                  initialOverlay={post.overlayJson}
-                  watermarkOptions={WATERMARK_OPTIONS}
-                  onExport={handleExport}
-                  exporting={exporting}
-                  aspectRatio={post.overlayJson?.aspectRatio || "1:1"}
-                />
+              {/* Bước riêng: gắn chữ & watermark (tuỳ chọn) */}
+              <div className="bg-white border border-stone-200 rounded-xl p-3">
+                <button
+                  onClick={() => setShowFinish((v) => !v)}
+                  className="flex items-center gap-1.5 text-sm font-medium text-stone-700"
+                >
+                  {showFinish ? <ChevronUp className="w-4 h-4" aria-hidden="true" /> : <ChevronDown className="w-4 h-4" aria-hidden="true" />}
+                  Gắn chữ &amp; watermark (tuỳ chọn)
+                </button>
+                {showFinish && (
+                  <div className="mt-3">
+                    <TextOverlayEditor
+                      imageUrl={imageDisplayUrl(post.selectedImageUrl) || post.selectedImageUrl}
+                      initialOverlay={post.overlayJson}
+                      watermarkOptions={WATERMARK_OPTIONS}
+                      onExport={handleExport}
+                      exporting={exporting}
+                      aspectRatio={post.overlayJson?.aspectRatio || "1:1"}
+                    />
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
         </div>
       )}

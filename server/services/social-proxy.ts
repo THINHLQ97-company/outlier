@@ -115,6 +115,9 @@ export async function editImage(input: {
   // Mô tả cảnh/ý đồ của prompt ĐÃ tạo ra ảnh này — để Gemini hiểu bối cảnh gốc
   // khi chỉnh tiếp (vd người dùng nói "bỏ nhân vật thừa" thì biết ai là thừa).
   previousContext?: string;
+  // Mặt nạ vùng chỉnh ("circle to edit"): ảnh cùng kích thước, VÙNG TRẮNG = nơi
+  // áp thay đổi, VÙNG ĐEN = giữ nguyên. Có mask → chỉ sửa trong vùng khoanh.
+  maskImage?: RefImage | null;
 }): Promise<{ url: string; source: "social" | "placeholder"; isDemo: boolean; warning?: string }> {
   const sourceUrl = `data:${input.sourceImage.mimeType};base64,${input.sourceImage.data}`;
   if (!process.env.GEMINI_API_KEY) {
@@ -124,7 +127,7 @@ export async function editImage(input: {
   }
 
   const chars = input.characters || [];
-  // Ảnh: #1 = ảnh hiện tại cần sửa; #2..#N = ảnh mẫu từng nhân vật.
+  // Ảnh: #1 = ảnh hiện tại cần sửa; #2..#N = ảnh mẫu từng nhân vật; #cuối = mask (nếu có).
   const images: RefImage[] = [input.sourceImage, ...chars.map((c) => c.refImage)];
   const charLines = chars.map((c, i) => `#${i + 2} = ${c.name}`).join("; ");
   const charBlock = chars.length
@@ -135,13 +138,21 @@ export async function editImage(input: {
     ? `\nORIGINAL BRIEF that produced image #1 (for context — do NOT re-render it, only use it to understand the scene and who is who): ${input.previousContext.trim()}\n`
     : "";
 
-  const prompt = `You are editing the attached comic illustration (image #1). ${charBlock}${contextBlock}
+  // Mask "circle to edit": đẩy vào cuối danh sách ảnh, ghi rõ số hiệu.
+  let maskBlock = "";
+  if (input.maskImage) {
+    images.push(input.maskImage);
+    const maskNo = images.length;
+    maskBlock = `\nIMPORTANT — image #${maskNo} is an EDIT MASK the user drew over image #1. Apply the change ONLY inside the WHITE area of the mask; every pixel where the mask is BLACK must stay IDENTICAL to image #1. Do NOT render the mask itself in the output.\n`;
+  }
+
+  const prompt = `You are editing the attached comic illustration (image #1). ${charBlock}${contextBlock}${maskBlock}
 
 Apply ONLY the following change and keep EVERYTHING ELSE identical — the other characters, the art style, and the overall composition must stay the same. Do NOT redraw from scratch.
 
 CHANGE TO APPLY: ${input.instruction}
 
-Output the full edited image at the same art style. If the change asks to remove/hide something, remove it cleanly and fill the area naturally.`;
+Output the full edited image at the same art style. If the change asks to remove/hide something, remove it cleanly and fill the area naturally to match the surrounding background.`;
 
   try {
     const url = await generateImageGemini(prompt, images, input.aspectRatio || "1:1");

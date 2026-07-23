@@ -22,11 +22,12 @@ export async function getPost(id: string): Promise<PostRow> {
 // Vẽ lại 2 biến thể ảnh cho post đã có (dùng lại prompt/tham số Studio đã lưu).
 // Chỉ cho phép khi post đang ở khâu VẼ (draft/sua_thoai).
 // Chỉnh sửa ảnh hiện tại bằng câu lệnh (image-to-image edit, lặp như ChatGPT).
-export async function editImage(postId: string, instruction: string): Promise<PostRow> {
+// mask: data URL ảnh cùng khung (trắng = vùng "circle to edit"), tuỳ chọn.
+export async function editImage(postId: string, instruction: string, mask?: string | null): Promise<PostRow> {
   const res = await fetch(`/api/posts/${postId}/edit-image`, {
     method: "POST",
     headers: authHeaders(),
-    body: JSON.stringify({ instruction }),
+    body: JSON.stringify({ instruction, mask: mask || undefined }),
   });
   if (!res.ok) return asError(res, "Chỉnh ảnh thất bại.");
   return res.json();

@@ -220,6 +220,13 @@ export function registerImageRoutes(app: Express) {
     if (!UUID_RE.test(id)) return res.status(400).json({ error: "ID không hợp lệ." });
     const instruction = typeof req.body?.instruction === "string" ? req.body.instruction.trim() : "";
     if (!instruction) return res.status(400).json({ error: "Nhập câu chỉnh sửa (VD: chuyển POV thứ nhất, nền trắng)." });
+    // Mask "circle to edit" (tuỳ chọn): data URL ảnh cùng khung, trắng = vùng sửa.
+    const maskRaw = typeof req.body?.mask === "string" ? req.body.mask : "";
+    let maskImage: { mimeType: string; data: string } | null = null;
+    if (maskRaw.startsWith("data:image/")) {
+      const m = maskRaw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+      if (m) maskImage = { mimeType: m[1], data: m[2] };
+    }
     try {
       const db = getDb();
       const [existing] = await db.select().from(posts).where(eq(posts.id, id));
@@ -269,6 +276,7 @@ export function registerImageRoutes(app: Express) {
         aspectRatio: overlay.aspectRatio || "1:1",
         characters: editChars.slice(0, 5),
         previousContext,
+        maskImage,
       });
       if (result.isDemo) {
         return res.status(502).json({ error: result.warning || "Không chỉnh được ảnh (thiếu GEMINI_API_KEY hoặc lỗi Gemini)." });
@@ -277,7 +285,8 @@ export function registerImageRoutes(app: Express) {
       const newUrl = (await persistDataUrl("posts", result.url)) || result.url;
       // Lịch sử: lưu CẢ ảnh kết quả từng bước (để xem lại/quay lại), tối đa 12 bước.
       const prevHistory = Array.isArray(overlay.editHistory) ? overlay.editHistory : [];
-      const editHistory = [...prevHistory, { instruction, url: newUrl }].slice(-12);
+      const histLabel = maskImage ? `${instruction} (vùng khoanh)` : instruction;
+      const editHistory = [...prevHistory, { instruction: histLabel, url: newUrl }].slice(-12);
 
       const [row] = await db
         .update(posts)
