@@ -291,14 +291,24 @@ function GalleryDetailModal({
 
   // Nạp thêm chi tiết (prompt trước + nhân vật + style) — gallery list không kèm
   // overlayJson để nhẹ, nên fetch full post khi mở chi tiết.
-  const [debug, setDebug] = useState<{ prompt: string; characters: string[]; style?: string | null; ragUsed?: number } | null>(null);
+  const [debug, setDebug] = useState<{ prompt: string; characters: string[]; charactersRef?: string[]; style?: string | null; ragUsed?: number } | null>(null);
   const [scene, setScene] = useState<string | null>(null);
+  const [charNames, setCharNames] = useState<string[]>([]); // tên nhân vật hiển thị (đa nguồn)
   const [showPrompt, setShowPrompt] = useState(false);
   useEffect(() => {
-    getPost(post.id)
-      .then((full) => {
-        setDebug((full.overlayJson?.promptDebug as any) || null);
+    Promise.all([getPost(post.id), listCharacters().catch(() => [] as CharacterRow[])])
+      .then(([full, allChars]) => {
+        const dbg = (full.overlayJson?.promptDebug as any) || null;
+        setDebug(dbg);
         setScene(full.promptText || null);
+        // Tên nhân vật: ưu tiên promptDebug.characters; rỗng (bài cũ) → map từ
+        // studioParams.characterIds sang tên qua thư viện nhân vật.
+        let names: string[] = dbg?.characters || [];
+        if (!names.length) {
+          const ids: string[] = (full.overlayJson?.studioParams?.characterIds as string[]) || [];
+          names = ids.map((id) => allChars.find((c) => c.id === id)?.name).filter((n): n is string => !!n);
+        }
+        setCharNames(names);
       })
       .catch(() => {
         /* best-effort — không có prompt vẫn xem ảnh được */
@@ -399,18 +409,20 @@ function GalleryDetailModal({
                 </div>
               )}
               <div className="flex flex-wrap gap-3">
-                {debug?.characters && debug.characters.length > 0 && (
-                  <div>
-                    <p className="text-[11px] font-medium text-stone-500 mb-0.5">Nhân vật</p>
+                <div>
+                  <p className="text-[11px] font-medium text-stone-500 mb-0.5">Nhân vật</p>
+                  {charNames.length > 0 ? (
                     <div className="flex flex-wrap gap-1">
-                      {debug.characters.map((n) => (
+                      {charNames.map((n) => (
                         <span key={n} className="text-[11px] bg-white border border-stone-200 text-stone-700 px-1.5 py-0.5 rounded">
                           {n}
                         </span>
                       ))}
                     </div>
-                  </div>
-                )}
+                  ) : (
+                    <p className="text-[11px] text-stone-400">Không gắn nhân vật từ thư viện.</p>
+                  )}
+                </div>
                 {debug?.style && (
                   <div>
                     <p className="text-[11px] font-medium text-stone-500 mb-0.5">Phong cách</p>

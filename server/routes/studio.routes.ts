@@ -117,7 +117,8 @@ export async function generateStudioVariants(
   storedImages: { url: string; source: "social" | "placeholder" }[];
   warning?: string;
   promptText: string;
-  charactersUsed: string[];
+  charactersUsed: string[]; // nhân vật CÓ ảnh ref (thực sự giữ đúng nét)
+  charactersAll: string[]; // MỌI nhân vật/ref asset đã chọn (kể cả chưa có ref) — để hiển thị
   styleName: string | null;
   ragUsed: number; // số ví dụ RAG đã chèn (0 = không dùng)
 }> {
@@ -199,7 +200,15 @@ export async function generateStudioVariants(
   });
 
   const storedImages = await persistVariantImages(result.images);
-  return { storedImages, warning: result.warning, promptText, charactersUsed, styleName: style?.name || null, ragUsed };
+  return {
+    storedImages,
+    warning: result.warning,
+    promptText,
+    charactersUsed,
+    charactersAll: characterNames, // gồm cả nhân vật chưa có ref + ref asset đã chọn
+    styleName: style?.name || null,
+    ragUsed,
+  };
 }
 
 export function registerStudioRoutes(app: Express) {
@@ -273,7 +282,15 @@ export function registerStudioRoutes(app: Express) {
             // Lưu tham số Studio để /regenerate-images vẽ lại đúng (scriptId null).
             studioParams: { characterIds, assetIds, styleId, dialogue: dialogueRaw, panelLayout, background, useRag },
             // Minh bạch: prompt JSON đã gửi Gemini + nhân vật + style + RAG đã dùng.
-            promptDebug: { prompt: gen.promptText, characters: gen.charactersUsed, style: gen.styleName, ragUsed: gen.ragUsed },
+            // characters = mọi nhân vật đã chọn (hiển thị); charactersRef = nhân vật
+            // thực sự có ảnh ref (giữ đúng nét).
+            promptDebug: {
+              prompt: gen.promptText,
+              characters: gen.charactersAll,
+              charactersRef: gen.charactersUsed,
+              style: gen.styleName,
+              ragUsed: gen.ragUsed,
+            },
           },
           caption,
           status: "draft",

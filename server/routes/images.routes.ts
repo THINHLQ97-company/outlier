@@ -118,7 +118,9 @@ export function registerImageRoutes(app: Express) {
 
       let storedImages: { url: string; source: "social" | "placeholder" }[];
       let warning: string | undefined;
-      let promptDebug: { prompt: string; characters: string[]; style?: string | null; ragUsed?: number } | undefined;
+      let promptDebug:
+        | { prompt: string; characters: string[]; charactersRef?: string[]; style?: string | null; ragUsed?: number }
+        | undefined;
 
       if (existing.origin === "studio") {
         // Bài Studio (scriptId null) — vẽ lại từ tham số Studio đã lưu.
@@ -137,7 +139,13 @@ export function registerImageRoutes(app: Express) {
         const gen = await generateStudioVariants(db, owner, params, aspectRatio);
         storedImages = gen.storedImages;
         warning = gen.warning;
-        promptDebug = { prompt: gen.promptText, characters: gen.charactersUsed, style: gen.styleName, ragUsed: gen.ragUsed };
+        promptDebug = {
+          prompt: gen.promptText,
+          characters: gen.charactersAll,
+          charactersRef: gen.charactersUsed,
+          style: gen.styleName,
+          ragUsed: gen.ragUsed,
+        };
       } else {
         const [script] = await db.select().from(scripts).where(eq(scripts.id, existing.scriptId));
         if (!script) return res.status(404).json({ error: "Không tìm thấy kịch bản gốc." });

@@ -138,8 +138,9 @@ export interface OverlayConfig {
   studioParams?: StudioParams;
   // Lịch sử chỉnh sửa: mỗi bước = câu lệnh + ảnh kết quả (để xem lại/quay lại).
   editHistory?: { instruction: string; url: string }[];
-  // Minh bạch: prompt JSON đã gửi Gemini + nhân vật thực sự vào ảnh + style + RAG.
-  promptDebug?: { prompt: string; characters: string[]; style?: string | null; ragUsed?: number };
+  // Minh bạch: prompt JSON đã gửi Gemini + nhân vật + style + RAG.
+  // characters = mọi nhân vật đã chọn (hiển thị); charactersRef = nhân vật có ảnh ref.
+  promptDebug?: { prompt: string; characters: string[]; charactersRef?: string[]; style?: string | null; ragUsed?: number };
 }
 
 // ===== RAG — kho "ảnh đã thích" + hồ sơ sở thích =====

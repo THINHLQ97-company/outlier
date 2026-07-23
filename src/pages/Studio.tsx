@@ -16,6 +16,7 @@ import {
   ChevronDown,
   Heart,
   Brain,
+  UserRound,
 } from "lucide-react";
 import { studioGenerate, suggestScenario, type ScenarioVariant } from "../services/studio";
 import { regenerateImages, selectImage, saveOverlay, getPost, editImage, revertImage } from "../services/posts";
@@ -1037,14 +1038,29 @@ export default function Studio() {
 // nhắc rằng Gemini cũng nhận lại đúng các nhân vật + bối cảnh này khi chỉnh tiếp.
 function EditContextPanel({ post, characters }: { post: PostRow; characters: CharacterRow[] }) {
   const debug = post.overlayJson?.promptDebug;
-  const usedNames = debug?.characters || [];
   const styleName = debug?.style || null;
   const ragUsed = debug?.ragUsed || 0;
   const scene = post.promptText || "";
-  // Map tên nhân vật → row (để lấy ảnh); tên không khớp vẫn hiện dạng chip chữ.
-  const charRows = usedNames.map((name) => ({ name, row: characters.find((c) => c.name === name) || null }));
+  // Danh sách nhân vật hiển thị, ưu tiên nhiều nguồn để LUÔN có thông tin:
+  //  1) promptDebug.characters (mọi nhân vật đã chọn — bài mới).
+  //  2) fallback: studioParams.characterIds → tên (bài cũ chưa lưu characters).
+  const refBacked = new Set(debug?.charactersRef || []);
+  let charRows: { name: string; row: CharacterRow | null; hasRef: boolean }[] = [];
+  const names = debug?.characters || [];
+  if (names.length) {
+    charRows = names.map((name) => {
+      const row = characters.find((c) => c.name === name) || null;
+      return { name, row, hasRef: refBacked.size ? refBacked.has(name) : !!row?.referenceImageUrl };
+    });
+  } else {
+    const ids = post.overlayJson?.studioParams?.characterIds || [];
+    charRows = ids
+      .map((id) => characters.find((c) => c.id === id))
+      .filter((c): c is CharacterRow => !!c)
+      .map((c) => ({ name: c.name, row: c, hasRef: !!c.referenceImageUrl }));
+  }
 
-  if (!scene && !usedNames.length && !styleName) return null;
+  if (!scene && !charRows.length && !styleName) return null;
 
   return (
     <div className="bg-stone-50 border border-stone-200 rounded-lg p-3 flex flex-col gap-2.5">
@@ -1057,24 +1073,33 @@ function EditContextPanel({ post, characters }: { post: PostRow; characters: Cha
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-3">
-        {usedNames.length > 0 && (
-          <div className="min-w-0">
-            <p className="text-[11px] font-medium text-stone-500 mb-1">Nhân vật trong khung</p>
+      <div className="flex flex-wrap items-start gap-4">
+        <div className="min-w-0">
+          <p className="text-[11px] font-medium text-stone-500 mb-1">Nhân vật trong khung</p>
+          {charRows.length > 0 ? (
             <div className="flex flex-wrap gap-1.5">
-              {charRows.map(({ name, row }) => (
-                <span key={name} className="flex items-center gap-1 text-[11px] bg-white border border-stone-200 text-stone-700 px-1.5 py-1 rounded-lg">
-                  <span className="w-4 h-4 rounded-full overflow-hidden bg-stone-100 shrink-0">
-                    {row?.referenceImageUrl && (
+              {charRows.map(({ name, row, hasRef }) => (
+                <span
+                  key={name}
+                  title={hasRef ? "Có ảnh tham chiếu — giữ đúng nét" : "Chưa có ảnh tham chiếu — AI vẽ theo mô tả"}
+                  className="flex items-center gap-1 text-[11px] bg-white border border-stone-200 text-stone-700 px-1.5 py-1 rounded-lg"
+                >
+                  <span className="w-4 h-4 rounded-full overflow-hidden bg-stone-100 shrink-0 flex items-center justify-center">
+                    {row?.referenceImageUrl ? (
                       <img src={imageDisplayUrl(row.referenceImageUrl) || undefined} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <UserRound className="w-2.5 h-2.5 text-stone-300" aria-hidden="true" />
                     )}
                   </span>
                   {name}
+                  {!hasRef && <span className="text-[9px] text-amber-600">(chưa có ref)</span>}
                 </span>
               ))}
             </div>
-          </div>
-        )}
+          ) : (
+            <p className="text-[11px] text-stone-400">Không gắn nhân vật từ thư viện — AI vẽ theo mô tả.</p>
+          )}
+        </div>
 
         {styleName && (
           <div>
