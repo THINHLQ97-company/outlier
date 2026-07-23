@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { RefreshCw, Plus, Loader2, X, ExternalLink, AlertTriangle, Wand2 } from "lucide-react";
+import { RefreshCw, Plus, Loader2, X, ExternalLink, AlertTriangle, Wand2, Sparkles } from "lucide-react";
 import { listSignals, syncSignals, createManualSignal } from "../services/signals";
 import type { Signal } from "../types";
 import { AXES, type AxisKey } from "../../shared/engine-data";
@@ -9,7 +9,29 @@ const SOURCE_LABEL: Record<Signal["source"], string> = {
   market_radar: "Market Radar",
   group_insights: "Group Insights",
   manual: "Nhập tay",
+  claude_research: "Claude tìm",
 };
+
+const STATUS_META: Record<string, { label: string; cls: string }> = {
+  new: { label: "Mới", cls: "bg-stone-100 text-stone-500" },
+  queued: { label: "Nên làm", cls: "bg-green-50 text-green-700" },
+  idea_bank: { label: "Kho ý tưởng", cls: "bg-amber-50 text-amber-700" },
+  rejected: { label: "Loại", cls: "bg-red-50 text-red-600" },
+  scored: { label: "Đã chấm", cls: "bg-stone-100 text-stone-500" },
+};
+
+// Link "Đưa sang Sáng tạo": ưu tiên góc hài Claude gợi ý (scene + nhân vật +
+// thoại); không có thì dùng tiêu đề + tóm tắt như cũ.
+function buildStudioLink(s: Signal): string {
+  const sug = s.suggestionJson;
+  if (sug?.scene) {
+    const params = new URLSearchParams({ scene: sug.scene });
+    if (sug.characters?.length) params.set("chars", sug.characters.join(","));
+    if (sug.dialogue?.length) params.set("dialogue", JSON.stringify(sug.dialogue));
+    return `/studio?${params.toString()}`;
+  }
+  return `/studio?scene=${encodeURIComponent(`${s.title}. ${s.rawSummary}`)}`;
+}
 
 function fmtDate(iso: string) {
   const d = new Date(iso);
@@ -114,13 +136,54 @@ export default function SignalsQueue() {
             <div key={s.id} className="bg-white border border-stone-200 rounded-xl p-4 flex flex-col gap-2">
               <div className="flex items-center gap-2 flex-wrap mb-1">
                 <span className="text-[11px] font-medium bg-stone-100 text-stone-500 px-1.5 py-0.5 rounded">
-                  {SOURCE_LABEL[s.source]}
+                  {SOURCE_LABEL[s.source] || s.source}
                 </span>
+                {s.status && STATUS_META[s.status] && (
+                  <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${STATUS_META[s.status].cls}`}>
+                    {STATUS_META[s.status].label}
+                    {typeof s.scoreJson?.total === "number" ? ` · ${s.scoreJson.total}/20` : ""}
+                  </span>
+                )}
+                {s.clusterLabel && (
+                  <span className="text-[11px] font-medium px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700" title="Cụm chủ đề (Claude gom)">
+                    🧩 {s.clusterLabel}
+                  </span>
+                )}
                 {s.radar && <span className="text-[11px] text-stone-400">{s.radar}</span>}
                 {s.truc && <span className="text-[11px] text-storm-600">{AXES[s.truc as AxisKey]?.label || s.truc}</span>}
               </div>
               <h3 className="text-sm font-semibold text-stone-800">{s.title}</h3>
               <p className="text-sm text-stone-500 mt-0.5">{s.rawSummary}</p>
+
+              {/* Lý do chấm điểm (Claude) */}
+              {s.scoreJson?.reasoning && (
+                <p className="text-xs text-stone-500 bg-stone-50 border border-stone-100 rounded-lg px-2.5 py-1.5">
+                  <span className="font-medium text-stone-600">Vì sao điểm này:</span> {s.scoreJson.reasoning}
+                </p>
+              )}
+
+              {/* Góc hài Claude gợi ý */}
+              {s.suggestionJson?.scene && (
+                <div className="bg-storm-50 border border-storm-100 rounded-lg px-3 py-2 flex flex-col gap-1">
+                  <p className="text-[11px] font-semibold text-storm-700 flex items-center gap-1">
+                    <Sparkles className="w-3.5 h-3.5" aria-hidden="true" /> Góc hài gợi ý
+                  </p>
+                  <p className="text-xs text-stone-700 leading-snug">{s.suggestionJson.scene}</p>
+                  {!!s.suggestionJson.characters?.length && (
+                    <p className="text-[11px] text-stone-500">Nhân vật: {s.suggestionJson.characters.join(", ")}</p>
+                  )}
+                  {!!s.suggestionJson.dialogue?.length && (
+                    <div className="flex flex-col gap-0.5 mt-0.5">
+                      {s.suggestionJson.dialogue.map((d, i) => (
+                        <p key={i} className="text-[11px] text-stone-600">
+                          <span className="font-medium text-storm-700">{d.character}:</span> "{d.text}"
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="flex items-center justify-between gap-3 mt-1">
                 <div className="flex items-center gap-3 text-[11px] text-stone-400">
                   <span>{fmtDate(s.publishedDate)}</span>
@@ -131,9 +194,9 @@ export default function SignalsQueue() {
                   )}
                 </div>
                 <button
-                  onClick={() => navigate(`/studio?scene=${encodeURIComponent(`${s.title}. ${s.rawSummary}`)}`)}
+                  onClick={() => navigate(buildStudioLink(s))}
                   className="flex items-center gap-1.5 text-xs font-medium text-white bg-storm-600 hover:bg-storm-700 px-2.5 py-1.5 rounded-lg shrink-0"
-                  title="Mở trang Sáng tạo với mô tả bối cảnh điền sẵn từ tín hiệu này"
+                  title={s.suggestionJson?.scene ? "Mở Sáng tạo với góc hài + nhân vật + thoại điền sẵn" : "Mở trang Sáng tạo với mô tả bối cảnh điền sẵn từ tín hiệu này"}
                 >
                   <Wand2 className="w-3.5 h-3.5" aria-hidden="true" /> Đưa sang Sáng tạo
                 </button>

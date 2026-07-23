@@ -16,6 +16,8 @@ import { registerStudioRoutes } from "./server/routes/studio.routes";
 import { registerStyleRoutes } from "./server/routes/styles.routes";
 import { registerGalleryRoutes } from "./server/routes/gallery.routes";
 import { registerRagRoutes } from "./server/routes/rag.routes";
+import { registerMcpOAuthRoutes } from "./server/routes/mcp-oauth.routes";
+import { registerMcpSignalsRoutes } from "./server/routes/mcp-signals.routes";
 
 dotenv.config();
 
@@ -76,6 +78,12 @@ async function startServer() {
 
   // ===== RAG — kho "ảnh đã thích" (❤️) + hồ sơ sở thích để prompt thông minh hơn =====
   registerRagRoutes(app);
+
+  // ===== MCP "Tín hiệu" — OAuth 2.1 AS + MCP server cho Claude (AI Analyst) =====
+  // PHẢI đăng ký TRƯỚC SPA catch-all bên dưới để /.well-known/* + /api/oauth/* +
+  // /api/mcp-signals không bị nuốt bởi index.html.
+  registerMcpOAuthRoutes(app);
+  registerMcpSignalsRoutes(app);
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

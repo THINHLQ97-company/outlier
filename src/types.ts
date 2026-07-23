@@ -7,7 +7,7 @@ export interface AuthUser {
 
 // ===== Domain types — mirror server/db/schema.ts (camelCase over the wire) =====
 
-export type SignalSource = "market_radar" | "group_insights" | "manual";
+export type SignalSource = "market_radar" | "group_insights" | "manual" | "claude_research";
 export type SignalStatus = "new" | "scored" | "queued" | "idea_bank" | "rejected";
 export type AxisKey = "ai" | "ke_toan" | "hosting";
 
@@ -19,8 +19,19 @@ export interface SignalScore {
   do_an_toan?: number;
   total?: number;
   dinh_nhom_cam?: boolean;
+  reasoning?: string; // lý do chấm (khi Claude chấm qua MCP)
   scored_by?: string;
   scored_at?: string;
+}
+
+// Góc hài Claude gợi ý cho 1 tín hiệu (qua MCP) — hiện ở tab Tín hiệu.
+export interface SignalSuggestion {
+  scene?: string;
+  characters?: string[];
+  dialogue?: { character: string; text: string }[];
+  note?: string;
+  suggested_by?: string;
+  suggested_at?: string;
 }
 
 export interface Signal {
@@ -34,6 +45,9 @@ export interface Signal {
   publishedDate: string;
   scoreJson: SignalScore;
   status: SignalStatus;
+  clusterId?: string | null; // cụm dedup (Claude gom qua MCP)
+  clusterLabel?: string | null; // nhãn cụm
+  suggestionJson?: SignalSuggestion; // góc hài Claude gợi ý
   createdBy: string | null;
   createdAt: string;
 }

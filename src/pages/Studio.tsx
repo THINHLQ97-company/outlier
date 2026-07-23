@@ -98,11 +98,36 @@ export default function Studio() {
   // qua form chọn nhân vật/mô tả, đi thẳng vào bước chọn ảnh/chỉnh chữ (post đã
   // có sẵn imageVariants). Chỉ áp dụng cho bài đang ở khâu VẼ (draft/sua_thoai).
   // Điền sẵn mô tả bối cảnh khi mở từ Tín hiệu ("Đưa sang Sáng tạo" → ?scene=...).
+  // Góc hài từ Tín hiệu (?chars=Tên1,Tên2&dialogue=JSON) — áp sau khi nhân vật tải xong.
+  const [pendingAngle, setPendingAngle] = useState<{ chars: string[]; dialogue: DialogueLine[] } | null>(null);
   useEffect(() => {
     const scene = searchParams.get("scene");
     if (scene && !searchParams.get("postId")) setPromptText(scene);
+    const charsRaw = searchParams.get("chars");
+    const dialogueRaw = searchParams.get("dialogue");
+    if (charsRaw || dialogueRaw) {
+      let dialogue: DialogueLine[] = [];
+      try {
+        if (dialogueRaw) dialogue = JSON.parse(dialogueRaw);
+      } catch {
+        /* bỏ qua dialogue lỗi định dạng */
+      }
+      setPendingAngle({ chars: charsRaw ? charsRaw.split(",").map((s) => s.trim()).filter(Boolean) : [], dialogue });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Áp góc hài (map tên nhân vật → id) khi danh sách nhân vật đã tải.
+  useEffect(() => {
+    if (!pendingAngle || characters.length === 0) return;
+    const ids = pendingAngle.chars
+      .map((n) => characters.find((c) => c.name === n)?.id)
+      .filter((x): x is string => !!x);
+    if (ids.length) setSelectedCharacterIds(ids.slice(0, MAX_PEOPLE_REF));
+    if (pendingAngle.dialogue.length) setDialogueLines(pendingAngle.dialogue.filter((d) => d.character && d.text));
+    setPendingAngle(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingAngle, characters]);
 
   useEffect(() => {
     const postId = searchParams.get("postId");

@@ -19,12 +19,16 @@ export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 
 // ===== signals — bước THU + trạng thái LỌC =====
-// source: "market_radar" | "group_insights" | "manual"
+// source: "market_radar" | "group_insights" | "manual" | "claude_research"
+//   ("claude_research" = tin do Claude tự web-search thêm qua MCP server).
 // radar: tên radar cụ thể (vd "marketing-kd", "ke-toan") hoặc tên cluster group.
 // truc: "ai" | "ke_toan" | "hosting" | null (chưa gán trục).
 // status: "new" | "scored" | "queued" | "idea_bank" | "rejected"
 // scoreJson: { do_nong, do_cham, do_hop_truc, tuoi_tho, do_an_toan, total,
-//              dinh_nhom_cam, scored_by, scored_at, rubric_version_id }
+//              dinh_nhom_cam, reasoning, scored_by, scored_at, rubric_version_id }
+//   (reasoning = lý do Claude chấm điểm — chỉ có khi chấm qua MCP).
+// clusterId/clusterLabel: gom tin trùng/liên quan thành 1 cụm (Claude dedup qua MCP).
+// suggestionJson: góc hài Claude gợi ý { scene, characters[], dialogue[], note }.
 export const signals = pgTable("signals", {
   id: uuid("id").primaryKey().defaultRandom(),
   source: text("source").notNull(),
@@ -36,11 +40,15 @@ export const signals = pgTable("signals", {
   publishedDate: timestamp("published_date", { withTimezone: true }).notNull().defaultNow(),
   scoreJson: jsonb("score_json").$type<Record<string, any>>().default({}),
   status: text("status").notNull().default("new"),
+  clusterId: uuid("cluster_id"), // cụm dedup (Claude gom qua MCP)
+  clusterLabel: text("cluster_label"), // nhãn cụm hiển thị
+  suggestionJson: jsonb("suggestion_json").$type<Record<string, any>>().default({}), // góc hài gợi ý
   createdBy: text("created_by"), // username, chỉ set khi source="manual"
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
   statusIdx: index("signals_status_idx").on(t.status),
   publishedIdx: index("signals_published_idx").on(t.publishedDate),
+  clusterIdx: index("signals_cluster_idx").on(t.clusterId),
 }));
 
 export type Signal = typeof signals.$inferSelect;
