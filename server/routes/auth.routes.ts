@@ -8,7 +8,8 @@ import { users } from "../db/schema";
 import { verifyPassword } from "../password";
 import { getSecret, verifyToken, extractToken } from "../auth-shared";
 import { requireAuth, getAuthUser } from "../auth-mw";
-import { verifyGoogleIdToken, adminEmails } from "../services/google-auth";
+import { verifyGoogleIdToken } from "../services/google-auth";
+import { resolveGoogleUser } from "../services/google-user";
 
 // Ký token đăng nhập (giống login mật khẩu): base64(payload).hmac, hết hạn 7 ngày.
 function issueSessionToken(user: { username: string; role: string }): string {
@@ -74,51 +75,11 @@ export function registerAuthRoutes(app: Express) {
       return res.status(401).json({ error: "Email Google chưa được xác minh." });
     }
 
-    const email = profile.email;
-    const isAdminEmail = adminEmails().includes(email);
     try {
-      const db = getDb();
-      const [existing] = await db.select().from(users).where(eq(users.email, email));
-
-      // Admin allowlist (env) → luôn đảm bảo tài khoản admin active.
-      if (isAdminEmail) {
-        let user = existing;
-        if (!user) {
-          [user] = await db
-            .insert(users)
-            .values({ username: email, email, role: "admin", isActive: true, authProvider: "google", googleSub: profile.sub, avatarUrl: profile.picture })
-            .returning();
-        } else {
-          [user] = await db
-            .update(users)
-            .set({ role: "admin", isActive: true, authProvider: "google", googleSub: profile.sub, avatarUrl: profile.picture, updatedAt: new Date() })
-            .where(eq(users.id, existing.id))
-            .returning();
-        }
-        return res.json({ success: true, token: issueSessionToken(user), username: user.username, role: user.role });
+      const { user, pending } = await resolveGoogleUser(getDb(), profile);
+      if (pending || !user) {
+        return res.status(403).json({ error: "Tài khoản chưa được cấp quyền — đã gửi yêu cầu tới quản trị viên, vui lòng chờ duyệt.", pending: true });
       }
-
-      // Chưa có tài khoản → tạo "chờ duyệt" (isActive=false), báo admin.
-      if (!existing) {
-        await db
-          .insert(users)
-          .values({ username: email, email, role: "member", isActive: false, authProvider: "google", googleSub: profile.sub, avatarUrl: profile.picture })
-          .returning();
-        return res.status(403).json({ error: "Tài khoản chưa được cấp quyền. Yêu cầu đã gửi tới quản trị viên — vui lòng chờ duyệt.", pending: true });
-      }
-
-      // Có nhưng chưa được duyệt → vẫn chờ.
-      if (!existing.isActive) {
-        await db.update(users).set({ googleSub: profile.sub, avatarUrl: profile.picture, updatedAt: new Date() }).where(eq(users.id, existing.id));
-        return res.status(403).json({ error: "Tài khoản đang chờ quản trị viên duyệt.", pending: true });
-      }
-
-      // Đã được duyệt → đăng nhập, cập nhật thông tin Google mới nhất.
-      const [user] = await db
-        .update(users)
-        .set({ googleSub: profile.sub, avatarUrl: profile.picture, authProvider: "google", updatedAt: new Date() })
-        .where(eq(users.id, existing.id))
-        .returning();
       return res.json({ success: true, token: issueSessionToken(user), username: user.username, role: user.role });
     } catch (e: any) {
       console.error("google login:", e?.message || e);

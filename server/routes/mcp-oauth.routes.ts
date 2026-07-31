@@ -16,6 +16,8 @@ import { eq } from "drizzle-orm";
 import { getDb, isDbConfigured } from "../db/client";
 import { users } from "../db/schema";
 import { verifyPassword } from "../password";
+import { verifyGoogleIdToken } from "../services/google-auth";
+import { resolveGoogleUser } from "../services/google-user";
 import {
   baseUrl,
   verifyPkce,
@@ -39,7 +41,15 @@ function esc(s = ""): string {
   return String(s).replace(/[<>"&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", '"': "&quot;", "&": "&amp;" }[c] as string));
 }
 
-function loginPage(params: Record<string, string>, errorMsg = ""): string {
+function loginPage(params: Record<string, string>, errorMsg = "", googleClientId = ""): string {
+  const hidden = `
+  <input type="hidden" name="client_id" value="${esc(params.client_id || "")}">
+  <input type="hidden" name="redirect_uri" value="${esc(params.redirect_uri || "")}">
+  <input type="hidden" name="code_challenge" value="${esc(params.code_challenge || "")}">
+  <input type="hidden" name="code_challenge_method" value="${esc(params.code_challenge_method || "S256")}">
+  <input type="hidden" name="state" value="${esc(params.state || "")}">
+  <input type="hidden" name="scope" value="${esc(params.scope || "mcp")}">
+  <input type="hidden" name="resource" value="${esc(params.resource || "")}">`;
   return `<!doctype html>
 <html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Kết nối Claude ↔ Tín hiệu Fanpage</title>
@@ -54,25 +64,48 @@ function loginPage(params: Record<string, string>, errorMsg = ""): string {
   input:focus{border-color:#D97757}
   button{width:100%;padding:11px;border:none;border-radius:10px;background:#D97757;color:#fff;font-weight:700;font-size:14px;cursor:pointer}
   .err{background:#fef2f2;border:1px solid #fecaca;color:#dc2626;font-size:12.5px;padding:9px 12px;border-radius:8px;margin-bottom:14px}
+  .gwrap{display:flex;justify-content:center;margin-bottom:16px}
+  .divider{display:flex;align-items:center;gap:10px;color:#94a3b8;font-size:12px;margin:0 0 16px}
+  .divider::before,.divider::after{content:'';flex:1;height:1px;background:#e2e8f0}
 </style></head><body>
-<form class="card" method="POST" action="/api/oauth/authorize">
+<div class="card">
   <div class="logo">Tín hiệu · Fanpage "Ăn Nằm Với AI"</div>
   <div class="sub">Cấp quyền cho <b>Claude</b> đọc/cập nhật tín hiệu</div>
   <div class="consent">🤖 Claude sẽ có thể đọc tín hiệu, thêm tin, chấm điểm, gom cụm và gợi ý góc nội dung theo quyền tài khoản bạn. Đăng nhập để đồng ý.</div>
   ${errorMsg ? `<div class="err">${esc(errorMsg)}</div>` : ""}
-  <label>Tài khoản</label>
-  <input name="username" autocomplete="username">
-  <label>Mật khẩu</label>
-  <input name="password" type="password" autocomplete="current-password">
-  <input type="hidden" name="client_id" value="${esc(params.client_id || "")}">
-  <input type="hidden" name="redirect_uri" value="${esc(params.redirect_uri || "")}">
-  <input type="hidden" name="code_challenge" value="${esc(params.code_challenge || "")}">
-  <input type="hidden" name="code_challenge_method" value="${esc(params.code_challenge_method || "S256")}">
-  <input type="hidden" name="state" value="${esc(params.state || "")}">
-  <input type="hidden" name="scope" value="${esc(params.scope || "mcp")}">
-  <input type="hidden" name="resource" value="${esc(params.resource || "")}">
-  <button type="submit">Đăng nhập &amp; Cấp quyền</button>
-</form>
+
+  ${googleClientId
+    ? `<form method="POST" action="/api/oauth/authorize" id="gform">
+        <input type="hidden" name="id_token" id="id_token_field">${hidden}
+      </form>
+      <div class="gwrap"><div id="gbtn"></div></div>
+      <div class="divider">hoặc tài khoản nội bộ</div>`
+    : ""}
+
+  <form method="POST" action="/api/oauth/authorize">
+    <label>Tài khoản</label>
+    <input name="username" autocomplete="username">
+    <label>Mật khẩu</label>
+    <input name="password" type="password" autocomplete="current-password">${hidden}
+    <button type="submit">Đăng nhập &amp; Cấp quyền</button>
+  </form>
+</div>
+${googleClientId
+    ? `<script src="https://accounts.google.com/gsi/client" async defer></script>
+      <script>
+      window.onload = function(){
+        if(!window.google||!google.accounts||!google.accounts.id) return;
+        google.accounts.id.initialize({
+          client_id: ${JSON.stringify(googleClientId)},
+          callback: function(resp){
+            document.getElementById('id_token_field').value = resp.credential;
+            document.getElementById('gform').submit();
+          }
+        });
+        google.accounts.id.renderButton(document.getElementById('gbtn'), {theme:'outline', size:'large', width:288, text:'signin_with', locale:'vi'});
+      };
+      </script>`
+    : ""}
 </body></html>`;
 }
 
@@ -133,35 +166,37 @@ export function registerMcpOAuthRoutes(app: Express) {
     }
     if (!q.code_challenge) return res.status(400).type("html").send("<p>Thiếu PKCE code_challenge.</p>");
     res.status(200).type("html").send(
-      loginPage({
-        client_id: q.client_id,
-        redirect_uri: q.redirect_uri,
-        code_challenge: q.code_challenge,
-        code_challenge_method: q.code_challenge_method || "S256",
-        state: q.state,
-        scope: q.scope || "mcp",
-        resource: q.resource,
-      })
+      loginPage(
+        {
+          client_id: q.client_id,
+          redirect_uri: q.redirect_uri,
+          code_challenge: q.code_challenge,
+          code_challenge_method: q.code_challenge_method || "S256",
+          state: q.state,
+          scope: q.scope || "mcp",
+          resource: q.resource,
+        },
+        "",
+        process.env.GOOGLE_CLIENT_ID || ""
+      )
     );
   });
 
   // ── Authorize (POST): xác thực tài khoản fanpage → cấp code ──
   app.post("/api/oauth/authorize", form, async (req, res) => {
     const b = req.body || {};
-    const { username, password, redirect_uri, code_challenge, code_challenge_method, state, scope, resource, client_id } = b;
+    const { username, password, id_token, redirect_uri, code_challenge, code_challenge_method, state, scope, resource, client_id } = b;
     if (!redirect_uri || !isAllowedRedirect(redirect_uri)) {
       return res.status(400).type("html").send("<p>redirect_uri không hợp lệ.</p>");
     }
     const renderErr = (msg: string) =>
-      res.status(401).type("html").send(loginPage({ client_id, redirect_uri, code_challenge, code_challenge_method, state, scope, resource }, msg));
+      res
+        .status(401)
+        .type("html")
+        .send(loginPage({ client_id, redirect_uri, code_challenge, code_challenge_method, state, scope, resource }, msg, process.env.GOOGLE_CLIENT_ID || ""));
 
-    if (!isDbConfigured()) return renderErr("Hệ thống chưa cấu hình DATABASE_URL.");
-    if (!username || !password) return renderErr("Nhập tài khoản và mật khẩu.");
-    try {
-      const [user] = await getDb().select().from(users).where(eq(users.username, String(username)));
-      if (!user || !user.isActive || !verifyPassword(String(password), user.passwordHash)) {
-        return renderErr("Tài khoản hoặc mật khẩu không đúng (hoặc tài khoản đã khoá).");
-      }
+    // Cấp code + redirect về connector (dùng chung cho cả Google lẫn mật khẩu).
+    const grant = (user: { id: string; username: string; role: string }) => {
       const code = issueCode({
         sub: user.id,
         username: user.username,
@@ -173,8 +208,32 @@ export function registerMcpOAuthRoutes(app: Express) {
         resource,
       });
       const sep = redirect_uri.includes("?") ? "&" : "?";
-      const loc = `${redirect_uri}${sep}code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ""}`;
-      res.redirect(302, loc);
+      res.redirect(302, `${redirect_uri}${sep}code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ""}`);
+    };
+
+    if (!isDbConfigured()) return renderErr("Hệ thống chưa cấu hình DATABASE_URL.");
+    try {
+      // ── Đăng nhập Google (id_token từ GIS) ──
+      if (id_token) {
+        let profile;
+        try {
+          profile = await verifyGoogleIdToken(String(id_token));
+        } catch {
+          return renderErr("Xác thực Google thất bại. Thử lại.");
+        }
+        if (!profile.emailVerified) return renderErr("Email Google chưa được xác minh.");
+        const { user, pending } = await resolveGoogleUser(getDb(), profile);
+        if (pending || !user) return renderErr("Tài khoản chưa được cấp quyền — báo quản trị viên duyệt trong app rồi thử lại.");
+        return grant(user);
+      }
+
+      // ── Tài khoản nội bộ (username/password) ──
+      if (!username || !password) return renderErr("Nhập tài khoản và mật khẩu, hoặc đăng nhập bằng Google.");
+      const [user] = await getDb().select().from(users).where(eq(users.username, String(username)));
+      if (!user || !user.isActive || !user.passwordHash || !verifyPassword(String(password), user.passwordHash)) {
+        return renderErr("Tài khoản hoặc mật khẩu không đúng (hoặc tài khoản đã khoá).");
+      }
+      return grant(user);
     } catch (e: any) {
       console.error("oauth authorize:", e?.message || e);
       return renderErr("Lỗi máy chủ: " + (e?.message || e));
