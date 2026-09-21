@@ -9,7 +9,9 @@ import type { Express } from "express";
 import crypto from "crypto";
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import { getDb, isDbConfigured } from "../db/client";
-import { signals, rubricVersions, characters as charactersTable } from "../db/schema";
+import { signals, rubricVersions, characters as charactersTable, brands, brandSources, radarJobs, radarItems, deconstructions, remakes } from "../db/schema";
+import { ingestUrl, ingestRawText } from "../services/brand-ingest";
+import { extractBrandProfile, type SourceDoc } from "../services/brand-extract";
 import { computeSignalStatus } from "../services/rubric-scoring";
 import { RUBRIC_DEFAULT_THRESHOLDS } from "../../shared/engine-data";
 import { verifyAccessToken, baseUrl, type McpPrincipal } from "../mcp/oauth";
@@ -26,7 +28,7 @@ const SERVER_INSTRUCTIONS = `Bạn là AI Analyst cho fanpage giải trí "Ăn N
 4. GÓC HÀI: với tin queued, signals_suggest_angle đề xuất 1 góc lên nội dung hài (scene cụ thể + chọn characters từ characters_list + dialogue ngắn). Người vận hành sẽ review rồi "Đưa sang Sáng tạo".
 Luôn dùng characters_list để chọn đúng nhân vật fanpage. Tổng điểm rubric chỉ cộng 4 tiêu chí (do_nong+do_cham+do_hop_truc+tuoi_tho), do_an_toan là cổng an toàn.`;
 
-const READONLY_TOOLS = new Set(["signals_list", "signals_get", "rubric_get", "characters_list"]);
+const READONLY_TOOLS = new Set(["signals_list", "signals_get", "rubric_get", "characters_list", "brands_list", "brand_profile_get", "radar_jobs_list", "radar_results", "deconstruct_get", "remake_get"]);
 
 const TOOLS = [
   {
@@ -111,6 +113,133 @@ const TOOLS = [
         label: { type: "string", description: "Nhãn cụm (chủ đề chung)" },
       },
       required: ["ids", "label"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "brands_list",
+    description: "Liệt kê các hồ sơ thương hiệu (brand) hiện có, kèm trạng thái đã bóc hồ sơ hay chưa.",
+    annotations: { title: "Danh sách thương hiệu", readOnlyHint: true },
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "brand_profile_get",
+    description: "Đọc hồ sơ 1 thương hiệu: bán gì, khách là ai, giọng nói, xưng hô, từ cấm, công dụng được phép nói — MỖI MỤC KÈM CÂU TRÍCH NGUỒN. Mục nào null nghĩa là chưa có dữ liệu (cố ý để thiếu, không bịa).",
+    annotations: { title: "Đọc hồ sơ thương hiệu", readOnlyHint: true },
+    inputSchema: {
+      type: "object",
+      properties: { brand_id: { type: "string", description: "Mã thương hiệu (từ brands_list)" } },
+      required: ["brand_id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "brand_ingest",
+    description: "Nạp thêm tài liệu cho thương hiệu: dán link website, hoặc dán thẳng nội dung. Tài liệu nạp xong mới bóc được hồ sơ.",
+    annotations: { title: "Nạp tài liệu thương hiệu", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: {
+        brand_id: { type: "string", description: "Mã thương hiệu" },
+        url: { type: "string", description: "Link trang giới thiệu (http/https)" },
+        text: { type: "string", description: "Hoặc dán thẳng nội dung tài liệu" },
+      },
+      required: ["brand_id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "brand_extract",
+    description: "Bóc hồ sơ thương hiệu từ các tài liệu đã nạp. Mỗi mục phải có câu trích kiểm chứng được trong tài liệu; câu nào không đối chiếu được sẽ bị loại và báo trong 'rejected'. Không tìm thấy thì để thiếu, KHÔNG bịa.",
+    annotations: { title: "Bóc hồ sơ thương hiệu", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: { brand_id: { type: "string", description: "Mã thương hiệu" } },
+      required: ["brand_id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "radar_jobs_list",
+    description: "Liệt kê các phiên quét Radar đã chạy (tìm content đang bật lên trong ngách).",
+    annotations: { title: "Danh sách phiên quét", readOnlyHint: true },
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "radar_results",
+    description: "Đọc kết quả một phiên quét, ĐÃ XẾP theo mức vượt trội so với quy mô kênh (không phải theo lượt thích tuyệt đối). Mỗi bài kèm lý do được chấm điểm và độ tin cậy.",
+    annotations: { title: "Kết quả Radar", readOnlyHint: true },
+    inputSchema: {
+      type: "object",
+      properties: {
+        job_id: { type: "string", description: "Mã phiên quét (từ radar_jobs_list)" },
+        limit: { type: "number", description: "Số bài muốn xem, mặc định 20" },
+      },
+      required: ["job_id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "deconstruct_start",
+    description: "Bắt đầu bóc cấu trúc một bài (3 giây đầu, mở vấn đề, cách giữ chân, twist, cách chốt). Chạy nền 1-3 phút — gọi deconstruct_get để xem kết quả.",
+    annotations: { title: "Bóc cấu trúc bài", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "Link bài cần phân tích" },
+        radar_item_id: { type: "string", description: "Hoặc mã bài lấy từ radar_results" },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "deconstruct_get",
+    description: "Xem kết quả bóc cấu trúc. status='ready' là xong; 'downloading'/'analyzing' là đang chạy, chờ rồi gọi lại. Mọi mốc đều kèm số giây đã được đối chiếu với độ dài video thật.",
+    annotations: { title: "Kết quả bóc cấu trúc", readOnlyHint: true },
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string", description: "Mã bản phân tích (từ deconstruct_start)" } },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "remake_start",
+    description: "Viết bản mới cho thương hiệu, đi theo cách triển khai của bài đã bóc cấu trúc. Chạy nền 10-40 giây. Bản viết LUÔN kèm kết quả kiểm tra guardrail; có lỗi mức chặn thì không được đem dùng.",
+    annotations: { title: "Viết lại cho thương hiệu", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: {
+        brand_id: { type: "string", description: "Mã thương hiệu (từ brands_list)" },
+        deconstruction_id: { type: "string", description: "Mã bản bóc cấu trúc (từ deconstruct_start)" },
+        format: { type: "string", enum: ["video_script", "post"], description: "Kịch bản video hay bài đăng" },
+      },
+      required: ["brand_id", "deconstruction_id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "remake_get",
+    description: "Xem bản viết + kết quả guardrail. guardrailJson.passed=false nghĩa là CÒN LỖI CHẶN, tuyệt đối không đem dùng khi chưa sửa.",
+    annotations: { title: "Xem bản viết", readOnlyHint: true },
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string", description: "Mã bản viết" } },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "remake_check",
+    description: "Kiểm tra một đoạn nội dung theo quy tắc của thương hiệu: có bê nguyên câu bài gốc không, có dùng từ cấm không, có tự chế công dụng sản phẩm không. Dùng được cho cả nội dung tự viết tay.",
+    annotations: { title: "Kiểm tra nội dung", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Mã bản viết cần kiểm tra lại" },
+        draft: { type: "string", description: "Nội dung mới (bỏ trống thì kiểm tra bản đang lưu)" },
+      },
+      required: ["id"],
       additionalProperties: false,
     },
   },
@@ -267,6 +396,231 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
     const clusterId = crypto.randomUUID();
     await db.update(signals).set({ clusterId, clusterLabel: label }).where(inArray(signals.id, ids));
     return { ok: true, clusterId, clusterLabel: label, count: ids.length };
+  }
+
+  if (name === "brands_list") {
+    const rows = await db
+      .select({ id: brands.id, name: brands.name, owner: brands.owner, ingestStatus: brands.ingestStatus, updatedAt: brands.updatedAt })
+      .from(brands)
+      .orderBy(desc(brands.updatedAt))
+      .limit(100);
+    return { count: rows.length, brands: rows };
+  }
+
+  if (name === "brand_profile_get") {
+    if (!UUID_RE.test(args.brand_id || "")) throw new Error("brand_id không hợp lệ");
+    const [row] = await db.select().from(brands).where(eq(brands.id, args.brand_id));
+    if (!row) throw new Error("Không tìm thấy thương hiệu");
+    const srcs = await db
+      .select({ id: brandSources.id, kind: brandSources.kind, sourceUrl: brandSources.sourceUrl, title: brandSources.title, charCount: brandSources.charCount })
+      .from(brandSources)
+      .where(eq(brandSources.brandId, args.brand_id));
+    // Nói rõ mục nào còn thiếu để Claude không tự điền vào chỗ trống.
+    const missing = (["sells", "audience", "toneOfVoice", "addressing", "bannedTerms", "allowedClaims"] as const).filter((k) => !row[k]);
+    return {
+      ...row,
+      sources: srcs,
+      missing_fields: missing,
+      note: missing.length
+        ? "Các mục trong missing_fields CHƯA CÓ DỮ LIỆU trong tài liệu. Không được tự suy đoán hay điền thay."
+        : undefined,
+    };
+  }
+
+  if (name === "brand_ingest") {
+    if (!UUID_RE.test(args.brand_id || "")) throw new Error("brand_id không hợp lệ");
+    const [row] = await db.select().from(brands).where(eq(brands.id, args.brand_id));
+    if (!row) throw new Error("Không tìm thấy thương hiệu");
+    const url = typeof args.url === "string" ? args.url.trim() : "";
+    const text = typeof args.text === "string" ? args.text : "";
+    if (!url && !text) throw new Error("Cần url hoặc text");
+    const result = url ? await ingestUrl(url) : ingestRawText(text);
+    const [src] = await db
+      .insert(brandSources)
+      .values({
+        brandId: args.brand_id, kind: url ? "website" : "text", sourceUrl: url || null,
+        title: result.title || null, extractedText: result.text, charCount: result.charCount, status: "ready",
+      })
+      .returning({ id: brandSources.id, kind: brandSources.kind, title: brandSources.title, charCount: brandSources.charCount });
+    return { added: src, hint: "Gọi brand_extract để bóc hồ sơ từ tài liệu đã nạp." };
+  }
+
+  if (name === "brand_extract") {
+    if (!UUID_RE.test(args.brand_id || "")) throw new Error("brand_id không hợp lệ");
+    const [row] = await db.select().from(brands).where(eq(brands.id, args.brand_id));
+    if (!row) throw new Error("Không tìm thấy thương hiệu");
+    const srcs = await db.select().from(brandSources).where(eq(brandSources.brandId, args.brand_id));
+    const docs: SourceDoc[] = srcs
+      .filter((s: any) => s.status === "ready" && s.extractedText)
+      .map((s: any) => ({ id: s.id, url: s.sourceUrl || undefined, text: s.extractedText }));
+    if (docs.length === 0) throw new Error("Chưa có tài liệu nào — gọi brand_ingest trước");
+
+    const profile = await extractBrandProfile(docs);
+    const keep = (cur: any, next: any) => (cur?.source === "manual" ? cur : next);
+    const [updated] = await db
+      .update(brands)
+      .set({
+        sells: keep(row.sells, profile.sells),
+        audience: keep(row.audience, profile.audience),
+        toneOfVoice: keep(row.toneOfVoice, profile.toneOfVoice),
+        addressing: keep(row.addressing, profile.addressing),
+        bannedTerms: keep(row.bannedTerms, profile.bannedTerms),
+        allowedClaims: keep(row.allowedClaims, profile.allowedClaims),
+        ingestStatus: "ready",
+        updatedAt: new Date(),
+      })
+      .where(eq(brands.id, args.brand_id))
+      .returning();
+    return {
+      ...updated,
+      rejected: profile.rejected,
+      note: profile.rejected.length
+        ? "Các mục trong 'rejected' đã bị LOẠI vì không đối chiếu được câu trích với tài liệu gốc. Đây là hành vi đúng, không phải lỗi."
+        : undefined,
+    };
+  }
+
+  if (name === "radar_jobs_list") {
+    const rows = await db
+      .select({ id: radarJobs.id, query: radarJobs.query, queryKind: radarJobs.queryKind, platforms: radarJobs.platforms,
+                status: radarJobs.status, scannedCount: radarJobs.scannedCount, enrichedCount: radarJobs.enrichedCount,
+                createdAt: radarJobs.createdAt })
+      .from(radarJobs)
+      .orderBy(desc(radarJobs.createdAt))
+      .limit(50);
+    return { count: rows.length, jobs: rows };
+  }
+
+  if (name === "radar_results") {
+    if (!UUID_RE.test(args.job_id || "")) throw new Error("job_id không hợp lệ");
+    const limit = Math.min(Number(args.limit) || 20, 100);
+    const rows = await db
+      .select()
+      .from(radarItems)
+      .where(eq(radarItems.jobId, args.job_id))
+      .orderBy(desc(radarItems.outperformScore))
+      .limit(limit);
+    return {
+      count: rows.length,
+      // Quy về thang 100 cho dễ đọc; kèm lý do để biết điểm đến từ đâu.
+      items: rows.map((r: any) => ({
+        url: r.url, title: r.title, platform: r.platform,
+        channelName: r.channelName, followerCount: r.followerCount,
+        views: r.views, likes: r.likes, comments: r.comments, shares: r.shares,
+        publishedAt: r.publishedAt,
+        outperformScore: r.outperformScore == null ? null : r.outperformScore / 10,
+        confidence: r.confidence,
+        metricsSource: r.metricsSource,
+        reasons: (r.scoreBreakdown || {}).reasons || [],
+      })),
+      note: "Điểm trên thang 100, xếp theo mức vượt trội so với quy mô CHÍNH KÊNH ĐÓ — không phải theo lượt thích tuyệt đối. Bài có confidence='low' là số liệu còn thiếu, chỉ nên tham khảo.",
+    };
+  }
+
+  if (name === "deconstruct_start") {
+    let url = typeof args.url === "string" ? args.url.trim() : "";
+    if (!url && UUID_RE.test(args.radar_item_id || "")) {
+      const [item] = await db.select().from(radarItems).where(eq(radarItems.id, args.radar_item_id));
+      if (!item) throw new Error("Không tìm thấy bài trong kết quả quét");
+      url = item.url;
+    }
+    if (!url) throw new Error("Cần url hoặc radar_item_id");
+    const { assertPublicUrl } = await import("../services/brand-ingest");
+    assertPublicUrl(url);
+
+    const [row] = await db.insert(deconstructions)
+      .values({ owner: principal.username, sourceUrl: url, status: "downloading",
+                radarItemId: UUID_RE.test(args.radar_item_id || "") ? args.radar_item_id : null })
+      .returning({ id: deconstructions.id, status: deconstructions.status });
+
+    const { runDeconstructForMcp } = await import("./deconstruct.routes");
+    void runDeconstructForMcp(row.id, url);
+
+    return { ...row, note: "Đang chạy nền, mất khoảng 1-3 phút. Gọi deconstruct_get với id này để xem kết quả." };
+  }
+
+  if (name === "deconstruct_get") {
+    if (!UUID_RE.test(args.id || "")) throw new Error("id không hợp lệ");
+    const [row] = await db.select().from(deconstructions).where(eq(deconstructions.id, args.id));
+    if (!row) throw new Error("Không tìm thấy bản phân tích");
+    return {
+      ...row,
+      note:
+        row.status === "ready"
+          ? "Mọi mốc thời gian đã được đối chiếu với độ dài video thật; mốc nằm ngoài video đã bị loại. 'formula' mô tả CÁCH TRIỂN KHAI để học theo — không được chép lại câu chữ của bài gốc."
+          : row.status === "error"
+          ? "Phân tích không thành công — xem errorMessage."
+          : "Đang chạy, chờ khoảng 30 giây rồi gọi lại.",
+    };
+  }
+
+  if (name === "remake_start") {
+    if (!UUID_RE.test(args.brand_id || "")) throw new Error("brand_id không hợp lệ");
+    if (!UUID_RE.test(args.deconstruction_id || "")) throw new Error("deconstruction_id không hợp lệ");
+    const [brand] = await db.select().from(brands).where(eq(brands.id, args.brand_id));
+    if (!brand) throw new Error("Không tìm thấy thương hiệu");
+    const [decon] = await db.select().from(deconstructions).where(eq(deconstructions.id, args.deconstruction_id));
+    if (!decon) throw new Error("Không tìm thấy bản bóc cấu trúc");
+    if (decon.status !== "ready" || !decon.structure) throw new Error("Bài này chưa bóc xong cấu trúc");
+
+    const format = args.format === "post" ? "post" : "video_script";
+    const [row] = await db.insert(remakes).values({
+      owner: principal.username, brandId: args.brand_id, deconstructionId: args.deconstruction_id,
+      format, status: "pending", sourceUrl: decon.sourceUrl, sourceTitle: decon.title,
+    }).returning({ id: remakes.id, status: remakes.status });
+
+    const { runRemakeInBackground } = await import("./remakes.routes");
+    void runRemakeInBackground(
+      row.id,
+      { name: brand.name, sells: brand.sells, audience: brand.audience, toneOfVoice: brand.toneOfVoice,
+        addressing: brand.addressing, bannedTerms: brand.bannedTerms, allowedClaims: brand.allowedClaims },
+      decon.structure as any, format as any, decon.transcript,
+    );
+    return { ...row, note: "Đang viết, mất khoảng 10-40 giây. Gọi remake_get với id này để xem kết quả kèm guardrail." };
+  }
+
+  if (name === "remake_get") {
+    if (!UUID_RE.test(args.id || "")) throw new Error("id không hợp lệ");
+    const [row] = await db.select().from(remakes).where(eq(remakes.id, args.id));
+    if (!row) throw new Error("Không tìm thấy bản viết");
+    const g: any = row.guardrailJson;
+    return {
+      ...row,
+      note:
+        row.status !== "ready"
+          ? "Chưa xong — chờ rồi gọi lại."
+          : g && g.passed === false
+          ? "BẢN NÀY CÒN LỖI CHẶN — xem guardrailJson.issues. Không được đem dùng khi chưa sửa xong."
+          : "Bản này qua được kiểm tra. Vẫn nên có người đọc lại lần cuối trước khi đăng.",
+    };
+  }
+
+  if (name === "remake_check") {
+    if (!UUID_RE.test(args.id || "")) throw new Error("id không hợp lệ");
+    const [row] = await db.select().from(remakes).where(eq(remakes.id, args.id));
+    if (!row) throw new Error("Không tìm thấy bản viết");
+    const [brand] = await db.select().from(brands).where(eq(brands.id, row.brandId));
+    const [decon] = row.deconstructionId
+      ? await db.select().from(deconstructions).where(eq(deconstructions.id, row.deconstructionId))
+      : ([null] as any);
+
+    const text = typeof args.draft === "string" && args.draft.trim() ? args.draft : row.draft || "";
+    if (!text.trim()) throw new Error("Chưa có nội dung để kiểm tra");
+
+    const { runGuardrail } = await import("../services/guardrail");
+    const report = runGuardrail(text, {
+      sourceText: decon?.transcript ?? null,
+      brand: brand
+        ? { sells: brand.sells, addressing: brand.addressing, bannedTerms: brand.bannedTerms, allowedClaims: brand.allowedClaims }
+        : null,
+    });
+    await db.update(remakes).set({ draft: text, guardrailJson: report as any, updatedAt: new Date() }).where(eq(remakes.id, args.id));
+    return {
+      ...report,
+      note: report.passed
+        ? "Không thấy vi phạm nào ở mức chặn."
+        : "CÒN LỖI CHẶN — phải sửa các mục trong issues trước khi dùng.",
+    };
   }
 
   if (name === "signals_suggest_angle") {

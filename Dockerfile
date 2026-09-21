@@ -1,9 +1,24 @@
-# fanpage-content-create — Vite (React) client + Express/tsx API server.
+# Outlier — Vite (React) client + Express/tsx API server + bộ công cụ media.
 # Single-stage image: npm ci pulls the correct platform-native rollup binary,
 # builds the client into dist/, then Express serves dist/ + /api/* in prod.
 FROM node:22-slim
 
 WORKDIR /app
+
+# ===== Bộ công cụ media (kế hoạch gộp clipchatbot — xem docs/ARCH.md §1) =====
+# ffmpeg : dựng/ghép video, burn phụ đề, trộn nhạc nền.
+# yt-dlp : quét danh sách + tải video từ YouTube/TikTok/Facebook/Instagram.
+# python3: chạy yt-dlp và sidecar f2 (Douyin) — f2 không có bản Node nên giữ
+#          đúng MỘT script Python thay vì viết lại phần chống bot của Douyin.
+# Cài qua venv để không đụng Python hệ thống (PEP 668).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ffmpeg python3 python3-venv ca-certificates \
+ && python3 -m venv /opt/mediatools \
+ && /opt/mediatools/bin/pip install --no-cache-dir --upgrade pip yt-dlp \
+ && apt-get purge -y --auto-remove \
+ && rm -rf /var/lib/apt/lists/*
+ENV PATH="/opt/mediatools/bin:$PATH" \
+    YTDLP_PATH="/opt/mediatools/bin/yt-dlp"
 
 # Install ALL deps (vite + tsx are devDependencies but are needed both to build
 # the client and to run the TypeScript server at runtime).

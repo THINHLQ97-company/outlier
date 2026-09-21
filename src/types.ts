@@ -256,6 +256,266 @@ export interface MeInfo {
   isActive: boolean;
 }
 
+// ===== brands — hồ sơ thương hiệu, mỗi field kèm trích dẫn nguồn =====
+// Mirror server/db/schema.ts (BrandEvidence/BrandField/BrandRow) + tuyến
+// server/routes/brands.routes.ts (BrandSource). Nguyên tắc P1: field nào
+// không kiểm chứng được (không có evidence) thì để null, không bịa.
+export interface BrandEvidence {
+  quote: string; // câu trích nguyên văn trong tài liệu
+  sourceId: string;
+  sourceUrl?: string;
+  offset: number;
+}
+
+export interface BrandField<T = string> {
+  value: T;
+  evidence: BrandEvidence[];
+  source: "extracted" | "manual"; // manual = người dùng tự nhập tay
+  note?: string;
+}
+
+export interface BrandRow {
+  id: string;
+  owner: string;
+  isShared: boolean;
+  name: string;
+  sells: BrandField<string[]> | null;
+  audience: BrandField<string> | null;
+  toneOfVoice: BrandField<string> | null;
+  addressing: BrandField<string> | null;
+  bannedTerms: BrandField<string[]> | null;
+  allowedClaims: BrandField<string[]> | null;
+  ingestStatus: "empty" | "running" | "ready" | "error";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type BrandSourceKind = "website" | "fanpage" | "pdf" | "text";
+
+export interface BrandSource {
+  id: string;
+  kind: BrandSourceKind;
+  sourceUrl?: string | null;
+  title?: string | null;
+  charCount: number;
+  status: string;
+  errorMessage?: string | null;
+  createdAt?: string;
+}
+
+export interface BrandDetail extends BrandRow {
+  sources: BrandSource[];
+}
+
+// Field bị AI khai nhưng không kiểm chứng lại được trong tài liệu → hệ thống
+// chủ động chặn, không ghi vào hồ sơ. Trả về sau khi bấm "Bóc hồ sơ".
+export interface BrandRejectedField {
+  field: string;
+  reason: string;
+  claimedQuote?: string;
+}
+
+// ===== radar — tìm content đang "bật lên" trong ngách =====
+// Mirror server/db/schema.ts (radarJobs/radarItems) + tuyến
+// server/routes/radar.routes.ts. Điểm outperform tính trên thang 0..1000 ở
+// DB, hiển thị chia 10 ra thang 100 cho dễ so sánh (xem RadarResults.tsx).
+export type RadarQueryKind = "keyword" | "competitor";
+export type RadarJobStatus = "pending" | "scanning" | "enriching" | "ready" | "error";
+export type RadarConfidence = "low" | "medium" | "high";
+export type RadarMetricsSource = "scan" | "apify";
+
+export interface RadarJob {
+  id: string;
+  owner: string;
+  brandId?: string | null;
+  query: string;
+  queryKind: RadarQueryKind;
+  platforms: string[];
+  status: RadarJobStatus;
+  scannedCount: number;
+  enrichedCount: number;
+  errorMessage?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RadarScoreBreakdown {
+  vsChannelMedian: number | null;
+  vsFollowers: number | null;
+  sessionRelative?: number | null;
+  freshness: number;
+  reasons: string[];
+}
+
+export interface RadarItem {
+  id: string;
+  jobId: string;
+  platform: string;
+  itemKey: string;
+  url: string;
+  title?: string | null;
+  coverUrl?: string | null;
+  durationSec?: number | null;
+  publishedAt?: string | null;
+  channelKey?: string | null;
+  channelName?: string | null;
+  followerCount?: number | null;
+  views?: number | null;
+  likes?: number | null;
+  comments?: number | null;
+  shares?: number | null;
+  metricsSource: RadarMetricsSource;
+  outperformScore?: number | null;
+  confidence: RadarConfidence;
+  scoreBreakdown?: RadarScoreBreakdown | null;
+}
+
+export interface RadarJobDetail extends RadarJob {
+  items: RadarItem[];
+  minSampleForBaseline: number;
+}
+
+// POST /api/radar trả về NGAY (status="scanning"), việc quét chạy nền — client
+// phải tự theo dõi bằng cách gọi lại GET /api/radar/:id (xem pollRadarJob ở
+// services/radar.ts). KHÔNG còn kiểu chờ-tới-xong như trước.
+export interface RadarCreateResult extends RadarJob {
+  polling: true;
+  message: string;
+}
+
+export interface RadarEnrichQuote {
+  count: number;
+  estimatedCostUsd: number;
+  resultsUsedToday: number;
+  apifyConfigured: boolean;
+}
+
+// POST /api/radar/:id/enrich có 2 dạng phản hồi:
+// - Không còn bài nào cần bổ sung → trả ngay, không cần theo dõi tiếp.
+// - Đã bắt đầu bổ sung (status="enriching") → cũng trả NGAY, việc bổ sung chạy
+//   nền, client phải poll GET /api/radar/:id như trên.
+export interface RadarEnrichSkipped {
+  enriched: 0;
+  message: string;
+}
+
+export interface RadarEnrichStarted extends RadarJob {
+  polling: true;
+  willEnrich: number;
+  estimatedCostUsd: number;
+  message: string;
+}
+
+export type RadarEnrichResult = RadarEnrichSkipped | RadarEnrichStarted;
+
+// ===== deconstruct — "Bóc cấu trúc": vì sao bài này giữ được người xem =====
+// Mirror server/db/schema.ts (deconstructions) + tuyến
+// server/routes/deconstruct.routes.ts. atSec luôn tính từ đầu video gốc — UI
+// dùng để dựng link tua thẳng tới đúng giây (xem src/pages/Deconstruct.tsx).
+export interface RetentionBeat {
+  atSec: number;
+  what: string;
+  whyItWorks: string;
+}
+
+export interface DeconstructedStructure {
+  hook3s?: { atSec: number; what: string; technique?: string } | null;
+  problemOpen?: { atSec: number; what: string; how?: string } | null;
+  retentionBeats?: RetentionBeat[];
+  twist?: { atSec: number; what: string } | null;
+  cta?: { atSec: number; what: string; style?: string } | null;
+  formula?: string | null;
+  notes?: string | null;
+}
+
+export type DeconstructionStatus = "pending" | "downloading" | "analyzing" | "ready" | "error";
+export type DeconstructAnalysisMode = "video" | "transcript";
+
+export interface DeconstructionRow {
+  id: string;
+  owner: string;
+  radarItemId?: string | null;
+  sourceUrl: string;
+  platform?: string | null;
+  title?: string | null;
+  durationSec?: number | null;
+  status: DeconstructionStatus;
+  errorMessage?: string | null; // ready: cảnh báo (mốc bị loại) · error: lỗi thật
+  transcript?: string | null;
+  structure?: DeconstructedStructure | null;
+  analyzedBy?: string | null;
+  analysisMode?: DeconstructAnalysisMode | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// POST /api/deconstructions trả về NGAY (status="downloading"), việc phân
+// tích chạy nền — client phải tự theo dõi bằng pollDeconstruction (xem
+// services/deconstruct.ts), giống pattern pollRadarJob.
+export interface DeconstructionCreateResult extends DeconstructionRow {
+  polling: true;
+  message: string;
+}
+
+// ===== remakes — "Viết lại": bản viết theo cấu trúc bài gốc nhưng cho thương
+// hiệu, luôn kèm kết quả kiểm tra trước khi đem dùng. Mirror
+// server/db/schema.ts (remakes) + server/services/guardrail.ts (GuardrailReport)
+// + tuyến server/routes/remakes.routes.ts.
+export type GuardrailCode = "copied_text" | "unverified_claim" | "banned_term" | "wrong_addressing";
+
+export interface GuardrailIssue {
+  code: GuardrailCode;
+  severity: "block" | "warn";
+  message: string;
+  excerpt?: string; // đoạn văn bản có vấn đề
+  atIndex?: number; // vị trí ký tự trong bản nháp
+  hint?: string; // gợi ý cách sửa
+}
+
+export interface GuardrailReport {
+  passed: boolean; // false = còn lỗi mức chặn
+  issues: GuardrailIssue[];
+  checkedAt: string;
+  stats: { maxOverlapWords: number; wordCount: number };
+}
+
+export type RemakeFormat = "video_script" | "post";
+export type RemakeStatus = "pending" | "writing" | "ready" | "error";
+
+export interface RemakeRevision {
+  at: string;
+  note: string;
+  draft: string;
+}
+
+export interface RemakeRow {
+  id: string;
+  owner: string;
+  brandId: string;
+  deconstructionId?: string | null;
+  format: RemakeFormat;
+  status: RemakeStatus;
+  errorMessage?: string | null;
+  draft?: string | null;
+  guardrailJson?: GuardrailReport | null;
+  revisionsJson?: RemakeRevision[];
+  sourceUrl?: string | null;
+  sourceTitle?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// POST /api/remakes và /api/remakes/:id/revise trả về NGAY (status
+// "pending"/"writing"), việc viết chạy nền — client phải tự theo dõi bằng
+// pollRemake() (xem services/remakes.ts), giống pattern pollDeconstruction.
+export interface RemakeCreateResult extends RemakeRow {
+  polling: true;
+  message: string;
+  // Chỉ có khi TẠO MỚI và hồ sơ thương hiệu còn trống — PHẢI hiện cho người
+  // dùng biết bản viết sẽ chung chung (xem server/routes/remakes.routes.ts).
+  hint?: string;
+}
+
 // ===== gallery — post có ảnh, kèm trục + quyền sở hữu =====
 export interface GalleryPost {
   id: string;

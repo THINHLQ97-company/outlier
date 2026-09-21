@@ -64,6 +64,41 @@
       "when": 1784787844001,
       "tag": "0008_nice_malice",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789703764156,
+      "tag": "0009_brands_with_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789706597858,
+      "tag": "0010_radar_and_apify_budget",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1789710840919,
+      "tag": "0011_deconstructions",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1789717749935,
+      "tag": "0012_remakes",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1789954491246,
+      "tag": "0013_video_projects",
+      "breakpoints": true
     }
   ]
 }

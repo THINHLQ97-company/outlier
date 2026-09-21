@@ -251,3 +251,302 @@ export const ragProfiles = pgTable("rag_profiles", {
 
 export type RagProfileRow = typeof ragProfiles.$inferSelect;
 export type NewRagProfileRow = typeof ragProfiles.$inferInsert;
+
+// ===== brand_sources — tài liệu đã nạp để bóc brand profile =====
+// Mỗi nguồn giữ nguyên văn bản đã trích (extractedText) để mọi evidence sau này
+// đều trỏ ngược lại được về đúng vị trí trong tài liệu gốc. Không giữ text thì
+// không kiểm chứng được câu trích → vi phạm nguyên tắc P1 (docs/PRD.md §2).
+export const brandSources = pgTable("brand_sources", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  brandId: uuid("brand_id").notNull(),
+  kind: text("kind").notNull(), // "website" | "fanpage" | "pdf" | "text"
+  sourceUrl: text("source_url"), // URL gốc (null nếu upload PDF)
+  title: text("title"),
+  extractedText: text("extracted_text").notNull().default(""), // văn bản thuần đã trích
+  charCount: integer("char_count").notNull().default(0),
+  status: text("status").notNull().default("pending"), // pending | fetching | ready | error
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  brandIdx: index("brand_sources_brand_idx").on(t.brandId),
+}));
+
+export type BrandSourceRow = typeof brandSources.$inferSelect;
+export type NewBrandSourceRow = typeof brandSources.$inferInsert;
+
+// ===== brands — hồ sơ brand, MỖI FIELD KÈM TRÍCH DẪN NGUỒN =====
+// Nguyên tắc P1 (docs/PRD.md §2): không có evidence thì KHÔNG ghi field. Vì vậy
+// mỗi field không lưu chuỗi trần mà lưu `BrandField` = { value, evidence[] }.
+// Kiểu dữ liệu ép điều đó ngay ở tầng schema, không để phụ thuộc vào lời dặn
+// trong prompt — model sẽ bịa khi bí, schema thì không.
+export interface BrandEvidence {
+  quote: string;       // câu nguyên văn trong tài liệu
+  sourceId: string;    // brand_sources.id
+  sourceUrl?: string;  // tiện hiển thị, không phải nguồn sự thật
+  offset: number;      // vị trí ký tự trong extractedText
+}
+
+export interface BrandField<T = string> {
+  value: T;
+  evidence: BrandEvidence[]; // rỗng = field không hợp lệ, không được ghi
+  source: "extracted" | "manual"; // manual = người dùng tự nhập, miễn evidence
+  note?: string;
+}
+
+export const brands = pgTable("brands", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  owner: text("owner").notNull(),
+  isShared: boolean("is_shared").notNull().default(true),
+  name: text("name").notNull(),
+
+  // 5 nhóm thông tin theo docs/PRD.md §4 J1. Null = "chưa có dữ liệu" — cố ý
+  // để trống thay vì bịa cho đủ.
+  sells: jsonb("sells").$type<BrandField<string[]> | null>(),              // bán gì
+  audience: jsonb("audience").$type<BrandField<string> | null>(),          // khách là ai
+  toneOfVoice: jsonb("tone_of_voice").$type<BrandField<string> | null>(),  // cách nói chuyện
+  addressing: jsonb("addressing").$type<BrandField<string> | null>(),      // xưng hô
+  bannedTerms: jsonb("banned_terms").$type<BrandField<string[]> | null>(), // từ không nên dùng
+
+  // Công dụng sản phẩm được phép nói — dùng cho guardrail P3 (chống chế công dụng).
+  allowedClaims: jsonb("allowed_claims").$type<BrandField<string[]> | null>(),
+
+  ingestStatus: text("ingest_status").notNull().default("empty"), // empty | running | ready | error
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  ownerIdx: index("brands_owner_idx").on(t.owner),
+}));
+
+export type BrandRow = typeof brands.$inferSelect;
+export type NewBrandRow = typeof brands.$inferInsert;
+
+// ===== radar_jobs — một phiên quét ngách =====
+export const radarJobs = pgTable("radar_jobs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  owner: text("owner").notNull(),
+  brandId: uuid("brand_id"), // quét cho brand nào (tuỳ chọn)
+  query: text("query").notNull(), // từ khoá ngách HOẶC link đối thủ
+  queryKind: text("query_kind").notNull().default("keyword"), // keyword | competitor
+  platforms: jsonb("platforms").$type<string[]>().notNull().default([]), // douyin|tiktok|youtube|instagram
+  status: text("status").notNull().default("pending"), // pending|scanning|enriching|ready|error
+  scannedCount: integer("scanned_count").notNull().default(0),
+  enrichedCount: integer("enriched_count").notNull().default(0), // số item đã tốn tiền Apify
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  ownerIdx: index("radar_jobs_owner_idx").on(t.owner),
+}));
+
+export type RadarJobRow = typeof radarJobs.$inferSelect;
+
+// ===== channel_baselines — mốc so sánh của TỪNG kênh =====
+// Đây là bảng làm cho ranking "outperform" có nghĩa: một bài chỉ được coi là bật
+// lên khi nó vượt xa mức BÌNH THƯỜNG CỦA CHÍNH KÊNH ĐÓ, không phải vượt kênh khác.
+// Dùng median (không dùng trung bình) để 1 bài viral cũ không kéo lệch mốc.
+export const channelBaselines = pgTable("channel_baselines", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  platform: text("platform").notNull(),
+  channelKey: text("channel_key").notNull(), // id kênh trên nền tảng đó
+  channelName: text("channel_name"),
+  followerCount: integer("follower_count"),
+  medianViews: integer("median_views"),
+  medianLikes: integer("median_likes"),
+  sampleSize: integer("sample_size").notNull().default(0), // số bài dùng để tính mốc
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  chanIdx: index("channel_baselines_chan_idx").on(t.platform, t.channelKey),
+}));
+
+export type ChannelBaselineRow = typeof channelBaselines.$inferSelect;
+
+// ===== radar_items — bài tìm được =====
+// `metricsSource` ghi rõ số liệu lấy từ đâu: "scan" (miễn phí, thiếu/không chuẩn)
+// hay "apify" (tốn tiền, đầy đủ). Quan trọng cho việc kiểm soát chi phí VÀ cho
+// người dùng biết điểm số đáng tin tới đâu.
+export const radarItems = pgTable("radar_items", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  jobId: uuid("job_id").notNull(),
+  platform: text("platform").notNull(),
+  itemKey: text("item_key").notNull(), // id bài trên nền tảng
+  url: text("url").notNull(),
+  title: text("title"),
+  coverUrl: text("cover_url"),
+  durationSec: integer("duration_sec"),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+
+  channelKey: text("channel_key"),
+  channelName: text("channel_name"),
+  followerCount: integer("follower_count"),
+
+  views: integer("views"),
+  likes: integer("likes"),
+  comments: integer("comments"),
+  shares: integer("shares"),
+
+  metricsSource: text("metrics_source").notNull().default("scan"), // scan | apify
+  outperformScore: integer("outperform_score"), // nhân 1000 để lưu số nguyên
+  confidence: text("confidence").notNull().default("low"), // low | medium | high
+  scoreBreakdown: jsonb("score_breakdown").$type<Record<string, any>>(),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  jobIdx: index("radar_items_job_idx").on(t.jobId),
+  scoreIdx: index("radar_items_score_idx").on(t.outperformScore),
+}));
+
+export type RadarItemRow = typeof radarItems.$inferSelect;
+
+// ===== apify_cache — tránh gọi lại Apify cho cùng một thứ =====
+// Apify tính tiền theo lượt chạy nên mọi kết quả đều được giữ lại; trong hạn
+// APIFY_CACHE_DAYS thì đọc lại từ đây thay vì gọi mới.
+export const apifyCache = pgTable("apify_cache", {
+  cacheKey: text("cache_key").primaryKey(), // platform + loại + id
+  payload: jsonb("payload").$type<Record<string, any>>().notNull(),
+  fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ===== apify_usage — nhật ký chi tiêu, để cưỡng chế ngân sách =====
+export const apifyUsage = pgTable("apify_usage", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  day: text("day").notNull(), // YYYY-MM-DD
+  actorId: text("actor_id").notNull(),
+  itemCount: integer("item_count").notNull().default(0),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  dayIdx: index("apify_usage_day_idx").on(t.day),
+}));
+
+// ===== deconstructions — cấu trúc bóc ra từ một bài =====
+// Trả lời câu hỏi "vì sao bài này giữ được người xem": 3 giây đầu làm gì, mở vấn
+// đề kiểu nào, giữ chân bằng gì, twist ở đâu, chốt ra sao (docs/PRD.md §4 J3).
+//
+// Mỗi mốc đều có `atSec` để người dùng tua thẳng tới chỗ đó mà kiểm chứng — nếu
+// AI mô tả một đoạn không tồn tại thì mở ra là biết ngay.
+export interface RetentionBeat {
+  atSec: number;
+  what: string;      // đang diễn ra cái gì
+  whyItWorks: string; // vì sao giữ được người xem
+}
+
+export interface DeconstructedStructure {
+  hook3s?: { atSec: number; what: string; technique: string } | null;
+  problemOpen?: { atSec: number; what: string; how: string } | null;
+  retentionBeats?: RetentionBeat[];
+  twist?: { atSec: number; what: string } | null;
+  cta?: { atSec: number; what: string; style: string } | null;
+  /** Công thức rút gọn để đem đi remake — mô tả CÁCH TRIỂN KHAI, không phải nội dung. */
+  formula?: string | null;
+  /** Vì sao bài này hợp/không hợp để học theo. */
+  notes?: string | null;
+}
+
+export const deconstructions = pgTable("deconstructions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  owner: text("owner").notNull(),
+  radarItemId: uuid("radar_item_id"), // đến từ Radar (nếu có)
+  sourceUrl: text("source_url").notNull(),
+  platform: text("platform"),
+  title: text("title"),
+  durationSec: integer("duration_sec"),
+
+  status: text("status").notNull().default("pending"), // pending|downloading|analyzing|ready|error
+  errorMessage: text("error_message"),
+
+  transcript: text("transcript"),                       // lời thoại (nếu lấy được)
+  structure: jsonb("structure").$type<DeconstructedStructure | null>(),
+  analyzedBy: text("analyzed_by"),                      // model đã dùng
+  /** "video" = xem được hình; "transcript" = chỉ đọc lời thoại (kém chính xác hơn). */
+  analysisMode: text("analysis_mode"),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  ownerIdx: index("deconstructions_owner_idx").on(t.owner),
+  itemIdx: index("deconstructions_item_idx").on(t.radarItemId),
+}));
+
+export type DeconstructionRow = typeof deconstructions.$inferSelect;
+
+// ===== remakes — bản viết lại cho brand =====
+// Giữ CÁCH TRIỂN KHAI của bài gốc, thay ruột bằng sản phẩm/khách hàng/thông tin
+// của brand mình (docs/PRD.md §4 J4). Mỗi bản đều kèm guardrailJson — kết quả
+// kiểm tra 4 nguyên tắc; có lỗi mức chặn thì không cho xuất.
+export const remakes = pgTable("remakes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  owner: text("owner").notNull(),
+  brandId: uuid("brand_id").notNull(),
+  deconstructionId: uuid("deconstruction_id"), // học từ bản bóc cấu trúc nào
+  format: text("format").notNull().default("video_script"), // video_script | post
+
+  status: text("status").notNull().default("pending"), // pending|writing|ready|error
+  errorMessage: text("error_message"),
+
+  draft: text("draft"),                                  // bản viết hiện tại
+  guardrailJson: jsonb("guardrail_json").$type<Record<string, any> | null>(),
+  /** Lịch sử sửa: mỗi lần yêu cầu chỉnh lưu lại để đối chiếu. */
+  revisionsJson: jsonb("revisions_json").$type<{ at: string; note: string; draft: string }[]>().default([]),
+
+  // Luôn giữ đường dẫn về bài gốc: người duyệt cần biết bản này học từ đâu.
+  sourceUrl: text("source_url"),
+  sourceTitle: text("source_title"),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  ownerIdx: index("remakes_owner_idx").on(t.owner),
+  brandIdx: index("remakes_brand_idx").on(t.brandId),
+}));
+
+export type RemakeRow = typeof remakes.$inferSelect;
+
+// ===== video_projects — dựng video từ bản viết (docs/PRD.md §4 J5) =====
+// Dựng video TỐN TIỀN THẬT (Veo tính theo video sinh ra), nên quy trình cố ý
+// chia làm nhiều bước có điểm dừng: tách cảnh (rẻ) → duyệt cảnh → sinh hình
+// (tốn tiền) → ghép. Người dùng phải xác nhận trước mỗi bước tốn tiền.
+export const videoProjects = pgTable("video_projects", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  owner: text("owner").notNull(),
+  remakeId: uuid("remake_id"),          // dựng từ bản viết nào
+  title: text("title"),
+  aspectRatio: text("aspect_ratio").notNull().default("9:16"),
+
+  status: text("status").notNull().default("draft"),
+  // draft | splitting | scenes_ready | generating | rendering | ready | error
+  errorMessage: text("error_message"),
+
+  scriptText: text("script_text"),       // kịch bản nguồn
+  finalVideoKey: text("final_video_key"), // khoá file trong bảng `files`
+  generatedCount: integer("generated_count").notNull().default(0), // số cảnh đã sinh (để tính tiền)
+
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  ownerIdx: index("video_projects_owner_idx").on(t.owner),
+}));
+
+export type VideoProjectRow = typeof videoProjects.$inferSelect;
+
+// ===== video_scenes — từng cảnh trong video =====
+// Tách riêng để người dùng sửa được lời dẫn và mô tả hình TRƯỚC khi tốn tiền sinh.
+export const videoScenes = pgTable("video_scenes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull(),
+  orderIndex: integer("order_index").notNull().default(0),
+
+  narration: text("narration"),      // lời dẫn / phụ đề của cảnh
+  visualPrompt: text("visual_prompt"), // mô tả hình để sinh
+  durationSec: integer("duration_sec").notNull().default(5),
+
+  status: text("status").notNull().default("pending"), // pending|generating|ready|error
+  errorMessage: text("error_message"),
+  clipKey: text("clip_key"),         // khoá file video của cảnh trong bảng `files`
+
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  projIdx: index("video_scenes_proj_idx").on(t.projectId, t.orderIndex),
+}));
+
+export type VideoSceneRow = typeof videoScenes.$inferSelect;

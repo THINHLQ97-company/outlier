@@ -40,7 +40,11 @@ function normalizeGeminiError(e: any): GeminiError {
   return new GeminiError(`Gọi Gemini API thất bại: ${msg}`);
 }
 
-const EMBED_MODEL = "text-embedding-004";
+// Đổi 2026-09-18: khoá API hiện tại KHÔNG còn truy cập được text-embedding-004
+// (đã kiểm tra bằng /v1beta/models). Bản thay thế còn phục vụ: gemini-embedding-001.
+// Lưu ý: số chiều vector khác bản cũ, nên các vector RAG cũ (nếu có) cần dựng lại
+// bằng "Cập nhật hồ sơ" ở mục Thư viện.
+const EMBED_MODEL = process.env.GEMINI_EMBED_MODEL || "gemini-embedding-001";
 
 // Sinh embedding (vector) cho 1 đoạn text — dùng cho RAG (truy hồi ảnh đã thích
 // giống nhất). Lỗi/thiếu key → throw GeminiError (caller tự bỏ qua RAG).
@@ -61,7 +65,15 @@ export async function embedTextGemini(text: string): Promise<number[]> {
 
 // DỊCH — sinh text (kịch bản). Trả về text thô (caller tự parse JSON nếu cần,
 // xem buildScriptPrompt trong shared/engine-data.ts).
-export async function generateTextGemini(prompt: string): Promise<string> {
+/**
+ * Sinh text. Mặc định ép JSON vì phần lớn nơi gọi cần dữ liệu có cấu trúc
+ * (chấm điểm rubric, bóc hồ sơ brand, bóc cấu trúc video).
+ *
+ * Truyền `asPlainText: true` khi cần VĂN BẢN THUẦN cho người đọc — ví dụ bản
+ * viết lại cho thương hiệu. Ép JSON ở đó khiến model gói nội dung vào
+ * {"content": "..."} và người dùng không copy dùng được.
+ */
+export async function generateTextGemini(prompt: string, opts: { asPlainText?: boolean } = {}): Promise<string> {
   const apiKey = getApiKey();
   try {
     const { GoogleGenAI } = await import("@google/genai");
@@ -69,7 +81,7 @@ export async function generateTextGemini(prompt: string): Promise<string> {
     const response = await ai.models.generateContent({
       model: TEXT_MODEL,
       contents: prompt,
-      config: { responseMimeType: "application/json" },
+      config: opts.asPlainText ? {} : { responseMimeType: "application/json" },
     });
     const text = response.text;
     if (!text) throw new Error("Phản hồi Gemini rỗng.");
@@ -96,6 +108,33 @@ export async function analyzeImageGemini(
     const response = await ai.models.generateContent({
       model: TEXT_MODEL,
       contents: { parts: [{ inlineData: image }, { text: prompt }] },
+      config: { responseMimeType: "application/json" },
+    });
+    const text = response.text;
+    if (!text) throw new Error("Phản hồi Gemini rỗng.");
+    return text;
+  } catch (e: any) {
+    if (e instanceof GeminiError) throw e;
+    throw normalizeGeminiError(e);
+  }
+}
+
+// XEM VIDEO — gửi cả tệp video cho Gemini để bóc cấu trúc nội dung
+// (server/services/deconstruct.ts). Dùng inlineData giống analyzeImageGemini;
+// Gemini nhận video tối đa ~20MB theo đường inline, video lớn hơn phải dùng
+// Files API — caller chịu trách nhiệm giới hạn kích thước trước khi gọi.
+// Thiếu key / lỗi API → throw GeminiError (caller fallback, KHÔNG crash).
+export async function analyzeVideoGemini(
+  prompt: string,
+  video: { mimeType: string; data: string }
+): Promise<string> {
+  const apiKey = getApiKey();
+  try {
+    const { GoogleGenAI } = await import("@google/genai");
+    const ai = new GoogleGenAI({ apiKey });
+    const response = await ai.models.generateContent({
+      model: TEXT_MODEL,
+      contents: { parts: [{ inlineData: video }, { text: prompt }] },
       config: { responseMimeType: "application/json" },
     });
     const text = response.text;
