@@ -1,0 +1,716 @@
+import { useEffect, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import {
+  Loader2,
+  Trash2,
+  ExternalLink,
+  AlertTriangle,
+  Scissors,
+  Copy,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  Video,
+  Zap,
+  HelpCircle,
+  Anchor,
+  Shuffle,
+  Megaphone,
+  Sparkles,
+  PenLine,
+  type LucideIcon,
+} from "lucide-react";
+import {
+  listDeconstructions,
+  getDeconstruction,
+  createDeconstruction,
+  deleteDeconstruction,
+  pollDeconstruction,
+} from "../services/deconstruct";
+import ConfirmDialog from "../components/ConfirmDialog";
+import type { DeconstructionRow, DeconstructedStructure, RetentionBeat, DeconstructAnalysisMode } from "../types";
+
+// Trang "Bóc cấu trúc" — vì sao một bài giữ được người xem (docs/PRD.md §4
+// J3). LINH HỒN màn này: trình bày theo NHỊP THỜI GIAN (không phải bảng phẳng)
+// và mỗi mốc phải bấm được để tua thẳng tới video gốc — đây là cách người
+// dùng tự kiểm chứng AI có nói đúng không. Theo dõi tiến độ dùng lại đúng cơ
+// chế poll của trang Radar (services/deconstruct.ts::pollDeconstruction, port
+// từ pollRadarJob).
+const STATUS_META: Record<DeconstructionRow["status"], { label: string; cls: string }> = {
+  pending: { label: "Đang chờ", cls: "bg-stone-100 text-stone-500" },
+  downloading: { label: "Đang tải video...", cls: "bg-amber-50 text-amber-700" },
+  analyzing: { label: "Đang phân tích...", cls: "bg-amber-50 text-amber-700" },
+  ready: { label: "Đã có kết quả", cls: "bg-green-50 text-green-700" },
+  error: { label: "Lỗi", cls: "bg-red-50 text-red-600" },
+};
+
+const ANALYSIS_MODE_META: Record<DeconstructAnalysisMode, { label: string; cls: string; icon: LucideIcon }> = {
+  video: { label: "Đã xem video", cls: "bg-green-50 text-green-700 border border-green-200", icon: Video },
+  transcript: {
+    label: "Chỉ đọc lời thoại (không xem được hình)",
+    cls: "bg-amber-50 text-amber-700 border border-amber-200",
+    icon: FileText,
+  },
+};
+
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("vi-VN");
+}
+
+function formatTimestamp(sec: number): string {
+  const s = Math.max(0, Math.round(sec));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, "0")}`;
+}
+
+function formatDuration(sec: number | null | undefined): string | null {
+  if (sec === null || sec === undefined || sec <= 0) return null;
+  return formatTimestamp(sec);
+}
+
+// Dựng link tua tới đúng giây trong video gốc — cách người dùng kiểm chứng AI
+// có nói đúng không (yêu cầu #2 của màn này). YouTube hỗ trợ tham số `t`
+// (giây) để tua thẳng tới; URLSearchParams.set tự thêm `?t=` nếu link chưa có
+// query hoặc nối `&t=` nếu đã có sẵn. Các nền tảng khác (TikTok, Douyin,
+// Facebook...) chưa có cách tua bằng URL nên vẫn mở đúng link gốc — không tua
+// được nhưng vẫn kiểm chứng được.
+function timestampUrl(sourceUrl: string, atSec: number): string {
+  let u: URL;
+  try {
+    u = new URL(sourceUrl);
+  } catch {
+    return sourceUrl;
+  }
+  const host = u.hostname.replace(/^www\./, "").replace(/^m\./, "");
+  const isYouTube = host === "youtube.com" || host === "youtu.be" || host === "music.youtube.com";
+  if (isYouTube) {
+    u.searchParams.set("t", `${Math.max(0, Math.round(atSec))}s`);
+    return u.toString();
+  }
+  return sourceUrl;
+}
+
+// ===== Dòng thời gian — gộp mọi mốc (hook/mở vấn đề/giữ chân/twist/chốt) làm
+// MỘT dòng chảy chung, sắp theo atSec tăng dần (không hardcode thứ tự theo
+// hạng mục) — đây là mấu chốt để thấy được nhịp thật của bài. =====
+type MomentKind = "hook" | "problem" | "beat" | "twist" | "cta";
+
+interface Moment {
+  kind: MomentKind;
+  atSec: number;
+  what: string;
+  secondaryLabel?: string;
+  secondary?: string | null;
+}
+
+const MOMENT_META: Record<MomentKind, { label: string; icon: LucideIcon; dot: string }> = {
+  hook: { label: "3 giây đầu", icon: Zap, dot: "bg-storm-500" },
+  problem: { label: "Mở vấn đề", icon: HelpCircle, dot: "bg-blue-500" },
+  beat: { label: "Điểm giữ chân", icon: Anchor, dot: "bg-emerald-500" },
+  twist: { label: "Twist", icon: Shuffle, dot: "bg-purple-500" },
+  cta: { label: "Chốt (kêu gọi hành động)", icon: Megaphone, dot: "bg-amber-600" },
+};
+
+const MISSING_CATEGORY_LABELS: { key: keyof DeconstructedStructure; label: string }[] = [
+  { key: "hook3s", label: "3 giây đầu" },
+  { key: "problemOpen", label: "Mở vấn đề" },
+  { key: "retentionBeats", label: "Điểm giữ chân" },
+  { key: "twist", label: "Twist / bất ngờ" },
+  { key: "cta", label: "Chốt (CTA)" },
+];
+
+function buildTimeline(s: DeconstructedStructure): Moment[] {
+  const moments: Moment[] = [];
+  if (s.hook3s) {
+    moments.push({ kind: "hook", atSec: s.hook3s.atSec, what: s.hook3s.what, secondaryLabel: "Kỹ thuật", secondary: s.hook3s.technique });
+  }
+  if (s.problemOpen) {
+    moments.push({ kind: "problem", atSec: s.problemOpen.atSec, what: s.problemOpen.what, secondaryLabel: "Cách vào vấn đề", secondary: s.problemOpen.how });
+  }
+  for (const b of s.retentionBeats || []) {
+    moments.push({ kind: "beat", atSec: b.atSec, what: b.what, secondaryLabel: "Vì sao giữ chân", secondary: b.whyItWorks });
+  }
+  if (s.twist) {
+    moments.push({ kind: "twist", atSec: s.twist.atSec, what: s.twist.what });
+  }
+  if (s.cta) {
+    moments.push({ kind: "cta", atSec: s.cta.atSec, what: s.cta.what, secondaryLabel: "Kiểu chốt", secondary: s.cta.style });
+  }
+  return moments.sort((a, b) => a.atSec - b.atSec);
+}
+
+function missingCategories(s: DeconstructedStructure): string[] {
+  return MISSING_CATEGORY_LABELS.filter(({ key }) => {
+    const v = s[key];
+    if (key === "retentionBeats") return !v || (v as RetentionBeat[]).length === 0;
+    return v === null || v === undefined;
+  }).map((m) => m.label);
+}
+
+export default function Deconstruct() {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [jobs, setJobs] = useState<DeconstructionRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<DeconstructionRow | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DeconstructionRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [startingFromRadar, setStartingFromRadar] = useState(false);
+
+  // Theo dõi bản đang tải/phân tích (chạy nền ở backend) — TÁI DÙNG đúng cơ
+  // chế của trang Radar: ref cho "hàm huỷ" (không phải state) để
+  // startWatching() luôn tự huỷ lượt theo dõi trước đó, và effect đổi
+  // selectedId bên dưới đảm bảo dọn timer khi đổi bản xem / rời trang.
+  const stopPollRef = useRef<(() => void) | null>(null);
+  const tickTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [watchElapsedSec, setWatchElapsedSec] = useState(0);
+  const [watchTimedOut, setWatchTimedOut] = useState(false);
+
+  async function reloadList() {
+    setLoading(true);
+    setListError(null);
+    try {
+      setJobs(await listDeconstructions());
+    } catch (e: any) {
+      setListError(e?.message || "Lỗi tải danh sách bản phân tích.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    reloadList();
+  }, []);
+
+  function stopWatching() {
+    if (stopPollRef.current) {
+      stopPollRef.current();
+      stopPollRef.current = null;
+    }
+    if (tickTimerRef.current) {
+      clearInterval(tickTimerRef.current);
+      tickTimerRef.current = null;
+    }
+  }
+
+  function syncJobInList(row: DeconstructionRow) {
+    setJobs((prev) => prev.map((j) => (j.id === row.id ? { ...j, ...row } : j)));
+  }
+
+  function startWatching(id: string) {
+    stopWatching();
+    setWatchTimedOut(false);
+    const startedAt = Date.now();
+    setWatchElapsedSec(0);
+    tickTimerRef.current = setInterval(() => {
+      setWatchElapsedSec(Math.round((Date.now() - startedAt) / 1000));
+    }, 1000);
+    stopPollRef.current = pollDeconstruction(id, {
+      onUpdate: (d) => {
+        setDetail(d);
+        syncJobInList(d);
+        if (d.status === "ready" || d.status === "error") stopWatching();
+      },
+      onTimeout: () => {
+        setWatchTimedOut(true);
+        stopWatching();
+      },
+      onError: (msg) => {
+        setDetailError(msg);
+        stopWatching();
+      },
+    });
+  }
+
+  async function loadAndWatch(id: string) {
+    setDetailLoading(true);
+    setDetailError(null);
+    try {
+      const d = await getDeconstruction(id);
+      setDetail(d);
+      syncJobInList(d);
+      if (d.status === "pending" || d.status === "downloading" || d.status === "analyzing") startWatching(id);
+    } catch (e: any) {
+      setDetailError(e?.message || "Không tải được bản phân tích.");
+      setDetail(null);
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    // Xoá dữ liệu bản cũ ngay khi đổi lựa chọn — tránh thoáng hiện nhầm nội
+    // dung của bản trước trong lúc đang tải bản mới.
+    setDetail(null);
+    setDetailError(null);
+    if (selectedId) loadAndWatch(selectedId);
+    // Dọn theo dõi (poll + đếm giây) khi đổi bản xem HOẶC rời trang — đây là
+    // chỗ dễ rò rỉ timer nhất nếu quên.
+    return () => stopWatching();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
+
+  // Vào thẳng từ một kết quả Radar (nút "Bóc cấu trúc" ở trang Radar điều
+  // hướng tới đây kèm ?radarItemId=...) — tự bắt đầu phân tích một lần rồi
+  // xoá tham số khỏi URL để không lặp lại khi tải lại trang.
+  const consumedRadarItemRef = useRef(false);
+  useEffect(() => {
+    const radarItemId = searchParams.get("radarItemId");
+    if (!radarItemId || consumedRadarItemRef.current) return;
+    consumedRadarItemRef.current = true;
+    setSearchParams(
+      (p) => {
+        p.delete("radarItemId");
+        return p;
+      },
+      { replace: true },
+    );
+    (async () => {
+      setStartingFromRadar(true);
+      setListError(null);
+      try {
+        const result = await createDeconstruction({ radarItemId });
+        setJobs((prev) => [result, ...prev]);
+        setSelectedId(result.id);
+      } catch (e: any) {
+        setListError(e?.message || "Không bắt đầu phân tích được từ Radar.");
+      } finally {
+        setStartingFromRadar(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await deleteDeconstruction(deleteTarget.id);
+      setJobs((prev) => prev.filter((j) => j.id !== deleteTarget.id));
+      if (selectedId === deleteTarget.id) setSelectedId(null);
+      setDeleteTarget(null);
+    } catch (e: any) {
+      setListError(e?.message || "Xoá bản phân tích thất bại.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <h1 className="text-lg font-bold text-stone-800 font-display flex items-center gap-2">
+          <Scissors className="w-5 h-5 text-storm-500" aria-hidden="true" /> Bóc cấu trúc
+        </h1>
+        <p className="text-sm text-stone-500">
+          Dán link một video để xem vì sao bài đó giữ được người xem: 3 giây đầu làm gì, mở vấn đề kiểu nào, giữ chân bằng gì,
+          twist ở đâu, chốt thế nào — và rút ra một công thức để đem đi remake.
+        </p>
+      </div>
+
+      <NewLinkForm
+        onCreated={(row) => {
+          setJobs((prev) => [row, ...prev]);
+          setSelectedId(row.id);
+        }}
+      />
+
+      {startingFromRadar && (
+        <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+          <Loader2 className="w-4 h-4 animate-spin shrink-0" aria-hidden="true" /> Đang bắt đầu phân tích bài đã chọn từ Radar...
+        </div>
+      )}
+
+      {listError && (
+        <div role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          {listError}
+        </div>
+      )}
+
+      <div className="flex flex-col lg:flex-row gap-4 items-start">
+        <aside className="w-full lg:w-72 shrink-0 flex flex-col gap-2">
+          {loading ? (
+            <div className="flex items-center justify-center py-10 text-stone-400 gap-2">
+              <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+            </div>
+          ) : jobs.length === 0 ? (
+            <div className="text-center py-10 text-stone-400 text-sm border border-dashed border-stone-300 rounded-xl">
+              Chưa có bản phân tích nào. Dán link ở trên để bắt đầu.
+            </div>
+          ) : (
+            jobs.map((j) => (
+              <button
+                key={j.id}
+                onClick={() => setSelectedId(j.id)}
+                className={`text-left rounded-xl border px-3 py-2.5 transition-colors ${
+                  selectedId === j.id ? "border-storm-400 bg-storm-50" : "border-stone-200 bg-white hover:border-stone-300"
+                }`}
+              >
+                <span className="text-sm font-semibold text-stone-800 truncate block">{j.title || j.sourceUrl}</span>
+                <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                  <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${STATUS_META[j.status].cls}`}>
+                    {STATUS_META[j.status].label}
+                  </span>
+                  {j.platform && <span className="text-[10px] text-stone-400 capitalize">{j.platform}</span>}
+                </div>
+              </button>
+            ))
+          )}
+        </aside>
+
+        <div className="flex-1 min-w-0 w-full">
+          {!selectedId ? (
+            <div className="flex flex-col items-center justify-center text-center gap-2 py-20 text-stone-400 border border-dashed border-stone-300 rounded-2xl bg-white/50">
+              <Scissors className="w-8 h-8 text-stone-300" aria-hidden="true" />
+              <p className="text-sm">Chọn một bản phân tích bên trái để xem kết quả, hoặc dán link ở trên để bắt đầu.</p>
+            </div>
+          ) : detail ? (
+            <>
+              {/* Lỗi xảy ra trong lúc đang theo dõi (đã có dữ liệu cũ) — hiện dạng
+                  banner, KHÔNG thay hẳn nội dung để không mất kết quả đã có. */}
+              {detailError && (
+                <div role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+                  {detailError}
+                </div>
+              )}
+              <DeconstructDetailPanel
+                key={detail.id}
+                row={detail}
+                watching={detail.status === "pending" || detail.status === "downloading" || detail.status === "analyzing"}
+                watchElapsedSec={watchElapsedSec}
+                watchTimedOut={watchTimedOut}
+                onRequestDelete={() => setDeleteTarget(detail)}
+                onRemake={() => navigate(`/remakes?deconstructionId=${detail.id}`)}
+              />
+            </>
+          ) : detailLoading ? (
+            <div className="flex items-center justify-center py-20 text-stone-400 gap-2">
+              <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+            </div>
+          ) : detailError ? (
+            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{detailError}</div>
+          ) : null}
+        </div>
+      </div>
+
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        title="Xoá bản phân tích?"
+        message={`Xoá bản phân tích "${deleteTarget?.title || deleteTarget?.sourceUrl}"? Không thể hoàn tác.${
+          deleting ? " Đang xoá..." : ""
+        }`}
+        confirmText="Xoá"
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
+    </div>
+  );
+}
+
+function NewLinkForm({ onCreated }: { onCreated: (row: DeconstructionRow) => void }) {
+  const [url, setUrl] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = url.trim();
+    if (!trimmed) {
+      setError("Dán link bài muốn phân tích.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const result = await createDeconstruction({ url: trimmed });
+      setUrl("");
+      onCreated(result);
+    } catch (e: any) {
+      setError(e?.message || "Bắt đầu phân tích thất bại.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-stone-200 p-4 flex flex-col gap-2.5">
+      <label htmlFor="dc-url" className="text-xs font-medium text-stone-600">
+        Link video (YouTube, TikTok, Douyin, Facebook...) — hoặc bấm "Bóc cấu trúc" từ một bài trong Radar
+      </label>
+      <div className="flex flex-col sm:flex-row gap-2">
+        <input
+          id="dc-url"
+          type="url"
+          required
+          disabled={submitting}
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="https://..."
+          className="flex-1 rounded-lg border border-stone-300 px-3 py-2 text-sm disabled:opacity-60"
+        />
+        <button
+          type="submit"
+          disabled={submitting}
+          className="flex items-center justify-center gap-1.5 text-sm font-medium text-white bg-storm-600 hover:bg-storm-700 px-4 py-2 rounded-lg transition-colors disabled:opacity-60 shrink-0"
+        >
+          {submitting ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Scissors className="w-4 h-4" aria-hidden="true" />}
+          {submitting ? "Đang bắt đầu..." : "Phân tích"}
+        </button>
+      </div>
+      {error && <div role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+      {submitting && (
+        <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+          <Loader2 className="w-4 h-4 animate-spin shrink-0" aria-hidden="true" />
+          Việc phân tích chạy nền, mất khoảng 1-3 phút — kết quả sẽ tự hiện bên dưới.
+        </div>
+      )}
+    </form>
+  );
+}
+
+function DeconstructDetailPanel({
+  row,
+  watching,
+  watchElapsedSec,
+  watchTimedOut,
+  onRequestDelete,
+  onRemake,
+}: {
+  row: DeconstructionRow;
+  watching: boolean;
+  watchElapsedSec: number;
+  watchTimedOut: boolean;
+  onRequestDelete: () => void;
+  onRemake: () => void;
+}) {
+  // row.errorMessage được backend TÁI DÙNG để chở cảnh báo khi status=ready
+  // (các mốc bị loại vì không đối chiếu được với độ dài video thật — tính
+  // minh bạch, KHÔNG phải hỏng), CHỈ là lỗi thật khi status=error — xem
+  // server/routes/deconstruct.routes.ts.
+  const warningsText = row.status !== "error" ? row.errorMessage : null;
+  const warnings = warningsText ? warningsText.split(" · ").filter(Boolean) : [];
+  const duration = formatDuration(row.durationSec);
+  const timeline = row.structure ? buildTimeline(row.structure) : [];
+  const missing = row.structure ? missingCategories(row.structure) : [];
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="bg-white rounded-xl border border-stone-200 p-4">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="flex-1 min-w-0">
+            <h2 className="text-lg font-bold text-stone-800 font-display truncate">{row.title || row.sourceUrl}</h2>
+            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+              <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${STATUS_META[row.status].cls}`}>
+                {STATUS_META[row.status].label}
+              </span>
+              {row.platform && <span className="text-[11px] text-stone-400 capitalize">{row.platform}</span>}
+              {duration && <span className="text-[11px] text-stone-400">Dài {duration}</span>}
+              <span className="text-[11px] text-stone-400">{formatDate(row.createdAt)}</span>
+              <a
+                href={row.sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] text-storm-700 hover:underline inline-flex items-center gap-0.5"
+              >
+                Link gốc <ExternalLink className="w-3 h-3" aria-hidden="true" />
+              </a>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {row.status === "ready" && (
+              <button
+                onClick={onRemake}
+                className="flex items-center gap-1 text-xs font-medium text-white bg-storm-600 hover:bg-storm-700 px-2.5 py-1.5 rounded-lg transition-colors shrink-0"
+              >
+                <PenLine className="w-3.5 h-3.5" aria-hidden="true" /> Viết lại cho thương hiệu
+              </button>
+            )}
+            <button
+              onClick={onRequestDelete}
+              className="flex items-center gap-1 text-xs font-medium text-red-600 hover:bg-red-50 px-2.5 py-1.5 rounded-lg transition-colors shrink-0"
+            >
+              <Trash2 className="w-3.5 h-3.5" aria-hidden="true" /> Xoá bản phân tích
+            </button>
+          </div>
+        </div>
+
+        {watchTimedOut ? (
+          <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5 mt-2 flex items-start gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
+            Quá lâu không có phản hồi, thử tải lại trang.
+          </div>
+        ) : watching ? (
+          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 mt-2 flex items-center gap-1.5">
+            <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" aria-hidden="true" />
+            {row.status === "downloading"
+              ? `Đang tải video... (${watchElapsedSec}s)`
+              : `Đang phân tích... (${watchElapsedSec}s)`}
+          </div>
+        ) : null}
+
+        {row.status === "error" && row.errorMessage && (
+          <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5 mt-2 flex items-start gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
+            {row.errorMessage}
+          </div>
+        )}
+
+        {warnings.length > 0 && (
+          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 mt-2 flex flex-col gap-1">
+            <span className="font-medium flex items-start gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
+              Hệ thống đã tự loại một số thông tin không đối chiếu được với video gốc — không phải lỗi, đây là tính năng minh
+              bạch:
+            </span>
+            {warnings.map((w, i) => (
+              <span key={i} className="pl-5">
+                {w}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {row.status === "ready" && row.analysisMode && (
+          <div
+            className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-1 rounded-lg mt-2.5 ${ANALYSIS_MODE_META[row.analysisMode].cls}`}
+          >
+            {(() => {
+              const Icon = ANALYSIS_MODE_META[row.analysisMode].icon;
+              return <Icon className="w-3.5 h-3.5" aria-hidden="true" />;
+            })()}
+            {ANALYSIS_MODE_META[row.analysisMode].label}
+          </div>
+        )}
+      </div>
+
+      {row.status === "ready" && (
+        <>
+          <FormulaBlock formula={row.structure?.formula} />
+          <div className="bg-white rounded-xl border border-stone-200 p-4">
+            <h3 className="text-sm font-semibold text-stone-700 mb-3">Nhịp của bài (theo thời gian)</h3>
+            {timeline.length === 0 ? (
+              <p className="text-sm text-stone-400 italic">Không xác định được mốc thời gian nào.</p>
+            ) : (
+              <ol className="relative flex flex-col gap-4">
+                <div className="absolute left-[9px] top-1.5 bottom-1.5 w-px bg-stone-200" aria-hidden="true" />
+                {timeline.map((m, i) => {
+                  const meta = MOMENT_META[m.kind];
+                  const Icon = meta.icon;
+                  return (
+                    <li key={i} className="relative pl-8">
+                      <span className={`absolute left-0 top-0.5 w-[18px] h-[18px] rounded-full flex items-center justify-center ${meta.dot}`}>
+                        <Icon className="w-3 h-3 text-white" aria-hidden="true" />
+                      </span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-semibold text-stone-500">{meta.label}</span>
+                        <a
+                          href={timestampUrl(row.sourceUrl, m.atSec)}
+                          target="_blank"
+                          rel="noreferrer"
+                          title="Mở video tại đúng giây này để kiểm chứng"
+                          className="inline-flex items-center gap-1 text-xs font-medium text-storm-700 bg-storm-50 hover:bg-storm-100 px-1.5 py-0.5 rounded transition-colors"
+                        >
+                          {formatTimestamp(m.atSec)} <ExternalLink className="w-3 h-3" aria-hidden="true" />
+                        </a>
+                      </div>
+                      <p className="text-sm text-stone-700 mt-1 leading-relaxed">{m.what}</p>
+                      {m.secondary && (
+                        <p className="text-xs text-stone-400 mt-0.5">
+                          <span className="font-medium text-stone-500">{m.secondaryLabel}:</span> {m.secondary}
+                        </p>
+                      )}
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+            {missing.length > 0 && (
+              <p className="text-xs text-stone-400 italic mt-4 pt-3 border-t border-stone-100">
+                Không xác định được: {missing.join(", ")}.
+              </p>
+            )}
+          </div>
+
+          {row.structure?.notes && (
+            <div className="bg-white rounded-xl border border-stone-200 p-4">
+              <h3 className="text-sm font-semibold text-stone-700 mb-1.5">Ghi chú thêm</h3>
+              <p className="text-sm text-stone-600 leading-relaxed whitespace-pre-wrap">{row.structure.notes}</p>
+            </div>
+          )}
+
+          {row.transcript && <TranscriptBlock transcript={row.transcript} />}
+        </>
+      )}
+    </div>
+  );
+}
+
+function FormulaBlock({ formula }: { formula: string | null | undefined }) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    if (!formula) return;
+    try {
+      await navigator.clipboard.writeText(formula);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard có thể bị chặn (quyền trình duyệt) — im lặng, không chặn UI.
+    }
+  }
+
+  return (
+    <div className="bg-storm-50 border-2 border-storm-200 rounded-xl p-4 flex flex-col gap-2.5">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <h3 className="flex items-center gap-1.5 text-sm font-bold text-storm-800">
+          <Sparkles className="w-4 h-4" aria-hidden="true" /> Công thức để remake
+        </h3>
+        <button
+          onClick={handleCopy}
+          disabled={!formula}
+          className="flex items-center gap-1.5 text-xs font-medium text-storm-700 hover:bg-storm-100 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40"
+        >
+          {copied ? <Check className="w-3.5 h-3.5" aria-hidden="true" /> : <Copy className="w-3.5 h-3.5" aria-hidden="true" />}
+          {copied ? "Đã sao chép" : "Sao chép"}
+        </button>
+      </div>
+      {formula ? (
+        <p className="text-sm text-storm-900 leading-relaxed whitespace-pre-wrap">{formula}</p>
+      ) : (
+        <p className="text-sm text-stone-400 italic">Không xác định được.</p>
+      )}
+    </div>
+  );
+}
+
+function TranscriptBlock({ transcript }: { transcript: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="bg-white rounded-xl border border-stone-200 p-4">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex items-center justify-between w-full text-sm font-semibold text-stone-700"
+      >
+        <span className="flex items-center gap-1.5">
+          <FileText className="w-4 h-4 text-stone-400" aria-hidden="true" /> Lời thoại đầy đủ
+        </span>
+        {open ? <ChevronUp className="w-4 h-4" aria-hidden="true" /> : <ChevronDown className="w-4 h-4" aria-hidden="true" />}
+      </button>
+      {open && (
+        <p className="mt-2.5 text-xs text-stone-600 leading-relaxed whitespace-pre-wrap max-h-72 overflow-y-auto bg-stone-50 rounded-lg p-3 border border-stone-100">
+          {transcript}
+        </p>
+      )}
+    </div>
+  );
+}
