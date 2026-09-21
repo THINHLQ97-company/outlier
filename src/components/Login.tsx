@@ -83,8 +83,9 @@ export default function Login() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-storm-50 px-4">
       <div className="w-full max-w-sm bg-white rounded-2xl shadow-lg border border-storm-100 p-8">
-        <h1 className="text-lg font-bold text-storm-900 font-display mb-1">Ăn Nằm Với AI</h1>
-        <p className="text-sm text-stone-500 mb-6">Content Engine — đăng nhập nội bộ</p>
+        <img src="/mark.svg" alt="" aria-hidden="true" className="w-12 h-12 mb-3" />
+        <h1 className="text-lg font-bold text-storm-900 font-display mb-1">Outlier</h1>
+        <p className="text-sm text-stone-500 mb-6">Tìm content đang bật lên — remake cho brand của bạn</p>
 
         {error && (
           <div
