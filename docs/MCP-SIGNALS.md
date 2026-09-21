@@ -53,7 +53,7 @@ fanpage → cấp quyền. (Giống hệt cách ReportApp connect claude.ai vì 
 
 ---
 
-## 2. Bảng đầy đủ 19 tool (quyền tới dữ liệu)
+## 2. Bảng đầy đủ 22 tool (quyền tới dữ liệu)
 
 | Tool | Loại | Làm gì | Đầu vào | Chạm dữ liệu nào |
 |---|---|---|---|---|
@@ -76,6 +76,9 @@ fanpage → cấp quyền. (Giống hệt cách ReportApp connect claude.ai vì 
 | `remake_start` | 🔴 Ghi | Viết bản mới cho thương hiệu theo cách triển khai đã bóc. Chạy nền 10-40 giây | brand_id, deconstruction_id, format? | THÊM dòng `remakes` |
 | `remake_get` | 🟢 Đọc | Xem bản viết **kèm kết quả guardrail** | id | ĐỌC `remakes` |
 | `remake_check` | 🔴 Ghi | Kiểm tra một đoạn nội dung theo quy tắc thương hiệu (bê nguyên văn / từ cấm / chế công dụng) | id, draft? | SỬA `guardrailJson` của 1 `remakes` |
+| `channels_list` | 🟢 Đọc | Kênh đang theo dõi + số bài MỚI lần gần nhất; báo rõ kênh nào tốn phí khi làm mới | — | ĐỌC `watched_channels` |
+| `channel_items` | 🟢 Đọc | Bài của một kênh, **bài mới xếp lên đầu** | channel_id, only_new?, limit? | ĐỌC `radar_items` |
+| `channel_refresh` | 🔴 Ghi | Làm mới kênh để xem họ vừa đăng gì. **Kênh có `costsMoneyToRefresh=true` sẽ phát sinh chi phí** | channel_id | THÊM `radar_jobs`+`radar_items`, SỬA `watched_channels` |
 
 Ghi chú chấm điểm: tổng = `do_nong + do_cham + do_hop_truc + tuoi_tho` (tối đa 20).
 `≥ queue_min (16)` → **Nên làm** (queued); `12–15` → **Kho ý tưởng** (idea_bank); `<12` hoặc
@@ -125,6 +128,15 @@ Bốn thứ được kiểm (cưỡng chế bằng code ở `server/services/gua
 | `wrong_addressing` | nhắc | Không thấy cách xưng hô quen thuộc của thương hiệu |
 
 Lớp phòng vệ đầu tiên nằm ở chỗ khác: prompt viết lại **chỉ nhận công thức triển khai**, không bao giờ nhận nguyên văn bài gốc — model không đọc được câu chữ gốc thì không thể chép lại. Việc đo trùng lặp là lớp thứ hai.
+
+
+### Theo dõi kênh — lưu ý về chi phí
+
+`channels_list` trả `costsMoneyToRefresh` cho từng kênh. **Đừng tự ý gọi `channel_refresh` cho kênh có cờ này** — mỗi lượt làm mới tốn khoảng 0,06-0,07 USD. Hỏi người dùng trước.
+
+Vì sao có kênh tốn phí: YouTube quét được bằng công cụ miễn phí (yt-dlp), nhưng **TikTok thì không** — yt-dlp cần `channel_id` nội bộ mà id đó chỉ moi ra được từ một video cụ thể, nên phải đi qua dịch vụ có phí. Douyin cần bộ quét riêng, chưa nối.
+
+`newSinceLastCheck` và `isNew` là số bài chưa từng thấy ở các lần làm mới TRƯỚC. Lần quét đầu tiên luôn bằng 0 — lúc đó mọi bài đều mới nên đánh dấu là vô nghĩa.
 
 ## 3. Ranh giới quyền — MCP LÀM ĐƯỢC gì / KHÔNG làm được gì
 

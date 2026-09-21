@@ -1,0 +1,1 @@
+ALTER TABLE "watched_channels" ADD COLUMN "scan_count" integer DEFAULT 0 NOT NULL;

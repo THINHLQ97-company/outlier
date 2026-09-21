@@ -8,6 +8,7 @@ import Studio from "./pages/Studio";
 import Library from "./pages/Library";
 import Brands from "./pages/Brands";
 import Radar from "./pages/Radar";
+import Channels from "./pages/Channels";
 import Deconstruct from "./pages/Deconstruct";
 import Remake from "./pages/Remake";
 import AdminUsers from "./pages/AdminUsers";
@@ -33,6 +34,7 @@ function Gate() {
         <Route path="/library" element={<Library />} />
         <Route path="/brands" element={<Brands />} />
         <Route path="/radar" element={<Radar />} />
+        <Route path="/channels" element={<Channels />} />
         <Route path="/deconstruct" element={<Deconstruct />} />
         <Route path="/remakes" element={<Remake />} />
         <Route path="/signals" element={<SignalsQueue />} />

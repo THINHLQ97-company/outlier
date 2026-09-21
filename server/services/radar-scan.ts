@@ -76,7 +76,18 @@ function pubDate(e: any): string | undefined {
   return undefined;
 }
 
-function toCandidate(e: any, platform: string): ScanCandidate | null {
+/**
+ * Thông tin ở cấp KÊNH (playlist), không có trong từng video.
+ * Quan trọng: `channel_follower_count` chỉ xuất hiện ở đây. Đọc đúng chỗ này
+ * thì quét kênh lấy được số người theo dõi MIỄN PHÍ — không phải gọi Apify.
+ */
+interface ChannelInfo {
+  channelKey?: string;
+  channelName?: string;
+  followerCount?: number;
+}
+
+function toCandidate(e: any, platform: string, chan: ChannelInfo = {}): ScanCandidate | null {
   const url = e?.webpage_url || e?.url || e?.original_url;
   const id = e?.id ?? url;
   if (!url || !id) return null;
@@ -88,11 +99,12 @@ function toCandidate(e: any, platform: string): ScanCandidate | null {
     coverUrl: e?.thumbnail || (Array.isArray(e?.thumbnails) && e.thumbnails.at(-1)?.url) || undefined,
     durationSec: n(e?.duration),
     publishedAt: pubDate(e),
-    channelKey: e?.channel_id || e?.uploader_id || undefined,
-    channelName: e?.channel || e?.uploader || undefined,
+    channelKey: e?.channel_id || e?.uploader_id || chan.channelKey || undefined,
+    channelName: e?.channel || e?.uploader || chan.channelName || undefined,
     views: n(e?.view_count),
     likes: n(e?.like_count),
-    followerCount: n(e?.channel_follower_count),
+    // Ưu tiên số ở cấp video (hiếm khi có), rồi mới lấy ở cấp kênh.
+    followerCount: n(e?.channel_follower_count) ?? chan.followerCount,
   };
 }
 
@@ -100,7 +112,14 @@ function toCandidate(e: any, platform: string): ScanCandidate | null {
 export function buildTarget(platform: string, query: string, kind: "keyword" | "competitor", limit: number): string | null {
   const q = query.trim();
   if (!q) return null;
-  if (kind === "competitor") return q; // link kênh/trang, yt-dlp tự hiểu
+  if (kind === "competitor") {
+    // Link kênh YouTube trần trả cả playlist/shorts và hay lỗi; thêm "/videos"
+    // để lấy đúng danh sách video, nhanh và ổn định hơn.
+    if (/^https?:\/\/(www\.)?youtube\.com\/(@[^\/?#]+|c\/[^\/?#]+|channel\/[^\/?#]+|user\/[^\/?#]+)\/?$/i.test(q)) {
+      return q.replace(/\/$/, "") + "/videos";
+    }
+    return q;
+  }
   switch (platform) {
     case "youtube":
       return `ytsearch${limit}:${q}`;
@@ -157,9 +176,15 @@ export async function scanCandidates(
   for (const line of lines) {
     let doc: any;
     try { doc = JSON.parse(line); } catch { continue; }
+    // Khi quét cả kênh, doc là playlist — thông tin kênh nằm ở đây.
+    const chan: ChannelInfo = {
+      channelKey: doc?.channel_id || doc?.uploader_id || doc?.id || undefined,
+      channelName: doc?.channel || doc?.uploader || doc?.title || undefined,
+      followerCount: n(doc?.channel_follower_count),
+    };
     const entries = Array.isArray(doc?.entries) ? doc.entries : [doc];
     for (const e of entries) {
-      const c = toCandidate(e, platform);
+      const c = toCandidate(e, platform, chan);
       if (c) out.push(c);
       if (out.length >= take) break;
     }

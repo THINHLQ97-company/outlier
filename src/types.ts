@@ -368,6 +368,10 @@ export interface RadarItem {
   outperformScore?: number | null;
   confidence: RadarConfidence;
   scoreBreakdown?: RadarScoreBreakdown | null;
+  // Chỉ có ý nghĩa trong ngữ cảnh "Kênh theo dõi" (không phải Radar quét
+  // rời): bài này mới xuất hiện so với lần làm mới trước — xem
+  // server/routes/channels.routes.ts. Radar thường không set field này.
+  isNew?: boolean;
 }
 
 export interface RadarJobDetail extends RadarJob {
@@ -407,6 +411,47 @@ export interface RadarEnrichStarted extends RadarJob {
 }
 
 export type RadarEnrichResult = RadarEnrichSkipped | RadarEnrichStarted;
+
+// ===== channels — "Kênh theo dõi": mỗi ngày xem kênh đối thủ vừa đăng gì =====
+// Mirror server/db/schema.ts (watchedChannels) + tuyến
+// server/routes/channels.routes.ts. Mỗi lần làm mới tạo lại một radarJob bên
+// dưới (dùng chung chấm điểm với Radar) rồi so với các lần trước để đánh dấu
+// bài mới (RadarItem.isNew) — đây là giá trị cốt lõi của màn này.
+export type ChannelScanStatus = "idle" | "scanning" | "error";
+
+export interface WatchedChannel {
+  id: string;
+  owner: string;
+  platform: string;
+  channelUrl: string;
+  channelKey?: string | null;
+  channelName?: string | null;
+  followerCount?: number | null;
+  note?: string | null;
+  isActive: boolean;
+  useApify: boolean;
+  lastScanAt?: string | null;
+  lastJobId?: string | null;
+  lastNewCount: number;
+  /** Số lần đã quét — nhãn "MỚI" chỉ có nghĩa từ lần thứ hai. */
+  scanCount: number;
+  scanStatus: ChannelScanStatus;
+  errorMessage?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WatchedChannelDetail extends WatchedChannel {
+  items: RadarItem[];
+}
+
+// POST /api/channels và POST /api/channels/:id/refresh trả về NGAY
+// (scanStatus="scanning"), việc quét chạy nền — client tự theo dõi bằng
+// pollChannel() (xem services/channels.ts), giống pattern pollRadarJob.
+export interface ChannelCreateResult extends WatchedChannel {
+  polling: true;
+  message: string;
+}
 
 // ===== deconstruct — "Bóc cấu trúc": vì sao bài này giữ được người xem =====
 // Mirror server/db/schema.ts (deconstructions) + tuyến

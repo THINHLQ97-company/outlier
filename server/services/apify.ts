@@ -196,7 +196,11 @@ export function normalize(raw: any, _platform: string): ApifyMetrics | null {
  * Bổ sung số liệu cho danh sách URL.
  * KHÔNG gọi Apify cho item đã có trong cache; phần còn lại gom vào 1 lượt chạy.
  */
-export async function enrichMetrics(platform: string, urls: string[]): Promise<EnrichOutcome> {
+export async function enrichMetrics(
+  platform: string,
+  urls: string[],
+  opts: { asProfile?: boolean; limit?: number } = {},
+): Promise<EnrichOutcome> {
   const uniq = [...new Set(urls.filter(Boolean))];
   const base: EnrichOutcome = { metrics: [], fromCache: 0, fetched: 0, skipped: 0, runsUsed: 0 };
 
@@ -210,8 +214,10 @@ export async function enrichMetrics(platform: string, urls: string[]): Promise<E
     return { ...base, skipped: uniq.length, warning: "Chưa cấu hình APIFY_TOKEN — bỏ qua bước bổ sung số liệu, điểm sẽ kém tin cậy hơn." };
   }
 
-  // 1) Cache
-  const keyOf = (u: string) => `${platform}:item:${u}`;
+  // 1) Cache — quét cả kênh thì cache theo kênh + số lượng, vì kết quả khác hẳn
+  //    việc tra cứu từng bài lẻ.
+  const keyOf = (u: string) =>
+    opts.asProfile ? `${platform}:profile:${u}:${opts.limit ?? 20}` : `${platform}:item:${u}`;
   const cached = await readCache(uniq.map(keyOf));
   const metrics: ApifyMetrics[] = [];
   const need: string[] = [];
@@ -252,12 +258,21 @@ export async function enrichMetrics(platform: string, urls: string[]): Promise<E
   // 4) MỘT lượt chạy cho tất cả URL còn lại
   let raws: any[] = [];
   try {
-    raws = await runActorSync(actor, {
-      postURLs: allowed, startUrls: allowed.map((url) => ({ url })),
-      // resultsPerPage quyết định tiền: xin đúng số cần, không xin dư.
-      resultsPerPage: allowed.length,
-      shouldDownloadVideos: false, shouldDownloadCovers: false, shouldDownloadSubtitles: false,
-    });
+    // Quét cả kênh và tra cứu bài lẻ dùng input khác nhau.
+    const input = opts.asProfile
+      ? {
+          // Actor nhận tên tài khoản, không phải URL đầy đủ.
+          profiles: allowed.map((u) => u.replace(/\/+$/, "").split("/").pop()!.replace(/^@/, "")),
+          resultsPerPage: Math.min(opts.limit ?? 20, limit),
+          shouldDownloadVideos: false, shouldDownloadCovers: false, shouldDownloadSubtitles: false,
+        }
+      : {
+          postURLs: allowed, startUrls: allowed.map((url) => ({ url })),
+          // resultsPerPage quyết định tiền: xin đúng số cần, không xin dư.
+          resultsPerPage: allowed.length,
+          shouldDownloadVideos: false, shouldDownloadCovers: false, shouldDownloadSubtitles: false,
+        };
+    raws = await runActorSync(actor, input);
   } catch (e: any) {
     return { ...base, metrics, fromCache: metrics.length, skipped: need.length, warning: `Không lấy được số liệu từ Apify: ${e?.message || e}` };
   }
@@ -272,7 +287,10 @@ export async function enrichMetrics(platform: string, urls: string[]): Promise<E
     const m = normalize(r, platform);
     if (!m) continue;
     metrics.push(m);
-    fresh.push({ key: keyOf(m.url), value: m });
+    // Quét cả kênh trả về nhiều bài từ MỘT url đầu vào — cache theo từng bài
+    // để lần sau tra cứu lẻ dùng lại được.
+    if (!opts.asProfile) fresh.push({ key: keyOf(m.url), value: m });
+    else fresh.push({ key: `${platform}:item:${m.url}`, value: m });
   }
   await writeCache(fresh);
 

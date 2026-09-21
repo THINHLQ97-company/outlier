@@ -1,0 +1,1 @@
+ALTER TABLE "watched_channels" ADD COLUMN "use_apify" boolean DEFAULT false NOT NULL;

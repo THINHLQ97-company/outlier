@@ -141,3 +141,36 @@ describe("Chuẩn hoá trường — đối chiếu dataset THẬT của từng 
     assert.equal(m.likes, undefined);
   });
 });
+
+describe("Quét theo kênh — bài học 2026-09-21", () => {
+  test("link kênh YouTube trần được thêm /videos", async () => {
+    const { buildTarget } = await import("../services/radar-scan");
+    assert.equal(buildTarget("youtube", "https://www.youtube.com/@Google", "competitor", 10),
+      "https://www.youtube.com/@Google/videos");
+    assert.equal(buildTarget("youtube", "https://youtube.com/channel/UC123/", "competitor", 10),
+      "https://youtube.com/channel/UC123/videos");
+  });
+
+  test("link đã có /videos thì giữ nguyên, không nhân đôi", async () => {
+    const { buildTarget } = await import("../services/radar-scan");
+    const u = "https://www.youtube.com/@Google/videos";
+    assert.equal(buildTarget("youtube", u, "competitor", 10), u);
+  });
+
+  test("link video lẻ không bị đụng tới", async () => {
+    const { buildTarget } = await import("../services/radar-scan");
+    const u = "https://www.youtube.com/watch?v=abc123";
+    assert.equal(buildTarget("youtube", u, "competitor", 10), u);
+  });
+
+  test("link nền tảng khác giữ nguyên", async () => {
+    const { buildTarget } = await import("../services/radar-scan");
+    const u = "https://www.tiktok.com/@someone";
+    assert.equal(buildTarget("tiktok", u, "competitor", 10), u);
+  });
+
+  test("tìm theo từ khoá vẫn hoạt động như cũ", async () => {
+    const { buildTarget } = await import("../services/radar-scan");
+    assert.equal(buildTarget("youtube", "hosting giá tốt", "keyword", 5), "ytsearch5:hosting giá tốt");
+  });
+});

@@ -68,8 +68,8 @@ async function refreshBaselines(items: { channelKey?: string | null; platform: s
   return out;
 }
 
-/** Chấm điểm và ghi lại vào radar_items. */
-async function rescoreJob(jobId: string) {
+/** Chấm điểm và ghi lại vào radar_items. Dùng chung với channels.routes. */
+export async function rescoreRadarJob(jobId: string) {
   const db = getDb();
   const rows = await db.select().from(radarItems).where(eq(radarItems.jobId, jobId));
   const baselines = await refreshBaselines(rows);
@@ -141,7 +141,7 @@ async function runScanInBackground(
 
     // Chấm điểm một lần ở cuối: mốc tham chiếu của phiên quét cần TOÀN BỘ dữ
     // liệu mới tính đúng, chấm sớm từng phần sẽ ra điểm lệch rồi phải sửa lại.
-    if (all.length > 0) await rescoreJob(jobId);
+    if (all.length > 0) await rescoreRadarJob(jobId);
 
     await getDb().update(radarJobs)
       .set({ status: "ready", scannedCount: all.length, errorMessage: warnings.join(" · ") || null, updatedAt: new Date() })
@@ -185,7 +185,7 @@ async function runEnrichInBackground(jobId: string, candidates: any[], previousE
       }
     }
 
-    await rescoreJob(jobId);
+    await rescoreRadarJob(jobId);
     await getDb().update(radarJobs)
       .set({
         status: "ready",

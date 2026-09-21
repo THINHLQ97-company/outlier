@@ -325,6 +325,7 @@ export const radarJobs = pgTable("radar_jobs", {
   id: uuid("id").primaryKey().defaultRandom(),
   owner: text("owner").notNull(),
   brandId: uuid("brand_id"), // quét cho brand nào (tuỳ chọn)
+  watchedChannelId: uuid("watched_channel_id"), // phiên này là lần làm mới của kênh nào
   query: text("query").notNull(), // từ khoá ngách HOẶC link đối thủ
   queryKind: text("query_kind").notNull().default("keyword"), // keyword | competitor
   platforms: jsonb("platforms").$type<string[]>().notNull().default([]), // douyin|tiktok|youtube|instagram
@@ -385,6 +386,8 @@ export const radarItems = pgTable("radar_items", {
   shares: integer("shares"),
 
   metricsSource: text("metrics_source").notNull().default("scan"), // scan | apify
+  /** true = bài chưa từng thấy ở các lần quét trước của cùng kênh theo dõi. */
+  isNew: boolean("is_new").notNull().default(false),
   outperformScore: integer("outperform_score"), // nhân 1000 để lưu số nguyên
   confidence: text("confidence").notNull().default("low"), // low | medium | high
   scoreBreakdown: jsonb("score_breakdown").$type<Record<string, any>>(),
@@ -550,3 +553,61 @@ export const videoScenes = pgTable("video_scenes", {
 }));
 
 export type VideoSceneRow = typeof videoScenes.$inferSelect;
+
+// ===== watched_channels — kênh đang theo dõi =====
+// Khác một phiên quét rời: kênh ở đây được giữ lại để quét lại nhiều lần, và
+// mỗi lần làm mới sẽ ĐÁNH DẤU BÀI MỚI so với lần trước — đó mới là thứ có giá
+// trị hằng ngày: mở lên thấy ngay đối thủ vừa đăng gì và bài nào đang bật.
+//
+// Mỗi lần làm mới vẫn tạo một radar_job bên dưới để tái dùng toàn bộ phần chấm
+// điểm và giao diện đã có, thay vì dựng một đường song song.
+export const watchedChannels = pgTable("watched_channels", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  owner: text("owner").notNull(),
+  platform: text("platform").notNull(),
+  channelUrl: text("channel_url").notNull(),
+  channelKey: text("channel_key"),          // id kênh trên nền tảng (biết sau lần quét đầu)
+  channelName: text("channel_name"),
+  followerCount: integer("follower_count"),
+  note: text("note"),                        // ghi chú của người dùng, vd "đối thủ trực tiếp"
+
+  isActive: boolean("is_active").notNull().default(true),
+  /**
+   * true = mỗi lần làm mới sẽ gọi dịch vụ có phí (Apify).
+   * Bắt buộc với TikTok: yt-dlp không lấy được danh sách bài từ link @user
+   * (cần channel_id nội bộ, mà id đó chỉ moi ra được từ một video cụ thể).
+   * Người dùng phải chủ động bật, kèm xác nhận chi phí.
+   */
+  useApify: boolean("use_apify").notNull().default(false),
+  lastScanAt: timestamp("last_scan_at", { withTimezone: true }),
+  /**
+   * Số lần đã quét. Cần để biết đã qua lần đầu chưa — nhãn "MỚI" chỉ có nghĩa
+   * từ lần thứ hai. Để backend đếm thay vì đoán ở trình duyệt: người dùng đổi
+   * máy hay xoá dữ liệu trình duyệt thì con số vẫn đúng.
+   */
+  scanCount: integer("scan_count").notNull().default(0),
+  lastJobId: uuid("last_job_id"),            // phiên quét gần nhất
+  lastNewCount: integer("last_new_count").notNull().default(0),
+  scanStatus: text("scan_status").notNull().default("idle"), // idle|scanning|error
+  errorMessage: text("error_message"),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  ownerIdx: index("watched_channels_owner_idx").on(t.owner),
+  chanIdx: index("watched_channels_chan_idx").on(t.platform, t.channelUrl),
+}));
+
+export type WatchedChannelRow = typeof watchedChannels.$inferSelect;
+
+// ===== channel_seen_items — nhớ bài đã thấy, để biết bài nào MỚI =====
+// Chỉ lưu khoá bài, không lưu nội dung: mục đích duy nhất là so sánh giữa hai
+// lần quét. Nội dung đầy đủ nằm ở radar_items.
+export const channelSeenItems = pgTable("channel_seen_items", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  channelId: uuid("channel_id").notNull(),
+  itemKey: text("item_key").notNull(),
+  firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  chanIdx: index("channel_seen_chan_idx").on(t.channelId, t.itemKey),
+}));

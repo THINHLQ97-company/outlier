@@ -1,22 +1,25 @@
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
-import { LogOut, Radar, Images, Wand2, ShieldCheck, Fingerprint, Telescope, Scissors, PenLine } from "lucide-react";
+import { LogOut, Radar, Images, Wand2, ShieldCheck, Fingerprint, Telescope, Scissors, PenLine, Eye } from "lucide-react";
 import { useAppContext } from "../AppContext";
 
 // Nav gọn theo bản tinh giản: Sáng tạo (Studio) · Thư viện (Ảnh/Nhân vật/Phong
 // cách) · Thương hiệu (hồ sơ brand có trích dẫn nguồn) · Radar (content bật lên
-// trong ngách) · Bóc cấu trúc (vì sao bài giữ được người xem) · Viết lại (viết
-// cho thương hiệu + kiểm tra, khép kín vòng Radar→Bóc cấu trúc→Viết lại) ·
-// Tín hiệu · (Quản trị, chỉ admin). Bỏ hẳn Kịch bản/Ảnh pipeline/Duyệt/Sẵn
-// sàng đăng/Lịch — xem CLAUDE.md mục "tinh giản nav" + docs/PRD.md bản mới.
+// trong ngách) · Kênh theo dõi (theo dõi kênh đối thủ, đánh dấu bài mới) ·
+// Bóc cấu trúc (vì sao bài giữ được người xem) · Viết lại (viết cho thương
+// hiệu + kiểm tra, khép kín vòng Radar→Bóc cấu trúc→Viết lại) · Tín hiệu ·
+// (Quản trị, chỉ admin). Bỏ hẳn Kịch bản/Ảnh pipeline/Duyệt/Sẵn sàng đăng/Lịch
+// — xem CLAUDE.md mục "tinh giản nav" + docs/PRD.md bản mới.
 // Icon `Radar` đã dùng cho "Tín hiệu" nên mục Radar dùng `Telescope` để không
-// trùng; Bóc cấu trúc dùng `Scissors`; Viết lại dùng `PenLine` (tránh trùng
-// Wand2/Images/Radar/Fingerprint/Telescope/ShieldCheck/Scissors).
+// trùng; Bóc cấu trúc dùng `Scissors`; Viết lại dùng `PenLine`; Kênh theo dõi
+// dùng `Eye` (tránh trùng Wand2/Images/Radar/Fingerprint/Telescope/
+// ShieldCheck/Scissors/PenLine).
 const NAV_ITEMS = [
   { to: "/studio", label: "Sáng tạo", icon: Wand2 },
   { to: "/library", label: "Thư viện", icon: Images },
   { to: "/brands", label: "Thương hiệu", icon: Fingerprint },
   { to: "/radar", label: "Radar", icon: Telescope },
+  { to: "/channels", label: "Kênh theo dõi", icon: Eye },
   { to: "/deconstruct", label: "Bóc cấu trúc", icon: Scissors },
   { to: "/remakes", label: "Viết lại", icon: PenLine },
   { to: "/signals", label: "Tín hiệu", icon: Radar },

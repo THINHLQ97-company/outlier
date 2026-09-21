@@ -99,6 +99,27 @@
       "when": 1789954491246,
       "tag": "0013_video_projects",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1789963674170,
+      "tag": "0014_watched_channels",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1789964011123,
+      "tag": "0015_channel_use_apify",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1789964542675,
+      "tag": "0016_channel_scan_count",
+      "breakpoints": true
     }
   ]
 }

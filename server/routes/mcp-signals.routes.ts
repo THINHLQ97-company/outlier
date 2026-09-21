@@ -9,7 +9,7 @@ import type { Express } from "express";
 import crypto from "crypto";
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import { getDb, isDbConfigured } from "../db/client";
-import { signals, rubricVersions, characters as charactersTable, brands, brandSources, radarJobs, radarItems, deconstructions, remakes } from "../db/schema";
+import { signals, rubricVersions, characters as charactersTable, brands, brandSources, radarJobs, radarItems, deconstructions, remakes, watchedChannels } from "../db/schema";
 import { ingestUrl, ingestRawText } from "../services/brand-ingest";
 import { extractBrandProfile, type SourceDoc } from "../services/brand-extract";
 import { computeSignalStatus } from "../services/rubric-scoring";
@@ -28,7 +28,7 @@ const SERVER_INSTRUCTIONS = `Bạn là AI Analyst cho fanpage giải trí "Ăn N
 4. GÓC HÀI: với tin queued, signals_suggest_angle đề xuất 1 góc lên nội dung hài (scene cụ thể + chọn characters từ characters_list + dialogue ngắn). Người vận hành sẽ review rồi "Đưa sang Sáng tạo".
 Luôn dùng characters_list để chọn đúng nhân vật fanpage. Tổng điểm rubric chỉ cộng 4 tiêu chí (do_nong+do_cham+do_hop_truc+tuoi_tho), do_an_toan là cổng an toàn.`;
 
-const READONLY_TOOLS = new Set(["signals_list", "signals_get", "rubric_get", "characters_list", "brands_list", "brand_profile_get", "radar_jobs_list", "radar_results", "deconstruct_get", "remake_get"]);
+const READONLY_TOOLS = new Set(["signals_list", "signals_get", "rubric_get", "characters_list", "brands_list", "brand_profile_get", "radar_jobs_list", "radar_results", "deconstruct_get", "remake_get", "channels_list", "channel_items"]);
 
 const TOOLS = [
   {
@@ -240,6 +240,38 @@ const TOOLS = [
         draft: { type: "string", description: "Nội dung mới (bỏ trống thì kiểm tra bản đang lưu)" },
       },
       required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "channels_list",
+    description: "Liệt kê các kênh đang theo dõi, kèm số bài MỚI phát hiện ở lần làm mới gần nhất và thời điểm làm mới.",
+    annotations: { title: "Kênh đang theo dõi", readOnlyHint: true },
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "channel_items",
+    description: "Xem bài của một kênh theo dõi, bài MỚI xếp lên đầu. Mỗi bài kèm điểm vượt trội so với quy mô kênh và lý do chấm.",
+    annotations: { title: "Bài của kênh", readOnlyHint: true },
+    inputSchema: {
+      type: "object",
+      properties: {
+        channel_id: { type: "string", description: "Mã kênh (từ channels_list)" },
+        only_new: { type: "boolean", description: "Chỉ lấy bài mới" },
+        limit: { type: "number", description: "Số bài, mặc định 20" },
+      },
+      required: ["channel_id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "channel_refresh",
+    description: "Làm mới một kênh để xem họ vừa đăng gì. Chạy nền 30-60 giây. LƯU Ý: kênh có useApify=true sẽ tốn phí mỗi lần làm mới.",
+    annotations: { title: "Làm mới kênh", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: { channel_id: { type: "string", description: "Mã kênh" } },
+      required: ["channel_id"],
       additionalProperties: false,
     },
   },
@@ -620,6 +652,65 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
       note: report.passed
         ? "Không thấy vi phạm nào ở mức chặn."
         : "CÒN LỖI CHẶN — phải sửa các mục trong issues trước khi dùng.",
+    };
+  }
+
+  if (name === "channels_list") {
+    const rows = await db.select().from(watchedChannels).orderBy(desc(watchedChannels.updatedAt)).limit(100);
+    return {
+      count: rows.length,
+      channels: rows.map((c: any) => ({
+        id: c.id, platform: c.platform, channelName: c.channelName, channelUrl: c.channelUrl,
+        followerCount: c.followerCount, note: c.note,
+        newSinceLastCheck: c.lastNewCount, lastScanAt: c.lastScanAt,
+        scanStatus: c.scanStatus, costsMoneyToRefresh: c.useApify,
+      })),
+      note: "newSinceLastCheck là số bài mới phát hiện ở lần làm mới GẦN NHẤT. Kênh có costsMoneyToRefresh=true sẽ tốn phí mỗi lần làm mới — đừng tự ý gọi channel_refresh cho các kênh đó.",
+    };
+  }
+
+  if (name === "channel_items") {
+    if (!UUID_RE.test(args.channel_id || "")) throw new Error("channel_id không hợp lệ");
+    const [chan] = await db.select().from(watchedChannels).where(eq(watchedChannels.id, args.channel_id));
+    if (!chan) throw new Error("Không tìm thấy kênh");
+    if (!chan.lastJobId) return { count: 0, items: [], note: "Kênh này chưa quét lần nào." };
+
+    const limit = Math.min(Number(args.limit) || 20, 100);
+    const conds: any[] = [eq(radarItems.jobId, chan.lastJobId)];
+    if (args.only_new === true) conds.push(eq(radarItems.isNew, true));
+    const rows = await db.select().from(radarItems)
+      .where(and(...conds))
+      .orderBy(desc(radarItems.isNew), desc(radarItems.outperformScore))
+      .limit(limit);
+
+    return {
+      channel: { name: chan.channelName, followerCount: chan.followerCount, lastScanAt: chan.lastScanAt },
+      count: rows.length,
+      items: rows.map((r: any) => ({
+        url: r.url, title: r.title, isNew: r.isNew,
+        views: r.views, likes: r.likes, publishedAt: r.publishedAt,
+        outperformScore: r.outperformScore == null ? null : r.outperformScore / 10,
+        confidence: r.confidence,
+        reasons: (r.scoreBreakdown || {}).reasons || [],
+      })),
+      note: "isNew=true là bài chưa từng thấy ở các lần làm mới trước. Điểm trên thang 100, so với quy mô CHÍNH kênh đó.",
+    };
+  }
+
+  if (name === "channel_refresh") {
+    if (!UUID_RE.test(args.channel_id || "")) throw new Error("channel_id không hợp lệ");
+    const [chan] = await db.select().from(watchedChannels).where(eq(watchedChannels.id, args.channel_id));
+    if (!chan) throw new Error("Không tìm thấy kênh");
+    if (chan.scanStatus === "scanning") throw new Error("Kênh này đang được quét, chờ một chút");
+
+    const { refreshChannelInBackground } = await import("./channels.routes");
+    void refreshChannelInBackground(args.channel_id);
+    return {
+      id: chan.id, status: "scanning",
+      costsMoney: chan.useApify,
+      note: chan.useApify
+        ? "Đang làm mới. Kênh này dùng dịch vụ có phí nên lượt làm mới này PHÁT SINH CHI PHÍ. Chờ 30-60 giây rồi gọi channel_items."
+        : "Đang làm mới, khoảng 30-60 giây. Gọi channel_items để xem kết quả.",
     };
   }
 

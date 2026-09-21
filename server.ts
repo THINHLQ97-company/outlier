@@ -17,6 +17,7 @@ import { registerBrandRoutes } from "./server/routes/brands.routes";
 import { registerRadarRoutes } from "./server/routes/radar.routes";
 import { registerDeconstructRoutes } from "./server/routes/deconstruct.routes";
 import { registerRemakeRoutes } from "./server/routes/remakes.routes";
+import { registerChannelRoutes } from "./server/routes/channels.routes";
 import { registerGalleryRoutes } from "./server/routes/gallery.routes";
 import { registerRagRoutes } from "./server/routes/rag.routes";
 import { registerMcpOAuthRoutes } from "./server/routes/mcp-oauth.routes";
@@ -86,6 +87,9 @@ async function startServer() {
 
   // Viết lại cho brand + guardrail (docs/PRD.md §4 J4)
   registerRemakeRoutes(app);
+
+  // Kênh theo dõi — xem đối thủ vừa đăng gì (docs/PRD.md §4 J2)
+  registerChannelRoutes(app);
 
   // ===== GALLERY — thư viện ảnh + lưu ảnh thành asset =====
   registerGalleryRoutes(app);
