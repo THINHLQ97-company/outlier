@@ -8,6 +8,22 @@ import { adminEmails, type GoogleProfile } from "./google-auth";
 export interface ResolvedGoogleUser {
   user?: typeof users.$inferSelect;
   pending?: boolean; // true = tài khoản tồn tại/đã tạo nhưng chờ admin duyệt
+  rejectedDomain?: boolean; // true = email ngoài domain cho phép, không tạo bản ghi
+}
+
+// Domain được phép tự đăng ký. Mặc định chỉ nội bộ Mắt Bão; đặt
+// GOOGLE_ALLOWED_DOMAINS="matbao.com,doitac.vn" để mở thêm, hoặc "*" để tắt kiểm tra.
+function allowedDomains(): string[] {
+  const raw = (process.env.GOOGLE_ALLOWED_DOMAINS || "matbao.com").trim();
+  return raw.split(",").map((d) => d.trim().toLowerCase()).filter(Boolean);
+}
+
+export function domainAllowed(email: string): boolean {
+  const domains = allowedDomains();
+  if (domains.includes("*")) return true;
+  const at = email.lastIndexOf("@");
+  if (at < 0) return false;
+  return domains.includes(email.slice(at + 1).toLowerCase());
 }
 
 export async function resolveGoogleUser(db: any, profile: GoogleProfile): Promise<ResolvedGoogleUser> {
@@ -30,6 +46,15 @@ export async function resolveGoogleUser(db: any, profile: GoogleProfile): Promis
         .returning();
     }
     return { user };
+  }
+
+  // Email ngoài domain cho phép và CHƯA có tài khoản → từ chối, không tạo bản ghi rác.
+  // Cố ý chỉ áp cho tài khoản mới: người đã được admin duyệt trước đây (kể cả email
+  // ngoài domain) vẫn đăng nhập được bình thường — siết bảo mật không được khoá
+  // người đang dùng ra ngoài.
+  if (!existing && !domainAllowed(email)) {
+    console.warn(`[auth] từ chối đăng ký Google ngoài domain: ${email}`);
+    return { rejectedDomain: true };
   }
 
   // Chưa có tài khoản → tạo "chờ duyệt".

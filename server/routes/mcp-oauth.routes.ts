@@ -29,6 +29,7 @@ import {
   isAllowedRedirect,
   TTL,
 } from "../mcp/oauth";
+import { rateLimit } from "../rate-limit";
 
 const MCP_RESOURCE_PATH = "/api/mcp-signals";
 
@@ -144,7 +145,7 @@ export function registerMcpOAuthRoutes(app: Express) {
   app.get("/.well-known/oauth-protected-resource/*", prMetadata);
 
   // ── Dynamic Client Registration ──
-  app.post("/api/oauth/register", (req, res) => {
+  app.post("/api/oauth/register", rateLimit({ name: "oauth-register", max: 20, windowMs: 60 * 60_000, blockMs: 30 * 60_000 }), (req, res) => {
     const meta = req.body || {};
     res.status(201).json({
       client_id: `mcp-${crypto.randomUUID()}`,
@@ -183,7 +184,7 @@ export function registerMcpOAuthRoutes(app: Express) {
   });
 
   // ── Authorize (POST): xác thực tài khoản fanpage → cấp code ──
-  app.post("/api/oauth/authorize", form, async (req, res) => {
+  app.post("/api/oauth/authorize", rateLimit({ name: "oauth-authorize", max: 10, windowMs: 10 * 60_000, blockMs: 15 * 60_000 }), form, async (req, res) => {
     const b = req.body || {};
     const { username, password, id_token, redirect_uri, code_challenge, code_challenge_method, state, scope, resource, client_id } = b;
     if (!redirect_uri || !isAllowedRedirect(redirect_uri)) {

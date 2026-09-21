@@ -10,6 +10,7 @@ import { getSecret, verifyToken, extractToken } from "../auth-shared";
 import { requireAuth, getAuthUser } from "../auth-mw";
 import { verifyGoogleIdToken } from "../services/google-auth";
 import { resolveGoogleUser } from "../services/google-user";
+import { rateLimit, resetRateLimit } from "../rate-limit";
 
 // Ký token đăng nhập (giống login mật khẩu): base64(payload).hmac, hết hạn 7 ngày.
 function issueSessionToken(user: { username: string; role: string }): string {
@@ -19,7 +20,9 @@ function issueSessionToken(user: { username: string; role: string }): string {
 }
 
 export function registerAuthRoutes(app: Express) {
-  app.post("/api/login", async (req, res) => {
+  const loginLimiter = rateLimit({ name: "login", max: 8, windowMs: 10 * 60_000, blockMs: 15 * 60_000 });
+
+  app.post("/api/login", loginLimiter, async (req, res) => {
     const { username, password } = req.body || {};
     if (!username || !password) {
       return res.status(400).json({ error: "Thiếu tên đăng nhập hoặc mật khẩu" });
@@ -40,6 +43,7 @@ export function registerAuthRoutes(app: Express) {
       const payload = JSON.stringify({ username: user.username, role: user.role, ts: Date.now() });
       const token = crypto.createHmac("sha256", getSecret()).update(payload).digest("hex");
 
+      resetRateLimit(req, "login");
       return res.status(200).json({
         success: true,
         token: `${Buffer.from(payload).toString("base64")}.${token}`,
@@ -56,7 +60,7 @@ export function registerAuthRoutes(app: Express) {
   // Cấp quyền: email trong GOOGLE_ADMIN_EMAILS → admin ngay; email đã được admin
   // duyệt (isActive) → vào; chưa có/chưa duyệt → tạo bản ghi "chờ duyệt" (isActive=false)
   // rồi báo 403 để admin phê duyệt trong menu Quản trị.
-  app.post("/api/auth/google", async (req, res) => {
+  app.post("/api/auth/google", rateLimit({ name: "google", max: 15, windowMs: 10 * 60_000, blockMs: 10 * 60_000 }), async (req, res) => {
     const credential = req.body?.credential;
     if (typeof credential !== "string" || !credential) {
       return res.status(400).json({ error: "Thiếu credential Google." });
@@ -76,7 +80,10 @@ export function registerAuthRoutes(app: Express) {
     }
 
     try {
-      const { user, pending } = await resolveGoogleUser(getDb(), profile);
+      const { user, pending, rejectedDomain } = await resolveGoogleUser(getDb(), profile);
+      if (rejectedDomain) {
+        return res.status(403).json({ error: "Chỉ email nội bộ Mắt Bão mới đăng nhập được công cụ này." });
+      }
       if (pending || !user) {
         return res.status(403).json({ error: "Tài khoản chưa được cấp quyền — đã gửi yêu cầu tới quản trị viên, vui lòng chờ duyệt.", pending: true });
       }
