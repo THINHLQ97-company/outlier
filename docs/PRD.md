@@ -1,127 +1,227 @@
-# PRD: fanpage-content-create
+# PRD: Outlier — Viral Content Intelligence & Remake
 
 **Owner**: Lâm Quang Thịnh (thinhlq@matbao.com)
 **Team**: mk
-**Status**: Approved
-**Created**: 2026-07-21
+**Status**: Đang triển khai (cập nhật 2026-09-18)
+**Created**: 2026-09-18
+**Thay thế**: `docs/archive/PRD-fanpage-engine-v1.md` (bản cũ định vị hẹp — meme engine cho 1 fanpage)
+
+---
 
 ## 1. Problem Statement
 
-Fanpage "Ăn Nằm Với AI" hiện sản xuất nội dung thủ công, không đều tay, không có dàn nhân vật cố định → tương tác gần như bằng 0 dù art đẹp. Team marketing cần một content engine bán tự động biến trend/pain-point thật thành meme 1-2 khung theo đúng công thức đã được kiểm chứng ở fanpage Bò và Gấu, với 1 người vận hành ra 1 bài/ngày, thời gian chạm tay ≤30 phút/bài.
+Mỗi lần muốn làm một bài "học từ content đang nổ", người làm content phải:
+1. Scroll rất lâu để tìm bài hay — và thường chọn nhầm theo lượt like tuyệt đối.
+2. Xem đi xem lại để hiểu nó hook ở đâu, triển khai thế nào, vì sao người ta xem tiếp.
+3. Viết lại cho ngành của mình, sửa thêm một vòng cho đúng giọng brand.
 
-Nguồn spec nghiệp vụ gốc: `MATBAO_FANPAGE_ENGINE_v3.md` (dàn nhân vật cố định, 3 trục nội dung, checklist duyệt bài, prompt template).
+Một bài làm kỹ tốn **2–3 tiếng**. Làm hằng ngày thì không bền.
 
-## 2. Target Users
+**Outlier** gom 3 việc đó vào một chỗ: tìm bài thực sự bật lên → bóc cấu trúc → viết lại cho brand, kèm dựng ảnh/video. Mục tiêu: rút đoạn "tìm bài tham khảo → bản remake đầu tiên" từ 2–3 tiếng xuống **vài phút**, với người đọc và sửa lần cuối.
+
+### Vì sao tên "Outlier"
+Trong thống kê, outlier là điểm nằm ngoài phân bố chung. Đó chính xác là thứ sản phẩm này đi tìm: **bài vượt ra ngoài quy mô kênh của nó**, không phải bài của kênh nổi tiếng.
+
+---
+
+## 2. Nguyên tắc sản phẩm (ràng buộc cứng, không phải mong muốn)
+
+Bốn nguyên tắc này phải được cưỡng chế **bằng code/schema**, không bằng câu dặn trong prompt — vì model sẽ bịa khi bí:
+
+| # | Nguyên tắc | Cách cưỡng chế |
+|---|---|---|
+| P1 | **Không bịa thông tin brand** | Mỗi field brand profile bắt buộc có `evidence{quote, source_url, offset}`. Không có evidence → field để trống, không ghi vào DB. |
+| P2 | **Không bê nguyên câu chữ bài gốc** | Đo n-gram overlap với transcript gốc. Trùng ≥7 từ liên tiếp → chặn export, buộc viết lại đoạn đó. |
+| P3 | **Không chế công dụng sản phẩm** | Mọi claim về sản phẩm phải khớp brand profile. Claim không có evidence → gắn cờ `unverified`, không cho export. |
+| P4 | **Không tự đổi giọng brand** | Đối chiếu từ cấm + quy tắc xưng hô trong brand profile trước khi trả kết quả. |
+
+Ngoài ra: **không tái sử dụng pixel/audio của bài gốc**. Remake = flow gốc + ruột mới + footage tự sinh. Đây vừa là ranh giới bản quyền, vừa là định nghĩa sản phẩm.
+
+---
+
+## 3. Target Users
 
 | Vai trò | Nhu cầu |
 |---|---|
-| **Người vận hành content** (marketing, team mk) | Xem hàng đợi tín hiệu đã lọc, sinh kịch bản + ảnh, duyệt/sửa/rớt, đăng bài — tất cả trong 1 màn hình, ≤30 phút/ngày |
-| **Người duyệt cuối** (có thể trùng vai trên) | Chạy checklist 14 mục trước khi đăng, chịu trách nhiệm rủi ro thương hiệu |
-| **Người đọc số hàng tuần** (thứ 2 hằng tuần) | Xem reach/share/comment 7 bài tuần trước, chỉnh rubric lọc |
+| **Người làm content** (team mk, và các team khác của Mắt Bão) | Tìm bài đáng học trong ngách, hiểu vì sao nó nổ, ra bản nháp đúng giọng brand |
+| **Quản lý marketing** | Xem bài nào đang outperform trong ngành, kiểm soát chất lượng trước khi đăng |
+| **Claude (qua MCP)** | Điều khiển toàn bộ pipeline bằng hội thoại, không cần mở UI |
 
-Scale: internal, <10 người dùng (team marketing nội bộ Mắt Bão).
+Scale: internal Mắt Bão, nhiều brand/nhiều team, <50 người dùng.
 
-## 3. User Journeys (iMVP)
+---
 
-**J1 — Xem hàng đợi tín hiệu (THU + LỌC)**
-Vào dashboard → hệ thống hiển thị tín hiệu mới từ Market Radar (radar marketing-kd + ke-toan) + Group Insights (cluster xuyên nhóm) trong 14 ngày gần nhất, đã chấm điểm theo rubric 5 tiêu chí → xếp theo điểm, lọc theo ngưỡng (≥16 vào hàng đợi sản xuất, 12-15 kho ý tưởng, <12 ẩn).
+## 4. User Journeys
 
-**J2 — Sinh kịch bản (DỊCH)**
-Chọn 1 tín hiệu → chọn trục (AI/kế toán/hosting) + format meme (F1-F7) → hệ thống gọi Gemini (qua social backend REST) sinh 3 phương án kịch bản theo prompt template mục 4.2 của spec → chọn 1 phương án.
+### J1 — Dạy nó hiểu brand (Brand Profile)
+Người dùng đưa vào **website / fanpage / file PDF giới thiệu công ty**.
+Hệ thống đọc và bóc ra:
+- Brand bán gì (sản phẩm/dịch vụ, kèm công dụng được phép nói)
+- Khách hàng là ai
+- Cách nói chuyện (tông giọng)
+- Xưng hô (gọi khách là gì, tự xưng là gì)
+- Từ/cách diễn đạt **không** được dùng
 
-**J3 — Sinh ảnh + hậu kỳ (VẼ)**
-Từ kịch bản đã chọn → hệ thống ghép style chung + mô tả nhân vật (character reference library) + mô tả khung → gọi social's `/generate-image` sinh 2 biến thể ảnh KHÔNG chữ → người dùng chọn 1 ảnh → mở text-overlay editor (kéo-thả text box lên ảnh, đặt watermark MATBAO/MATBAO INVOICE góc dưới phải opacity ~60%) → export ảnh cuối.
+**Mỗi field hiện kèm trích dẫn nguồn**: câu gốc + link + vị trí trong tài liệu.
+Không tìm thấy → **để thiếu**, hiển thị "chưa có dữ liệu", không bịa cho đủ.
 
-**J4 — Duyệt (DUYỆT)**
-Bài vào queue "Chờ duyệt" (kanban 3 cột: Chờ duyệt / Sửa thoại / Rớt) → người duyệt chạy checklist 14 mục (mục 5 spec) → Duyệt (chuyển "Sẵn sàng đăng") / Sửa thoại (quay lại J3) / Rớt (quay lại J2, ghi lý do).
+Người dùng có thể sửa tay từng field; field sửa tay được đánh dấu `source: manual`.
 
-**J5 — Đăng bài (ĐĂNG) — thủ công trong iMVP**
-Bài "Sẵn sàng đăng" → hệ thống hiển thị ảnh cuối + caption → người vận hành copy/tải về, tự đăng lên Facebook (Ban Page thật). Đánh dấu "Đã đăng" trong app để tính vào lịch sử.
+### J2 — Tìm content đang chạy tốt trong ngách (Radar)
+Nhập **từ khoá ngách** hoặc **link đối thủ muốn soi**. Chọn nền tảng: Douyin / TikTok / YouTube / Instagram.
 
-## 4. Functional Requirements
+Hệ thống quét, gom về một chỗ, và **xếp hạng theo mức outperform so với chính quy mô kênh đó** — không xếp theo like tuyệt đối.
 
-### THU
-- FR1.1: Backend job (thủ công trigger hoặc cron) gọi Market Radar MCP (`market_radar_list_articles`, 2 radar) + Group Insights MCP (`group_list_clusters` cross_group=true) qua HTTP JSON-RPC, lưu tín hiệu thô vào bảng `signals`.
-- FR1.2: Chỉ giữ tín hiệu trong 14 ngày gần nhất.
-- FR1.3: Nguồn "sự cố hạ tầng toàn cầu" và "lịch mùa vụ" — v1 dùng form nhập tay (người vận hành tự thêm tín hiệu P0/lịch mùa vụ thủ công vào `signals` qua UI), không tích hợp tự động (chưa có nguồn xác nhận).
+> Kênh 2.000 follower có bài 8.000 like được xếp trên kênh 14 triệu follower có bài 6.000 like.
 
-### LỌC
-- FR2.1: Mỗi tín hiệu chấm 5 tiêu chí (độ nóng, độ chạm, độ hợp trục, tuổi thọ, độ an toàn), thang 1-5, tổng ≤20.
-- FR2.2: Ngưỡng: ≥16 → hàng đợi sản xuất; 12-15 → kho ý tưởng; <12 → ẩn. Dính nhóm ⛔ (mục 3.3) → loại thẳng bất kể điểm.
-- FR2.3: v1: chấm điểm bán tự động — hệ thống gợi ý điểm (rule-based từ glossary mục 3.2 + LLM), người vận hành có thể sửa tay trước khi chốt.
-- FR2.4: Rubric (trọng số/ngưỡng) lưu dạng version có thể chỉnh từ màn hình HỌC, ghi lịch sử thay đổi.
+Công thức (trọng số chỉnh được):
+```
+outperform_score = w1 · log(views / median_views_của_kênh)
+                 + w2 · log(likes / follower_count)
+                 + w3 · hệ_số_tươi(ngày_đăng)
+```
+Mấu chốt: **chuẩn hoá theo baseline của chính kênh đó**. Kênh chưa đủ dữ liệu baseline → đánh dấu `low_confidence`, không đẩy lên đầu.
 
-### DỊCH
-- FR3.1: Prompt template đúng mục 4.2 spec, ghép tín hiệu + trục + glossary + dàn nhân vật + format meme đã chọn.
-- FR3.2: Gọi Gemini text-gen qua social backend REST, trả về đúng 3 phương án dùng 3 format khác nhau.
-- FR3.3: Lưu kịch bản đã chọn vào bảng `scripts`, liên kết `signals`.
+### J3 — Bóc cấu trúc (Deconstruct)
+Chọn một bài từ Radar, **hoặc paste link** (Douyin/TikTok/Facebook/YouTube), **hoặc upload video**.
 
-### VẼ
-- FR4.1: Character reference library: lưu prompt mô tả nhân vật (mục 2.4) + ảnh tham chiếu (nếu có) cho Gàn/Gèn/chị Bão/Sếp/5 AI, dùng làm input image-to-image.
-- FR4.2: Gọi social's `/generate-image` (Gemini 2.5 flash image) sinh 2 biến thể/kịch bản, ảnh KHÔNG chữ.
-- FR4.3: Text-overlay editor: kéo-thả text box (nhãn ≤8 từ) lên ảnh, chèn watermark theo brand đúng trục (MATBAO / MATBAO INVOICE), export ảnh PNG cuối.
+Hệ thống phân tích và trả về cấu trúc:
+- **3 giây đầu** đang làm gì
+- **Mở vấn đề** kiểu nào
+- **Giữ chân** đoạn giữa bằng gì (các beat giữ nhịp)
+- **Twist** ở đâu
+- **CTA** chốt thế nào
 
-### DUYỆT
-- FR5.1: Kanban 3 cột: Chờ duyệt / Sửa thoại / Rớt, mỗi thẻ = 1 bài (ảnh cuối + caption).
-- FR5.2: Checklist 14 mục (mục 5 spec) dạng form, phải tick hết mới được bấm "Duyệt".
-- FR5.3: Action "Rớt" bắt buộc nhập lý do, ghi lại để tham khảo khi DỊCH lại.
-- FR5.4: SLA hiển thị: cảnh báo nếu bài chờ duyệt >4h.
+Với bài viết (text) cũng làm tương tự, bỏ phần thị giác.
 
-### ĐĂNG (iMVP = thủ công)
-- FR6.1: Màn hình "Sẵn sàng đăng" hiển thị ảnh cuối, caption, nút "Tải ảnh" + "Copy caption".
-- FR6.2: Nút "Đánh dấu đã đăng" (nhập link bài Facebook thật) → chuyển bài vào lịch sử, phục vụ bước HỌC ở Phase 2.
+### J4 — Remake cho brand
+Từ cấu trúc đã bóc + brand profile → sinh bản mới: **giữ cách triển khai, thay ruột** (sản phẩm, khách hàng, thông tin của brand mình).
 
-> **Không làm seeding comment/auto-reply tự động** — fanpage giải trí, tương tác thật quan trọng hơn comment giả lập. Loại bỏ hoàn toàn khỏi scope (không chỉ defer Phase 2).
+Kết quả kèm **guardrail report** (P1–P4 ở mục 2). Có cảnh báo → phải xử lý mới export được.
 
-### Đề xuất thêm (optional, cần user duyệt riêng trước khi vào scope — KHÔNG tự động nằm trong iMVP)
-- Content calendar view (lịch tuần theo dõi tỉ lệ 3 trục 50/30/20).
-- Rubric history/version log UI riêng (FR2.4 đã có phần lưu version, nhưng UI xem lịch sử là optional).
-- P0 alert tự động khi có sự cố hạ tầng/chính sách thuế (phụ thuộc nguồn dữ liệu FR1.3 — chưa có).
+Người dùng sửa bằng hội thoại ("ngắn hơn", "đổi hook"), mỗi lần sửa chạy lại guardrail.
 
-## 5. Non-functional Requirements
+### J5 — Dựng hình ảnh / video
+Từ bản remake → sinh ảnh (Gemini Imagen) hoặc video:
+- **Gemini Imagen 4 + Veo 3.1 Lite** — mặc định, rẻ
+- **Higgsfield** — cảnh cần chất lượng điện ảnh
+- **FFmpeg** — luôn dùng: ghép, xfade, phụ đề, BGM ducking, Ken Burns
 
-- Internal tool, <10 users, không cần auth phức tạp — dùng lại pattern auth đơn giản (username/password + token) như marcow-crop.
-- Ảnh sinh ra không lưu API key ở client — mọi gọi Gemini/social backend đi qua server-side proxy.
-- Vietnamese text overlay phải hỗ trợ dấu tiếng Việt đầy đủ (font Unicode).
-- Thời gian thao tác 1 bài từ J2→J4 ≤30 phút (mục tiêu spec).
+### J6 — Xuất kết quả
+Đẩy sang **Google Sheet** để team dùng tiếp. Kèm link bài gốc + điểm outperform để người duyệt biết nó học từ đâu.
 
-## 6. Data Model (high-level)
+### J7 — Điều khiển bằng Claude (MCP)
+Toàn bộ J1–J6 gọi được qua MCP từ Claude Desktop / Claude Code / claude.ai. Mọi việc chạy lâu trả `job_id` ngay, Claude poll `job_status`.
 
-- `signals` (id, source [market_radar|group_insights|manual], radar/trục, raw_summary, published_date, score_json, status [new|scored|queued|idea_bank|rejected], created_at)
-- `rubric_versions` (id, weights_json, thresholds_json, note, created_at, created_by)
-- `scripts` (id, signal_id, truc, format_meme, content_json [3 phương án], selected_variant, created_at)
-- `characters` (id, name, prompt_description, reference_image_url)
-- `posts` (id, script_id, image_variants[], selected_image_url, overlay_json, final_image_url, caption, status [cho_duyet|sua_thoai|rot|san_sang_dang|da_dang], checklist_json, reject_reason, fb_post_url, created_at, decided_at, posted_at)
-- `users` (id, username, password_hash, role) — theo pattern marcow-crop
+---
 
-## 7. Integrations
+## 5. Phạm vi iMVP (Phase 1)
 
-| Hệ thống | Vai trò | Giao thức | Trạng thái credential |
-|---|---|---|---|
-| Market Radar MCP (`marcommatbao.net/api/mcp-market-radar`) | Đọc tín hiệu marketing-kd + ke-toan | HTTP JSON-RPC 2.0, token `MARKET_RADAR_MCP_TOKEN` | **Chưa có — cần user cung cấp** |
-| Group Insights MCP (`marcommatbao.net/api/mcp-group-insights`) | Đọc cluster group Facebook | HTTP JSON-RPC 2.0, token `GROUP_INSIGHTS_MCP_TOKEN` | **Chưa có — cần user cung cấp** |
-| social backend (`share-projects/social`) | Gemini text/image gen (DỊCH/VẼ) | REST (Swagger có sẵn) | **Cần base URL nội bộ — user cung cấp** |
-| Facebook Graph API (page "Ăn Nằm Với AI") | Đăng bài (Phase 2 tự động; iMVP: chỉ tham chiếu, đăng thủ công) | — | **Cần Page ID + access token — user cung cấp** |
+**Trong phạm vi**
+- J1 Brand Profile có evidence (website + PDF; fanpage nếu có token)
+- J2 Radar: f2 quét danh sách + Apify lấy metrics cho top ứng viên
+- J3 Deconstruct video + bài viết
+- J4 Remake + guardrail P1–P4
+- J5 Sinh ảnh (Imagen); video giữ pipeline hiện có
+- J7 MCP mở rộng
+- Đăng nhập: giữ Google SSO hiện có, siết thêm (mục 7)
 
-## 8. Out of Scope
+**Ngoài phạm vi Phase 1**
+- Higgsfield (Phase 2 — cần API key + ngân sách)
+- Đăng tự động lên fanpage
+- Multi-tenant thật (phân quyền theo brand)
+- Feedback loop tự học từ số liệu bài đã đăng
 
-- **Seeding comment tự động + auto-reply — loại bỏ hoàn toàn khỏi mọi phase**, không phải defer. Fanpage giải trí, không cần comment giả lập; social's `auto-reply.service.js`/`auto-reply-executor.js` sẽ KHÔNG được tích hợp.
-- Đăng bài tự động + lịch đăng qua social's scheduler (Phase 2)
-- Bước HỌC: đọc insight thật + feedback loop chỉnh rubric tự động (Phase 2, cần ≥1 tuần dữ liệu)
-- P0 alert tự động (chưa có nguồn dữ liệu xác nhận)
-- Content calendar view, rubric history UI (optional — chờ user duyệt riêng)
-- Multi-fanpage / multi-tenant (hiện chỉ 1 fanpage "Ăn Nằm Với AI")
+---
 
-## 9. Success Criteria (iMVP)
+## 6. Giữ lại từ bản cũ
 
-- Demo end-to-end: từ 1 tín hiệu thật (Market Radar hoặc Group Insights) → ra 1 ảnh cuối có watermark + caption, đã qua duyệt, sẵn sàng đăng thủ công.
-- Thao tác J2→J4 đo được ≤30 phút cho 1 bài trong demo.
-- `docker compose up` chạy sạch, seed data đủ demo (kể cả khi chưa có MCP token thật — dùng seed tín hiệu giả lập).
+Không bỏ, vẫn là khối sản xuất của Outlier:
+- **Studio** — sinh ảnh từ mô tả + nhân vật + phong cách
+- **Thư viện** — Ảnh / Nhân vật (10 nhân vật) / Phong cách
+- **Tín hiệu** + rubric — trở thành một nguồn đầu vào của Radar
+- **RAG "ảnh đã thích"** — hồ sơ gu cá nhân
+- **MCP Tín hiệu** 8 tool — giữ nguyên, thêm tool mới
 
-## 10. Phase Plan
+Bỏ hẳn (đã gỡ khỏi code từ 2026-07-22, nay dọn nốt): bảng `scripts` + `scripts.routes.ts` (route mồ côi, không FE nào gọi).
 
-| Phase | Scope | Ghi chú |
+---
+
+## 7. Đăng nhập & bảo mật
+
+Đã có: local (scrypt) + **Google SSO** + admin duyệt user + `requireAdmin` re-check DB mỗi request.
+
+Cần bổ sung ở Phase 1:
+- Rate-limit `/api/login` và `/api/oauth/authorize`
+- Giới hạn domain `@matbao.com` khi tạo tài khoản Google mới
+- Bỏ `?token=` trên URL ảnh → signed URL ngắn hạn hoặc cookie
+- Service token nội bộ cho khối media (không mở ra Internet)
+
+---
+
+## 8. Data Model (bổ sung)
+
+Bảng mới:
+| Bảng | Mục đích |
+|---|---|
+| `brands` | brand profile; mỗi field kèm evidence |
+| `brand_sources` | tài liệu đã ingest (url/pdf), text đã trích |
+| `radar_jobs` | phiên quét (keyword/competitor, platforms) |
+| `radar_items` | bài tìm được + **metrics** (views, likes, comments, shares, follower_count) + `outperform_score` |
+| `channel_baselines` | median views/likes theo kênh — để chuẩn hoá |
+| `deconstructions` | cấu trúc đã bóc (hook_3s, problem_open, retention_beats[], twist, cta) |
+| `remakes` | bản remake + `guardrail_report` + link nguồn |
+
+Bảng `channel_videos` (từ clipchatbot) **phải thêm cột metrics** — hiện chỉ có title/cover/duration, không đủ để tính outperform.
+
+---
+
+## 9. Success Metrics
+
+| Chỉ số | Mục tiêu |
+|---|---|
+| Thời gian "tìm bài → bản remake đầu tiên" | ≤ 5 phút (từ 2–3 tiếng) |
+| Tỉ lệ bản remake dùng được sau 1 vòng sửa tay | ≥ 60% |
+| Tỉ lệ field brand profile có evidence thật | 100% (theo P1, không có evidence thì không ghi) |
+| Guardrail chặn đúng | 0 bản export lọt câu trùng ≥7 từ với bài gốc |
+
+---
+
+## 10. Rủi ro đã biết
+
+| Rủi ro | Xử lý |
+|---|---|
+| ToS TikTok/Douyin cấm scrape tự động | Dùng Apify cho metrics; giữ nhịp quét thấp; không scrape nội dung riêng tư |
+| Bản quyền khi remake | Không tái sử dụng pixel/audio gốc; guardrail P2 chặn trùng câu |
+| Cookie Douyin là tài khoản cá nhân | Đã siết quyền file; nên chuyển sang tài khoản riêng cho công cụ |
+| Model bịa khi thiếu dữ liệu | P1/P3 cưỡng chế bằng schema evidence |
+| Chi phí Apify + Higgsfield | Apify chỉ gọi cho top ứng viên; Higgsfield tắt mặc định ở Phase 1 |
+
+---
+
+## 11. Trạng thái triển khai (cập nhật 2026-09-18)
+
+Ghi lại để **docs không lệch code** — đúng vấn đề mà bản PRD cũ mắc phải.
+
+| Phần | Trạng thái | Ghi chú |
 |---|---|---|
-| **iMVP (Phase 1)** | THU (đọc MCP, ≥form nhập tay) → LỌC (scoring bán tự động) → DỊCH (Gemini text) → VẼ (Gemini image + text-overlay editor) → DUYỆT (kanban + checklist) → ĐĂNG thủ công | Scope PRD này |
-| **Phase 2** | ĐĂNG tự động qua social's scheduler/queue, HỌC (insight thật + feedback loop rubric), content calendar view | Cần ≥1 tuần vận hành iMVP để có dữ liệu |
-| **Phase 3** | P0 alert tự động (khi có nguồn xác nhận), multi-fanpage nếu mở rộng | Tùy nhu cầu thực tế |
+| J1 Brand Profile | ✅ Xong | UI + MCP; evidence cưỡng chế bằng schema |
+| J2 Radar | ✅ Xong | UI + MCP; quét miễn phí (yt-dlp) + bổ sung số liệu (Apify) |
+| J3 Deconstruct | ✅ Xong | UI + MCP; mốc thời gian đối chiếu độ dài video thật |
+| J4 Remake + guardrail | ⏳ Backend + MCP xong, UI đang dựng | 4 loại kiểm tra, 27 test riêng |
+| J5 Sinh ảnh/video | ⬜ Chưa | Studio (sinh ảnh) đã có sẵn từ bản cũ |
+| J6 Xuất Google Sheet | ⬜ Chưa | |
+| Higgsfield | ⬜ Chưa | Phase 2, cần API key + ngân sách |
+| Gộp clipchatbot | ⏳ Một phần | Dockerfile đã có ffmpeg + yt-dlp + Python; **chưa port sidecar f2 (Douyin)** |
+
+**MCP: 19 tool** (ban đầu 8). **Test: 110** (ban đầu 0).
+
+### Những gì còn thiếu để chạy thật
+1. **`GEMINI_API_KEY`** — thiếu thì Brand Profile, Deconstruct, Remake đều trả kết quả rỗng kèm cảnh báo (không crash, nhưng cũng không dùng được).
+2. **Sidecar f2 cho Douyin** — hiện Radar báo "chưa nối trong bản này" khi chọn Douyin.
+3. **Instagram** — không quét miễn phí được, phải qua Apify.
+
+### Số đo thực tế đã kiểm chứng
+- Apify: **~$0,0035/kết quả**, tính theo số kết quả (không theo lượt chạy). Gói STARTER $29/tháng.
+- Quét Radar: phản hồi **0,093 giây** (chạy nền), quét xong 30-90 giây.
+- ffmpeg 5.1 của Debian **đủ dùng** — có `zoompan`, `xfade`, `sidechaincompress`, `subtitles`, `atempo`.

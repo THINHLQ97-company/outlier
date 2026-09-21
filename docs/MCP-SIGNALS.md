@@ -53,7 +53,7 @@ fanpage → cấp quyền. (Giống hệt cách ReportApp connect claude.ai vì 
 
 ---
 
-## 2. Bảng đầy đủ 8 tool (quyền tới dữ liệu)
+## 2. Bảng đầy đủ 19 tool (quyền tới dữ liệu)
 
 | Tool | Loại | Làm gì | Đầu vào | Chạm dữ liệu nào |
 |---|---|---|---|---|
@@ -65,12 +65,66 @@ fanpage → cấp quyền. (Giống hệt cách ReportApp connect claude.ai vì 
 | `signals_score` | 🔴 Ghi | Chấm điểm 5 tiêu chí + lý do; tự route trạng thái | id, do_nong, do_cham, do_hop_truc, tuoi_tho, do_an_toan, dinh_nhom_cam?, reasoning? | SỬA `scoreJson` + `status` của 1 tín hiệu |
 | `signals_set_cluster` | 🔴 Ghi | Gom nhiều tin trùng/liên quan thành 1 cụm | ids[], label | SỬA `clusterId`+`clusterLabel` các tín hiệu |
 | `signals_suggest_angle` | 🔴 Ghi | Gợi ý góc hài (cảnh + nhân vật + thoại) | id, scene, characters?[], dialogue?[], note? | SỬA `suggestionJson` của 1 tín hiệu |
+| `brands_list` | 🟢 Đọc | Liệt kê hồ sơ thương hiệu + trạng thái bóc | — | ĐỌC bảng `brands` |
+| `brand_profile_get` | 🟢 Đọc | Đọc hồ sơ 1 thương hiệu **kèm câu trích nguồn từng mục**; trả `missing_fields` cho mục chưa có dữ liệu | brand_id | ĐỌC `brands` + `brand_sources` |
+| `brand_ingest` | 🔴 Ghi | Nạp tài liệu cho thương hiệu (link website hoặc dán nội dung) | brand_id, url? \| text? | THÊM dòng `brand_sources` |
+| `brand_extract` | 🔴 Ghi | Bóc hồ sơ từ tài liệu đã nạp; mục nào không kiểm chứng được câu trích sẽ bị loại và báo trong `rejected` | brand_id | SỬA các cột hồ sơ của 1 `brands` |
+| `radar_jobs_list` | 🟢 Đọc | Liệt kê các phiên quét Radar | — | ĐỌC `radar_jobs` |
+| `radar_results` | 🟢 Đọc | Kết quả 1 phiên quét, **đã xếp theo mức vượt trội so với quy mô kênh**, kèm lý do chấm điểm + độ tin cậy | job_id, limit? | ĐỌC `radar_items` |
+| `deconstruct_start` | 🔴 Ghi | Bóc cấu trúc 1 bài (3 giây đầu, mở vấn đề, giữ chân, twist, chốt). Chạy nền 1-3 phút | url \| radar_item_id | THÊM dòng `deconstructions` |
+| `deconstruct_get` | 🟢 Đọc | Xem kết quả bóc cấu trúc; mọi mốc giây đã đối chiếu với độ dài video thật | id | ĐỌC `deconstructions` |
+| `remake_start` | 🔴 Ghi | Viết bản mới cho thương hiệu theo cách triển khai đã bóc. Chạy nền 10-40 giây | brand_id, deconstruction_id, format? | THÊM dòng `remakes` |
+| `remake_get` | 🟢 Đọc | Xem bản viết **kèm kết quả guardrail** | id | ĐỌC `remakes` |
+| `remake_check` | 🔴 Ghi | Kiểm tra một đoạn nội dung theo quy tắc thương hiệu (bê nguyên văn / từ cấm / chế công dụng) | id, draft? | SỬA `guardrailJson` của 1 `remakes` |
 
 Ghi chú chấm điểm: tổng = `do_nong + do_cham + do_hop_truc + tuoi_tho` (tối đa 20).
 `≥ queue_min (16)` → **Nên làm** (queued); `12–15` → **Kho ý tưởng** (idea_bank); `<12` hoặc
 `dinh_nhom_cam=true` → **Loại** (rejected). `do_an_toan` là **cổng an toàn**, không cộng tổng.
 
 ---
+
+## 2b. Vì sao hồ sơ thương hiệu hay bị "thiếu" — và đó là đúng
+
+Hồ sơ thương hiệu tuân nguyên tắc P1 (`docs/PRD.md` §2): **thông tin nào điền vào cũng phải chỉ ra được lấy từ đâu trong tài liệu; không tìm thấy thì để thiếu, không bịa cho đủ.**
+
+Cơ chế cưỡng chế (nằm ở `server/services/brand-extract.ts`, KHÔNG phụ thuộc lời dặn trong prompt):
+1. Model trả JSON kèm câu trích cho từng mục.
+2. Server **đối chiếu ngược từng câu trích với văn bản gốc đã lưu**.
+3. Câu nào không tìm thấy → vứt. Mục nào mất hết câu trích → để trống, và ghi lý do vào `rejected`.
+
+Vì khớp khá chặt nên **câu model tự viết lại (paraphrase) cũng bị loại** — chỉ câu sao y nguyên văn mới được nhận. Đây là chủ ý.
+
+Khi gọi `brand_profile_get`, các mục trong `missing_fields` là **chưa có dữ liệu thật**. Claude **không được tự suy đoán điền thay** — hãy gọi `brand_ingest` nạp thêm tài liệu rồi `brand_extract` lại.
+
+---
+
+
+### Lưu ý khi đọc kết quả Radar
+
+Điểm trả về ở **thang 100**, xếp theo mức bài đó vượt trội so với **quy mô của chính kênh đăng nó** — không phải theo lượt thích tuyệt đối. Một kênh 2.000 người theo dõi có bài 8.000 lượt thích sẽ xếp trên kênh 14 triệu người theo dõi có bài 6.000 lượt thích.
+
+`confidence` cho biết điểm đáng tin tới đâu:
+- `low` — mới có số liệu quét sơ bộ (thiếu lượt thích / người theo dõi). Chỉ nên tham khảo.
+- `medium` — có một trong hai mốc so sánh.
+- `high` — đủ cả mốc kênh lẫn quy mô người theo dõi.
+
+Trường `reasons` giải thích điểm đến từ đâu. **Đừng bỏ qua `confidence` khi tư vấn cho người dùng** — một bài `low` điểm cao có thể chỉ là ăn may do thiếu dữ liệu.
+
+
+### Guardrail — vì sao bản viết bị chặn
+
+Mọi bản remake đều kèm `guardrailJson`. **`passed: false` nghĩa là còn lỗi mức chặn — không được đem dùng khi chưa sửa.**
+
+Bốn thứ được kiểm (cưỡng chế bằng code ở `server/services/guardrail.ts`, không bằng lời dặn trong prompt):
+
+| Mã | Mức | Bắt cái gì |
+|---|---|---|
+| `copied_text` | chặn | Trùng **từ 7 từ liên tiếp trở lên** với lời thoại bài gốc — bê nguyên văn, không phải học cách triển khai |
+| `unverified_claim` | chặn | Câu khẳng định mạnh ("cam kết", "100%", "tốt nhất"…) không khớp công dụng nào trong hồ sơ thương hiệu |
+| `banned_term` | chặn | Dùng từ thương hiệu đã dặn tránh (bắt được cả khi viết không dấu) |
+| `wrong_addressing` | nhắc | Không thấy cách xưng hô quen thuộc của thương hiệu |
+
+Lớp phòng vệ đầu tiên nằm ở chỗ khác: prompt viết lại **chỉ nhận công thức triển khai**, không bao giờ nhận nguyên văn bài gốc — model không đọc được câu chữ gốc thì không thể chép lại. Việc đo trùng lặp là lớp thứ hai.
 
 ## 3. Ranh giới quyền — MCP LÀM ĐƯỢC gì / KHÔNG làm được gì
 

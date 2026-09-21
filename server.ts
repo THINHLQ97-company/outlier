@@ -7,13 +7,16 @@ import { registerAuthRoutes } from "./server/routes/auth.routes";
 import { registerFileRoutes } from "./server/routes/files.routes";
 import { registerCharacterRoutes } from "./server/routes/characters.routes";
 import { registerSignalRoutes } from "./server/routes/signals.routes";
-import { registerScriptRoutes } from "./server/routes/scripts.routes";
 import { registerImageRoutes } from "./server/routes/images.routes";
 import { registerPostRoutes } from "./server/routes/posts.routes";
 import { registerUserRoutes } from "./server/routes/users.routes";
 import { registerAssetRoutes } from "./server/routes/assets.routes";
 import { registerStudioRoutes } from "./server/routes/studio.routes";
 import { registerStyleRoutes } from "./server/routes/styles.routes";
+import { registerBrandRoutes } from "./server/routes/brands.routes";
+import { registerRadarRoutes } from "./server/routes/radar.routes";
+import { registerDeconstructRoutes } from "./server/routes/deconstruct.routes";
+import { registerRemakeRoutes } from "./server/routes/remakes.routes";
 import { registerGalleryRoutes } from "./server/routes/gallery.routes";
 import { registerRagRoutes } from "./server/routes/rag.routes";
 import { registerMcpOAuthRoutes } from "./server/routes/mcp-oauth.routes";
@@ -53,7 +56,6 @@ async function startServer() {
   registerSignalRoutes(app);
 
   // ===== SCRIPTS (Step 5) — DỊCH =====
-  registerScriptRoutes(app);
 
   // ===== IMAGES (Step 5) — VẼ (generate + text-overlay + submit to DUYỆT) =====
   registerImageRoutes(app);
@@ -72,6 +74,18 @@ async function startServer() {
 
   // ===== STYLES — thư viện phong cách vẽ (ảnh tham chiếu + mô tả JSON) =====
   registerStyleRoutes(app);
+
+  // Brand Profile — hồ sơ thương hiệu có trích dẫn nguồn (docs/PRD.md §4 J1)
+  registerBrandRoutes(app);
+
+  // Radar — tìm bài đang bật lên trong ngách (docs/PRD.md §4 J2)
+  registerRadarRoutes(app);
+
+  // Bóc cấu trúc bài — vì sao bài đó giữ được người xem (docs/PRD.md §4 J3)
+  registerDeconstructRoutes(app);
+
+  // Viết lại cho brand + guardrail (docs/PRD.md §4 J4)
+  registerRemakeRoutes(app);
 
   // ===== GALLERY — thư viện ảnh + lưu ảnh thành asset =====
   registerGalleryRoutes(app);

@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# công cụ dev cục bộ (yt-dlp venv)
+.tools/

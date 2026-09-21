@@ -1,108 +1,180 @@
-# ARCH.md — fanpage-content-create
+# ARCH: Outlier
 
-## 1. Stack
+**Cập nhật**: 2026-09-18 · **Thay thế**: `docs/archive/ARCH-fanpage-engine-v1.md`
 
-- **Client**: React 19 + Vite 6 + TypeScript + Tailwind CSS v4 (`@tailwindcss/vite`),
-  `react-router-dom` v7 cho routing (SignalsQueue → ScriptEditor → ImageStudio →
-  ApprovalQueue → ReadyToPost).
-- **Server**: Express 4 (`server.ts`) — serve Vite middleware ở dev, `dist/` ở
-  prod. Cùng process phục vụ cả API (`/api/*`) và static assets.
-- **DB**: Postgres + Drizzle ORM (`server/db/schema.ts`, migration versioned tại
-  `server/db/migrations/`, chạy tự động lúc boot qua `server/db/migrate.ts`).
-- **Deploy**: Docker single-container (`Dockerfile`) qua Coolify, hoặc
-  `docker-compose.yml` (app + Postgres) cho local dev/demo.
+---
 
-Scaffold tái dụng cấu trúc `share-projects/marcow-crop` (build setup, auth
-pattern HMAC token, service layer `authHeaders()+fetch+asError()`) — không
-copy business logic riêng của marcow (characters/generations/meme_templates
-khác domain).
+## 1. Quyết định kiến trúc: gộp về MỘT app
 
-## 2. Data model (`server/db/schema.ts`)
+Theo chốt của owner: gộp `clipchatbot` (Python/FastAPI/Celery) vào app này (Node/Express/React) thành **một codebase, một container, một deploy**.
 
-| Bảng | Vai trò |
+### Gộp theo hướng nào — và vì sao
+**Node làm chủ, port khối media sang Node.** Lý do: Node đang giữ phần khó thay thế nhất — UI, auth, OAuth 2.1, MCP server. Port ngược (Node→Python) sẽ phải viết lại cả 3 thứ đó.
+
+| Thành phần clipchatbot | Cách đưa sang Node |
 |---|---|
-| `users` | Tài khoản nội bộ (username/password → HMAC token 7 ngày) |
-| `signals` | Tín hiệu THU (market_radar / group_insights / manual) + kết quả LỌC (`score_json`, `status`) |
-| `rubric_versions` | Version rubric (weights/thresholds), lịch sử — không xoá, chỉ tắt `isActive` khi tạo version mới |
-| `scripts` | 3 phương án kịch bản/tín hiệu (DỊCH), `selected_variant` sau khi người vận hành chọn |
-| `characters` | Dàn nhân vật cố định (reference text, `reference_image_url` để trống tới khi có API key thật) |
-| `posts` | Ảnh biến thể (VẼ) → overlay/ảnh cuối → trạng thái DUYỆT/ĐĂNG (`status` state machine, xem CLAUDE.md §2) |
+| FFmpeg | Đang gọi `subprocess` — Node gọi `child_process` y hệt. **Port thẳng**. Đã kiểm chứng: `ffmpeg 5.1` của Debian có đủ `zoompan`, `xfade`, `sidechaincompress`, `subtitles`, `atempo` → **không cần tải build 8.1 từ GitHub** như clipchatbot đang làm |
+| yt-dlp | Là binary CLI standalone → Node gọi CLI. **Port thẳng** |
+| Whisper STT | Gọi OpenAI REST API. **Port thẳng** |
+| Imagen 4 / Veo 3.1 | Vertex AI REST. **Port thẳng** |
+| Celery + Redis | Thay bằng **pg-boss** (job queue trên Postgres sẵn có) → **bỏ được Redis** |
+| **f2** (Douyin) | ⚠️ Chỉ có bản Python, không có tương đương Node |
 
-Quan hệ: `scripts.signal_id → signals.id`, `posts.script_id → scripts.id`
-(cascade delete). `characters` độc lập (không FK), dùng làm reference text khi
-build prompt VẼ (`server/routes/images.routes.ts` lọc theo `AXES[truc].leadCharacters`).
+### Điểm kẹt duy nhất: f2
+f2 tự ký X-Bogus/msToken cho Douyin — viết lại bằng Node là việc lớn và dễ vỡ mỗi lần Douyin đổi thuật toán.
 
-## 3. Pipeline THU → LỌC → DỊCH → VẼ → DUYỆT → ĐĂNG
+**Giải pháp**: giữ **một sidecar Python duy nhất** — script CLI nhỏ (`media/douyin_fetch.py`) nhận JSON qua stdin, trả JSON qua stdout, Node gọi bằng `child_process`. Vẫn là 1 app / 1 repo / 1 container (image có sẵn `python3` + `f2`), không phải 1 service riêng.
+
+> Đây là đánh đổi có ý thức: giữ ~150 dòng Python để khỏi phải bảo trì phần chống bot của Douyin.
+
+---
+
+## 2. Sơ đồ
 
 ```
-[THU]  server/services/market-radar.client.ts  ─┐
-       server/services/group-insights.client.ts ┴→ POST /api/signals/sync → signals (status=new)
-                                                     + form nhập tay (POST /api/signals, FR1.3)
-
-[LỌC]  GET /api/signals/:id/suggest-score (rule-based, server/services/rubric-scoring.ts)
-       → người vận hành sửa tay → POST /api/signals/:id/score
-       → server tự route status: queued (≥16) | idea_bank (12-15) | rejected (<12 hoặc dính nhóm ⛔)
-
-[DỊCH] POST /api/scripts/generate (signalId, truc, formatMeme)
-       → server/services/social-proxy.ts::generateScriptVariants (Gemini qua social backend,
-         fallback demo template nếu thiếu SOCIAL_BACKEND_URL)
-       → 3 phương án lưu vào scripts.content_json
-       → POST /api/scripts/:id/select (variantIndex) chốt 1 phương án
-
-[VẼ]   POST /api/images/generate (scriptId)
-       → server/services/social-proxy.ts::generateImageVariants (fallback SVG placeholder demo)
-       → tạo posts (status=draft, 2 image_variants)
-       → POST /api/posts/:id/select-image → POST /api/posts/:id/overlay
-         (client Canvas export PNG kèm watermark, xem TextOverlayEditor.tsx)
-       → POST /api/posts/:id/submit (status → cho_duyet, cần finalImageUrl)
-
-[DUYỆT] Kanban 3 cột (ApprovalQueue.tsx) đọc GET /api/posts (lọc client-side theo status)
-       → checklist 14 mục (server/routes/posts.routes.ts re-check server-side trước khi approve)
-       → approve (→ san_sang_dang) | request-edit (→ sua_thoai) | reject (→ rot, bắt buộc lý do)
-
-[ĐĂNG] ReadyToPost.tsx: tải ảnh (finalImageUrl là data URL PNG) + copy caption
-       → thủ công đăng Facebook → POST /api/posts/:id/mark-posted (fbPostUrl) → status=da_dang
+┌──────────────────────────────────────────────────────────────┐
+│  OUTLIER — 1 container                                        │
+│                                                               │
+│  React 19 + Vite 6  ──────────────────────┐                  │
+│                                            │                  │
+│  Express 4 (server.ts)                     │                  │
+│  ├─ /api/auth      Google SSO + local     │                  │
+│  ├─ /api/brands    Brand Profile (MỚI)    │                  │
+│  ├─ /api/radar     Quét + ranking  (MỚI)  │                  │
+│  ├─ /api/decon     Bóc cấu trúc    (MỚI)  │                  │
+│  ├─ /api/remakes   Remake+guardrail(MỚI)  │                  │
+│  ├─ /api/studio    Sinh ảnh        (có)   │                  │
+│  ├─ /api/signals   Tín hiệu+rubric (có)   │                  │
+│  ├─ /api/media     Tải/render video(PORT) │                  │
+│  └─ /api/mcp-signals  MCP JSON-RPC (có)   │                  │
+│                                            │                  │
+│  pg-boss worker (cùng process hoặc tách)  │                  │
+│  ├─ job: brand_ingest                      │                  │
+│  ├─ job: radar_scan → radar_enrich         │                  │
+│  ├─ job: deconstruct                       │                  │
+│  └─ job: render_video                      │                  │
+│                                            │                  │
+│  Sidecar: python3 media/douyin_fetch.py (f2)                 │
+│  Binary:  ffmpeg 8.1, yt-dlp                                 │
+└───────────────┬──────────────────────────────────────────────┘
+                │
+     ┌──────────┴──────────┬──────────────┬─────────────┐
+  Postgres              Gemini/Vertex   Apify      Higgsfield
+  (data + pg-boss)      Imagen/Veo      (metrics)  (Phase 2)
 ```
 
-## 4. Tích hợp ngoài & chế độ demo/fallback
+---
 
-Tất cả service gọi hệ thống ngoài đều theo pattern: thiếu cấu hình →
-`console.warn` + trả demo/placeholder data, KHÔNG throw crash app (xem
-`.env.example` cho danh sách biến, và CLAUDE.md §3).
+## 3. Luồng Radar — f2 quét list, Apify lấy metrics
 
-| Service | File | Khi thiếu env |
+Theo chốt của owner (tối ưu chi phí):
+
+```
+1. radar_scan   — f2 (Douyin) / yt-dlp (TikTok, YT, IG) quét rộng
+                  → danh sách ứng viên + metadata cơ bản. RẺ.
+2. lọc sơ bộ    — bỏ bài quá cũ, sai ngách, trùng
+3. radar_enrich — chỉ gọi Apify cho TOP N ứng viên
+                  → views, likes, comments, shares, follower_count. TỐN PHÍ.
+4. baseline     — tính/cập nhật median của từng kênh (channel_baselines)
+5. rank         — outperform_score, đánh dấu low_confidence nếu thiếu baseline
+```
+
+Ngân sách Apify kiểm soát bằng `RADAR_ENRICH_LIMIT` (mặc định 50 item/phiên).
+
+---
+
+## 4. Ba engine video — phân vai
+
+| Engine | Dùng khi | Chi phí |
 |---|---|---|
-| Market Radar MCP | `server/services/market-radar.client.ts` | Trả 2 tín hiệu demo tĩnh |
-| Group Insights MCP | `server/services/group-insights.client.ts` | Trả 1 cluster demo tĩnh |
-| social (text-gen) | `server/services/social-proxy.ts::generateScriptVariants` | Template 3 phương án demo, `isDemo=true` |
-| social (image-gen) | `server/services/social-proxy.ts::generateImageVariants` | SVG placeholder tự sinh (không phụ thuộc mạng ngoài), `isDemo=true` |
+| **FFmpeg 8.1** | Luôn: ghép, xfade, phụ đề, BGM ducking (`sidechaincompress`), Ken Burns (`zoompan`) | Miễn phí |
+| **Gemini Imagen 4 Fast + Veo 3.1 Lite** | Mặc định: ảnh, footage, chuyển động nhẹ | ~$0.04/ảnh |
+| **Higgsfield** | Phase 2: cảnh cần chất lượng điện ảnh | Kling 3.0 ~$1.12/10s; Kling 2.6 ~$0.70/10s |
 
-## 5. Lưu trữ ảnh — giới hạn đã biết (known limitation)
+**Higgsfield**: base `https://api.higgsfield.ai`, header `Authorization: Key <id>:<secret>`, submit → poll `status_url` / webhook.
+⚠️ Output chỉ giữ **~7 ngày** → job render phải tải file về lưu ngay, tuyệt đối không lưu URL làm nguồn.
 
-iMVP **không có object storage riêng** (khác `server/storage.ts` của
-marcow-crop) — ảnh cuối (`posts.final_image_url`) lưu trực tiếp dạng base64
-data URL trong cột `text`. Chấp nhận được cho quy mô nội bộ <10 người dùng,
-tần suất ~1 bài/ngày (PRD §2 Scale), nhưng **sẽ phình DB nhanh nếu volume tăng**.
-Nếu go-live thật với volume cao hơn, cân nhắc thêm storage layer (S3/volume,
-theo pattern `server/storage.ts` của marcow-crop) trước khi mở rộng.
+---
 
-## 6. Giới hạn khác đã biết (chưa xử lý trong iMVP)
+## 4b. Việc chạy lâu — BẮT BUỘC chạy nền
 
-- **"Sửa thoại" (sua_thoai) chưa resume đúng draft cũ**: bấm "Mở lại VẼ để sửa"
-  điều hướng sang Image Studio bằng `scriptId`, nhưng generate lại sẽ tạo
-  **posts row MỚI** (không patch lại row `sua_thoai` cũ). Row cũ vẫn nằm ở cột
-  "Sửa thoại" trong kanban như lịch sử, không tự chuyển trạng thái. Chấp nhận
-  được cho demo iMVP; cần route `PATCH` resume nếu muốn vòng lặp J4→J3 mượt hơn.
-- **Rule-based scoring** (`suggestScoreForSignal`) là heuristic đơn giản (đếm từ
-  khóa glossary + tuổi tín hiệu), CHƯA gọi LLM thật (FR2.3 cho phép "rule-based
-  + LLM" — phần LLM để Phase kế tiếp khi có `SOCIAL_BACKEND_URL` ổn định).
-- **De-dupe tín hiệu THU** chỉ theo cặp `(title, radar)` — best-effort, không có
-  unique constraint ở DB.
+Quét Radar mất 30-90 giây, bổ sung số liệu 20-60 giây. Giữ request HTTP mở lâu như
+vậy sẽ **bị Traefik/Coolify ngắt giữa chừng** trong môi trường thật, dù local chạy tốt.
 
-## 7. Auth
+Quy tắc: endpoint khởi động việc dài **trả về ngay** (`status` + `polling: true`),
+việc chạy nền, client gọi lại `GET .../:id` để theo dõi. Đo thực tế sau khi sửa:
+`POST /api/radar` phản hồi **0,093 giây** thay vì 30-90 giây.
 
-HMAC token 7 ngày (`server/auth-shared.ts`, pattern copy từ marcow-crop):
-`POST /api/login` → `{token}` lưu `localStorage`, gửi qua header
-`Authorization: Bearer <token>`. `requireAuth` re-verify chữ ký + hạn dùng mỗi
-request; `requireAdmin` (chưa dùng route nào trong iMVP — không có phân quyền
-admin/member khác biệt về nghiệp vụ, chỉ giữ sẵn cột `role` để mở rộng sau).
+Vì request đã trả về trước khi việc xong, **mọi lỗi phải được ghi vào bản ghi
+trong DB** (`status="error"` + `errorMessage`) — không còn chỗ nào khác để báo.
+
+---
+
+## 4c. Chi phí Apify — số đo thực tế (2026-09-18)
+
+| Hạng mục | Giá trị |
+|---|---|
+| Đơn giá | **~$0,0035 / kết quả** (đo: 2 kết quả = $0,00700) |
+| Cách tính | PAY_PER_EVENT — theo **số kết quả**, KHÔNG theo lượt chạy |
+| Gói tài khoản | STARTER, hạn mức **$29/tháng** |
+
+Hệ quả thiết kế: phanh theo lượt chạy là **chưa đủ** — một lượt xin 1.000 kết quả
+vẫn tốn $3,5. Phải chặn theo cả số kết quả (`APIFY_DAILY_RESULT_BUDGET`, mặc định
+150/ngày ≈ $0,52/ngày ≈ $15,8/tháng).
+
+Tên trường **khác nhau giữa các actor** — đã đối chiếu dataset thật:
+- TikTok (clockworks): `playCount`, `diggCount`, `authorMeta.fans`, `createTimeISO`
+- YouTube (streamers): `viewCount`, `likes`, `numberOfSubscribers`, `channelId`, `date`
+
+---
+
+## 5. MCP — mở rộng từ 8 lên ~18 tool
+
+Giữ nguyên 8 tool hiện có (`signals_*`, `rubric_get`, `characters_list`). Thêm:
+
+```
+brand_ingest        (url|pdf)                   → job_id
+brand_profile_get   (brand_id)                  → profile + evidence từng field
+radar_search        (keyword|competitor, platforms[]) → job_id
+radar_rank          (job_id, top_n)             → list theo outperform_score
+content_deconstruct (video_url|item_id)         → hook_3s, problem_open, beats[], twist, cta
+remake_draft        (source_id, brand_id)       → draft + guardrail_report
+remake_revise       (draft_id, note)            → draft mới + guardrail_report
+video_render        (draft_id, engine)          → job_id
+sheets_export       (draft_ids[], sheet_url)    → kết quả
+job_status          (job_id)                    → tiến độ (dùng chung)
+```
+
+**Nguyên tắc**: việc chạy lâu trả `job_id` ngay, không để MCP call treo. OAuth 2.1 + PKCE đã có, tái dùng nguyên.
+
+---
+
+## 6. Guardrail — chạy ở tầng service, không ở prompt
+
+`server/services/guardrail.ts`, chạy sau mỗi lần sinh remake:
+
+| Mã | Kiểm tra | Hành động khi vi phạm |
+|---|---|---|
+| P1 | Field brand không có evidence | Không ghi field, hiện "chưa có dữ liệu" |
+| P2 | n-gram overlap ≥7 từ liên tiếp với transcript gốc | Chặn export, chỉ rõ đoạn trùng |
+| P3 | Claim sản phẩm không khớp brand profile | Gắn cờ `unverified`, chặn export |
+| P4 | Dùng từ cấm / sai xưng hô | Chặn export, chỉ rõ chỗ sai |
+
+Trả `guardrail_report` kèm mọi draft — cả qua UI lẫn qua MCP.
+
+---
+
+## 7. Thay đổi schema
+
+Bảng mới: `brands`, `brand_sources`, `radar_jobs`, `radar_items`, `channel_baselines`, `deconstructions`, `remakes`.
+Bảng bỏ: `scripts` (+ `scripts.routes.ts`) — route mồ côi, xác nhận 0 chỗ gọi trong `src/`.
+Migration: drizzle-kit forward-only, chạy tự động lúc boot (`server/db/migrate.ts`).
+
+---
+
+## 8. Giới hạn đã biết
+
+- Ảnh bài viết vẫn lưu **base64 trong Postgres** (`files` table) — bền qua redeploy Coolify nhưng sẽ phình DB khi scale. Cần chuyển sang object storage khi vượt ~5GB.
+- Test coverage hiện **0%** — phải có test cho guardrail và công thức outperform trước khi productize.
+- 2 MCP nội bộ (Market Radar, Group Insights) **chưa có token thật** → luôn fallback demo data.
+- Douyin scraping phụ thuộc cookie tài khoản thật; cookie hết hạn → f2 fail, cần cơ chế cảnh báo.
