@@ -41,9 +41,14 @@ const OPTIONAL_ENV_KEYS = [
   "FB_PAGE_ID",
   "FB_ACCESS_TOKEN",
 ];
+// Host còn bắt các biến *_URL phải là URL hợp lệ, nên sentinel cho chúng là
+// https://off.invalid/ (.invalid là TLD dành riêng, RFC 2606 — không phân giải).
+const OFF_URL = "https://off.invalid";
 for (const key of OPTIONAL_ENV_KEYS) {
-  const value = (process.env[key] || "").trim();
-  if (value === "" || value.toLowerCase() === "off") delete process.env[key];
+  const value = (process.env[key] || "").trim().toLowerCase();
+  if (value === "" || value === "off" || value.startsWith(OFF_URL)) {
+    delete process.env[key];
+  }
 }
 
 // Express serves Vite middleware in dev / dist/ in prod — same pattern as
