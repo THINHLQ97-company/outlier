@@ -98,7 +98,7 @@ export default function RemakeImages({
                 ))}
               </select>
 
-              <button onClick={handleGenerate} disabled={busy} className="ds-btn ds-btn-primary">
+              <button type="button" onClick={handleGenerate} disabled={busy} className="ds-btn ds-btn-primary">
                 {busy ? (
                   <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
                 ) : (
@@ -107,7 +107,7 @@ export default function RemakeImages({
                 {images.length > 0 ? "Vẽ thêm phương án" : "Vẽ ảnh"}
               </button>
 
-              <button
+              <button type="button"
                 onClick={() => setShowPrompt((v) => !v)}
                 className="ds-btn ds-btn-ghost ds-btn-sm"
                 title="Tự tả ảnh thay vì để công cụ tự đọc bài rồi tả"
@@ -191,7 +191,7 @@ export default function RemakeImages({
                               <Check className="w-3 h-3" aria-hidden="true" /> Đang chọn
                             </span>
                           ) : (
-                            <button onClick={() => handleSelect(img.url)} className="ds-btn ds-btn-ghost ds-btn-sm">
+                            <button type="button" onClick={() => handleSelect(img.url)} className="ds-btn ds-btn-ghost ds-btn-sm">
                               Chọn
                             </button>
                           )}

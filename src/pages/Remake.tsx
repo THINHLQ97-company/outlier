@@ -185,8 +185,13 @@ export default function Remake() {
     });
   }
 
-  async function loadAndWatch(id: string) {
-    setDetailLoading(true);
+  /**
+   * `silent` dùng khi chỉ làm mới sau một thao tác (vẽ xong ảnh, chọn ảnh):
+   * bật cờ loading lúc đó sẽ thay cả khối chi tiết bằng spinner, cuốn người
+   * dùng về đầu và đóng mọi thứ họ đang mở.
+   */
+  async function loadAndWatch(id: string, opts: { silent?: boolean } = {}) {
+    if (!opts.silent) setDetailLoading(true);
     setDetailError(null);
     try {
       const r = await getRemake(id);
@@ -195,9 +200,9 @@ export default function Remake() {
       if (r.status === "pending" || r.status === "writing") startWatching(id);
     } catch (e: any) {
       setDetailError(e?.message || "Không tải được bản viết.");
-      setDetail(null);
+      if (!opts.silent) setDetail(null);
     } finally {
-      setDetailLoading(false);
+      if (!opts.silent) setDetailLoading(false);
     }
   }
 
@@ -429,7 +434,7 @@ export default function Remake() {
                 onRevise={handleRevise}
                 revising={revising}
                 reviseError={reviseError}
-                onChanged={() => loadAndWatch(detail.id)}
+                onChanged={() => loadAndWatch(detail.id, { silent: true })}
               />
             </>
           ) : detailLoading ? (

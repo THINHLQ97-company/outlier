@@ -92,16 +92,25 @@ export default function Brands() {
     reloadList();
   }, []);
 
-  async function reloadDetail(id: string) {
-    setDetailLoading(true);
+  /**
+   * Tải lại hồ sơ.
+   *
+   * `silent` dùng khi màn hình đã có nội dung và chỉ cần làm mới sau một thao
+   * tác: bật cờ loading lúc đó sẽ thay cả khối chi tiết bằng spinner, khiến mọi
+   * thứ người dùng đang mở (khu nhân vật, ô nhập token) bị đóng lại giữa chừng.
+   */
+  async function reloadDetail(id: string, opts: { silent?: boolean } = {}) {
+    if (!opts.silent) setDetailLoading(true);
     setDetailError(null);
     try {
       setDetail(await getBrand(id));
     } catch (e: any) {
       setDetailError(e?.message || "Không tải được thương hiệu.");
-      setDetail(null);
+      // Lỗi khi đang làm mới thì giữ nguyên nội dung cũ — xoá đi là người dùng
+      // mất luôn thứ đang xem chỉ vì một lần gọi hỏng.
+      if (!opts.silent) setDetail(null);
     } finally {
-      setDetailLoading(false);
+      if (!opts.silent) setDetailLoading(false);
     }
   }
 
@@ -218,7 +227,7 @@ export default function Brands() {
                 setDetail((prev) => (prev ? { ...prev, ...row } : prev));
                 setBrands((prev) => prev.map((b) => (b.id === row.id ? { ...b, ...row } : b)));
               }}
-              onSourcesChanged={() => reloadDetail(detail.id)}
+              onSourcesChanged={() => reloadDetail(detail.id, { silent: true })}
               onExtracted={(row) => {
                 setDetail((prev) => (prev ? { ...prev, ...row } : prev));
                 setBrands((prev) => prev.map((b) => (b.id === row.id ? { ...b, ...row } : b)));

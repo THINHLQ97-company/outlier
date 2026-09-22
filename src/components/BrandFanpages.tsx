@@ -185,7 +185,7 @@ export default function BrandFanpages({
               onKeyDown={(e) => e.key === "Enter" && handleAdd()}
               aria-label="Link trang của thương hiệu"
             />
-            <button onClick={handleAdd} disabled={adding || !newUrl.trim()} className="ds-btn ds-btn-primary">
+            <button type="button" onClick={handleAdd} disabled={adding || !newUrl.trim()} className="ds-btn ds-btn-primary">
               {adding ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Plus className="w-4 h-4" aria-hidden="true" />}
               Thêm trang
             </button>
@@ -264,7 +264,7 @@ export default function BrandFanpages({
                       <div className="flex items-center gap-2 shrink-0">
                         {connected ? (
                           <>
-                            <button onClick={() => handleSync(fp)} disabled={busy} className="ds-btn ds-btn-primary ds-btn-sm">
+                            <button type="button" onClick={() => handleSync(fp)} disabled={busy} className="ds-btn ds-btn-primary ds-btn-sm">
                               {busy ? (
                                 <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
                               ) : (
@@ -272,7 +272,7 @@ export default function BrandFanpages({
                               )}
                               Quét bài về
                             </button>
-                            <button
+                            <button type="button"
                               onClick={() => handleDisconnect(fp)}
                               disabled={busy}
                               className="ds-btn ds-btn-ghost ds-btn-sm"
@@ -282,14 +282,14 @@ export default function BrandFanpages({
                             </button>
                           </>
                         ) : (
-                          <button
+                          <button type="button"
                             onClick={() => setTokenFor(tokenFor === fp.id ? null : fp.id)}
                             className="ds-btn ds-btn-secondary ds-btn-sm"
                           >
                             <Link2 className="w-3.5 h-3.5" aria-hidden="true" /> Nối Meta
                           </button>
                         )}
-                        <button
+                        <button type="button"
                           onClick={() => setCharsFor(charsFor === fp.id ? null : fp.id)}
                           className="ds-btn ds-btn-ghost ds-btn-sm"
                           title="Gán nhân vật đại diện cho trang này"
@@ -297,7 +297,7 @@ export default function BrandFanpages({
                           <Users className="w-3.5 h-3.5" aria-hidden="true" />
                           Nhân vật{(fp.characterIds?.length || 0) > 0 ? ` (${fp.characterIds!.length})` : ""}
                         </button>
-                        <button
+                        <button type="button"
                           onClick={() => handleDelete(fp)}
                           disabled={busy}
                           className="text-xs font-medium text-red-600 hover:bg-red-50 px-2 py-1.5 rounded-lg transition-colors"
@@ -341,7 +341,7 @@ export default function BrandFanpages({
                           onChange={(e) => setPageId(e.target.value)}
                           autoComplete="off"
                         />
-                        <button
+                        <button type="button"
                           onClick={() => handleConnect(fp)}
                           disabled={busy || !token.trim()}
                           className="ds-btn ds-btn-primary ds-btn-sm"
@@ -375,7 +375,7 @@ export default function BrandFanpages({
                             const picked = (fp.characterIds || []).includes(c.id);
                             return (
                               <li key={c.id}>
-                                <button
+                                <button type="button"
                                   onClick={() => toggleCharacter(fp, c.id)}
                                   disabled={busy}
                                   aria-pressed={picked}
