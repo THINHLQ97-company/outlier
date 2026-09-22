@@ -37,6 +37,8 @@ export async function runDeconstructInBackground(id: string, url: string, allowP
       if (!allowPaid) {
         await getDb().update(deconstructions).set({
           status: "error",
+          needsPaid: true,
+          estimatedCostUsd: estimateCostUsd(1).toFixed(3),
           contentKind: platform === "facebook" ? "post" : "video",
           errorMessage:
             `Nội dung ${platform === "facebook" ? "Facebook" : platform === "tiktok" ? "TikTok" : "Instagram"} ` +
@@ -78,6 +80,7 @@ export async function runDeconstructInBackground(id: string, url: string, allowP
 
       await getDb().update(deconstructions).set({
         status: hasContent || post.text ? "ready" : "error",
+        needsPaid: false,
         title: post.text ? post.text.slice(0, 120) : null,
         platform: platform,
         contentKind: post.kind,

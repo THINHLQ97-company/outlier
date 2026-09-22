@@ -15,10 +15,12 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg python3 python3-venv ca-certificates \
  && python3 -m venv /opt/mediatools \
  && /opt/mediatools/bin/pip install --no-cache-dir --upgrade pip yt-dlp \
+ && /opt/mediatools/bin/pip install --no-cache-dir "f2==0.0.1.7" \
  && apt-get purge -y --auto-remove \
  && rm -rf /var/lib/apt/lists/*
 ENV PATH="/opt/mediatools/bin:$PATH" \
-    YTDLP_PATH="/opt/mediatools/bin/yt-dlp"
+    YTDLP_PATH="/opt/mediatools/bin/yt-dlp" \
+    F2_PYTHON="/opt/mediatools/bin/python"
 
 # Install ALL deps (vite + tsx are devDependencies but are needed both to build
 # the client and to run the TypeScript server at runtime).

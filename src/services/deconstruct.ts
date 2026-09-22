@@ -25,6 +25,8 @@ export async function getDeconstruction(id: string): Promise<DeconstructionRow> 
 export interface CreateDeconstructionInput {
   url?: string;
   radarItemId?: string;
+  /** Đồng ý trả phí để lấy nội dung (TikTok/Facebook/Instagram). */
+  allowPaid?: boolean;
 }
 
 // Trả về gần như ngay (status="downloading") — phân tích chạy nền, nơi dùng

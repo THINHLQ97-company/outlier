@@ -474,6 +474,12 @@ export const deconstructions = pgTable("deconstructions", {
 
   status: text("status").notNull().default("pending"), // pending|downloading|analyzing|ready|error
   errorMessage: text("error_message"),
+  /**
+   * true = nội dung này chỉ lấy được bằng dịch vụ có phí. Để giao diện biết mà
+   * hiện nút xác nhận, thay vì bắt nó dò chuỗi trong errorMessage.
+   */
+  needsPaid: boolean("needs_paid").notNull().default(false),
+  estimatedCostUsd: text("estimated_cost_usd"),
 
   /** Loại nội dung — quyết định phân tích bằng cách nào và chỉ số nào có nghĩa. */
   contentKind: text("content_kind").notNull().default("unknown"), // video | post | image | unknown

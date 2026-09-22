@@ -9,3 +9,6 @@ coverage/
 
 # công cụ dev cục bộ (yt-dlp venv)
 .tools/
+
+# cookie đăng nhập — KHÔNG BAO GIỜ commit
+.secrets/

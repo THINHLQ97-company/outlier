@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback} from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Loader2,
@@ -19,8 +19,7 @@ import {
   Megaphone,
   Sparkles,
   PenLine,
-  type LucideIcon,
-} from "lucide-react";
+  type LucideIcon, Coins } from "lucide-react";
 import {
   listDeconstructions,
   getDeconstruction,
@@ -163,6 +162,27 @@ export default function Deconstruct() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeconstructionRow | null>(null);
+  // Nội dung TikTok/Facebook/Instagram chỉ lấy được bằng dịch vụ có phí. Người
+  // dùng phải tự bấm sau khi thấy giá — không bao giờ tự chạy.
+  const [paidBusy, setPaidBusy] = useState(false);
+
+  const handlePaidRetry = useCallback(
+    async (row: DeconstructionRow) => {
+      setPaidBusy(true);
+      setDetailError(null);
+      try {
+        const created = await createDeconstruction({ url: row.sourceUrl, allowPaid: true });
+        await reloadList();
+        setSelectedId(created.id);
+      } catch (e) {
+        setDetailError(e instanceof Error ? e.message : "Không phân tích được.");
+      } finally {
+        setPaidBusy(false);
+      }
+    },
+    [],
+  );
+
   const [deleting, setDeleting] = useState(false);
   const [startingFromRadar, setStartingFromRadar] = useState(false);
 
@@ -401,6 +421,8 @@ export default function Deconstruct() {
                 watchTimedOut={watchTimedOut}
                 onRequestDelete={() => setDeleteTarget(detail)}
                 onRemake={() => navigate(`/remakes?deconstructionId=${detail.id}`)}
+                onPaidRetry={handlePaidRetry}
+                paidBusy={paidBusy}
               />
             </>
           ) : detailLoading ? (
@@ -495,6 +517,8 @@ function DeconstructDetailPanel({
   watchTimedOut,
   onRequestDelete,
   onRemake,
+  onPaidRetry,
+  paidBusy,
 }: {
   row: DeconstructionRow;
   watching: boolean;
@@ -502,6 +526,8 @@ function DeconstructDetailPanel({
   watchTimedOut: boolean;
   onRequestDelete: () => void;
   onRemake: () => void;
+  onPaidRetry?: (row: DeconstructionRow) => void;
+  paidBusy?: boolean;
 }) {
   // row.errorMessage được backend TÁI DÙNG để chở cảnh báo khi status=ready
   // (các mốc bị loại vì không đối chiếu được với độ dài video thật — tính
@@ -565,9 +591,27 @@ function DeconstructDetailPanel({
         ) : null}
 
         {row.status === "error" && row.errorMessage && (
-          <div role="alert" className="ds-alert ds-alert-danger mt-2">
-            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
-            {row.errorMessage}
+          <div
+            role="alert"
+            className={`ds-alert mt-2 ${row.needsPaid ? "ds-alert-warning" : "ds-alert-danger"} flex-col !items-stretch gap-2`}
+          >
+            <span className="flex items-start gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
+              {row.errorMessage}
+            </span>
+            {/* Nội dung TikTok/Facebook/Instagram chỉ lấy được qua dịch vụ có phí.
+                Tuyệt đối không tự chạy — người dùng phải chủ động bấm sau khi thấy giá. */}
+            {row.needsPaid && (
+              <button
+                type="button"
+                onClick={() => onPaidRetry?.(row)}
+                disabled={paidBusy}
+                className="ds-btn ds-btn-primary ds-btn-sm self-start"
+              >
+                <Coins className="w-3.5 h-3.5" aria-hidden="true" />
+                {paidBusy ? "Đang phân tích..." : `Phân tích có phí${row.estimatedCostUsd ? ` (~${row.estimatedCostUsd} USD)` : ""}`}
+              </button>
+            )}
           </div>
         )}
 

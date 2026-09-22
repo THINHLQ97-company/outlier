@@ -485,6 +485,9 @@ export interface DeconstructionRow {
   title?: string | null;
   durationSec?: number | null;
   status: DeconstructionStatus;
+  /** true = nội dung chỉ lấy được bằng dịch vụ có phí, cần người dùng đồng ý. */
+  needsPaid?: boolean;
+  estimatedCostUsd?: string | null;
   errorMessage?: string | null; // ready: cảnh báo (mốc bị loại) · error: lỗi thật
   transcript?: string | null;
   structure?: DeconstructedStructure | null;
