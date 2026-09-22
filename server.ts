@@ -25,6 +25,7 @@ import { registerGalleryRoutes } from "./server/routes/gallery.routes";
 import { registerRagRoutes } from "./server/routes/rag.routes";
 import { registerMcpOAuthRoutes } from "./server/routes/mcp-oauth.routes";
 import { registerMcpSignalsRoutes } from "./server/routes/mcp-signals.routes";
+import { registerTransferRoutes } from "./server/routes/transfer.routes";
 
 dotenv.config();
 
@@ -62,7 +63,7 @@ async function startServer() {
   const app = express();
   const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3001;
 
-  app.use(express.json({ limit: "10mb" }));
+  app.use(express.json({ limit: "64mb" })); // 64mb: lô chuyển dữ liệu có ảnh base64
 
   // Run DB migrations on boot (no-op + warning if DATABASE_URL is unset, see
   // server/db/migrate.ts) so the app keeps serving even without Postgres yet.
@@ -86,6 +87,7 @@ async function startServer() {
 
   // ===== AUTH (Step 3) =====
   registerAuthRoutes(app);
+  registerTransferRoutes(app);
 
   // ===== FILES — serve ảnh reference nhân vật lưu ở storage nội bộ =====
   registerFileRoutes(app);

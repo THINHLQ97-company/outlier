@@ -293,6 +293,35 @@ export interface BrandField<T = string> {
   note?: string;
 }
 
+// Một ngữ vực = một cách nói gắn với một tình huống cụ thể. Tách riêng thay vì
+// nhét hết vào toneOfVoice, vì phần lớn trang có đúng hai giọng (nói với khách
+// / nói với khán giả) và model cần biết dùng giọng nào lúc nào.
+export interface BrandRegister {
+  name: string;       // vd "ngọt với khách"
+  when: string;       // dùng khi nào — vd "trong ảnh chat với khách"
+  pronouns?: string;  // xưng hô — vd "em – anh"
+  example?: string;   // một câu mẫu
+}
+
+export interface BrandBehaviorRules {
+  always: string[];
+  never: string[];
+}
+
+export interface BrandVisualIdentity {
+  template?: string;    // khuôn ảnh cứng, vd "ảnh chat trên nền thanh địa chỉ"
+  palette?: string[];   // màu chủ đạo
+  mustHave?: string[];  // thứ luôn phải có trong ảnh
+  doNots?: string[];    // thứ không bao giờ xuất hiện
+}
+
+export interface BrandExample {
+  kind: "caption" | "comment" | "inbox" | "post" | "script";
+  text: string;
+  register?: string;  // khớp BrandRegister.name
+  note?: string;      // vì sao mẫu này đúng giọng
+}
+
 export const brands = pgTable("brands", {
   id: uuid("id").primaryKey().defaultRandom(),
   owner: text("owner").notNull(),
@@ -320,6 +349,34 @@ export const brands = pgTable("brands", {
   /** Nên làm gì / tránh làm gì khi bắt trend. */
   trendDos: jsonb("trend_dos").$type<BrandField<string[]> | null>(),
   trendDonts: jsonb("trend_donts").$type<BrandField<string[]> | null>(),
+
+  // --- Nhân vật của trang (chi tiết hơn tính cách) ---
+  // Những thứ dưới đây trả lời câu "trang này là ai, làm gì, không làm gì" —
+  // đủ cụ thể để một model lạ viết đúng giọng ngay lần đầu mà không phải đoán.
+
+  /** Trang tồn tại để làm gì, trong một câu. Ví dụ: "sân sau của Mắt Bão, bán
+   *  tên miền bằng trò đố đọc lệch". Đây là thứ đầu tiên MCP đọc. */
+  pageRole: jsonb("page_role").$type<BrandField<string> | null>(),
+
+  /** Ngữ vực: cùng một tính cách nhưng đổi cách nói theo tình huống. Giữ có
+   *  biên — mỗi ngữ vực nói rõ dùng KHI NÀO và xưng hô ra sao. */
+  registers: jsonb("registers").$type<BrandField<BrandRegister[]> | null>(),
+
+  /** Luôn làm / không bao giờ làm. Tách khỏi bannedTerms vì đây là HÀNH VI,
+   *  không phải từ cấm: "không tự nói ra tầng nghĩa bậy" không chặn được bằng
+   *  danh sách từ. */
+  behaviorRules: jsonb("behavior_rules").$type<BrandField<BrandBehaviorRules> | null>(),
+
+  /** Câu cửa miệng — thứ khiến người đọc nhận ra ngay là trang nào. */
+  catchphrases: jsonb("catchphrases").$type<BrandField<string[]> | null>(),
+
+  /** Nhận diện hình ảnh: khuôn ảnh cứng, màu, và những gì không được xuất hiện.
+   *  Dùng khi sinh ảnh — thiếu phần này thì ảnh ra "đúng nội dung, sai trang". */
+  visualIdentity: jsonb("visual_identity").$type<BrandField<BrandVisualIdentity> | null>(),
+
+  /** Bài mẫu đã được chủ trang duyệt là "đúng giọng". Vài ví dụ thật có sức
+   *  nặng hơn nhiều dòng mô tả tính cách. */
+  fewShotExamples: jsonb("few_shot_examples").$type<BrandField<BrandExample[]> | null>(),
 
   ingestStatus: text("ingest_status").notNull().default("empty"), // empty | running | ready | error
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -671,6 +728,18 @@ export const brandFanpages = pgTable("brand_fanpages", {
   note: text("note"),
 
   isPrimary: boolean("is_primary").notNull().default(false),
+
+  // --- Kết nối Meta (chỉ với page mình quản lý) ---
+  // Có token thì đọc được bài của chính page miễn phí và đầy đủ qua Graph API,
+  // khỏi phải trả tiền cho Apify để đọc page của chính mình.
+  metaPageId: text("meta_page_id"),
+  /** Page Access Token đã mã hoá — xem server/services/meta-token.ts. */
+  metaTokenEnc: text("meta_token_enc"),
+  metaConnectedAt: timestamp("meta_connected_at", { withTimezone: true }),
+  metaLastSyncAt: timestamp("meta_last_sync_at", { withTimezone: true }),
+  /** Số bài lấy về ở lần quét gần nhất — để biết có đáng bóc lại hồ sơ không. */
+  metaLastPostCount: integer("meta_last_post_count"),
+
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({

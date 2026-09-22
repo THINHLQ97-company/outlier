@@ -367,6 +367,84 @@ export function registerBrandRoutes(app: Express) {
     }
   });
 
+  // ===== Nối fanpage với Meta rồi quét bài của chính page về =====
+  // Token đi trong body, không bao giờ trong URL: URL lọt vào log truy cập,
+  // lịch sử trình duyệt và referer.
+  app.post("/api/brands/:id/fanpages/:fid/meta/connect", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const { id, fid } = req.params;
+    if (!UUID_RE.test(id) || !UUID_RE.test(fid)) return res.status(400).json({ error: "Mã không hợp lệ." });
+    const token = typeof req.body?.pageAccessToken === "string" ? req.body.pageAccessToken.trim() : "";
+    if (!token) return res.status(400).json({ error: "Cần Page Access Token." });
+    try {
+      const [brand] = await getDb().select().from(brands).where(eq(brands.id, id));
+      if (!brand) return res.status(404).json({ error: "Không tìm thấy thương hiệu." });
+      if (!(await canEdit(req, brand))) return res.status(403).json({ error: "Không có quyền sửa." });
+
+      const { connectFanpageMeta } = await import("../services/fanpage-sync");
+      const out = await connectFanpageMeta(fid, token, typeof req.body?.pageId === "string" ? req.body.pageId.trim() : undefined);
+      res.json({ connected: true, page: out.page });
+    } catch (e: any) {
+      // Lỗi từ Meta (token sai, thiếu quyền, sai page) là thứ người dùng sửa
+      // được → trả nguyên văn kèm 400 thay vì nuốt thành 500.
+      console.warn("meta connect:", e?.message || e);
+      res.status(400).json({ error: e?.message || "Không nối được với Meta." });
+    }
+  });
+
+  app.post("/api/brands/:id/fanpages/:fid/meta/disconnect", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const { id, fid } = req.params;
+    if (!UUID_RE.test(id) || !UUID_RE.test(fid)) return res.status(400).json({ error: "Mã không hợp lệ." });
+    try {
+      const [brand] = await getDb().select().from(brands).where(eq(brands.id, id));
+      if (!brand) return res.status(404).json({ error: "Không tìm thấy thương hiệu." });
+      if (!(await canEdit(req, brand))) return res.status(403).json({ error: "Không có quyền sửa." });
+      const { disconnectFanpageMeta } = await import("../services/fanpage-sync");
+      await disconnectFanpageMeta(fid);
+      res.json({ connected: false });
+    } catch (e: any) {
+      console.error("meta disconnect:", e?.message || e);
+      res.status(500).json({ error: "Không ngắt được kết nối." });
+    }
+  });
+
+  app.post("/api/brands/:id/fanpages/:fid/meta/sync", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const { id, fid } = req.params;
+    if (!UUID_RE.test(id) || !UUID_RE.test(fid)) return res.status(400).json({ error: "Mã không hợp lệ." });
+    const limit = Math.min(500, Math.max(10, Number(req.body?.limit) || 100));
+    try {
+      const [brand] = await getDb().select().from(brands).where(eq(brands.id, id));
+      if (!brand) return res.status(404).json({ error: "Không tìm thấy thương hiệu." });
+      if (!(await canEdit(req, brand))) return res.status(403).json({ error: "Không có quyền sửa." });
+      const { syncFanpagePosts } = await import("../services/fanpage-sync");
+      res.json(await syncFanpagePosts(fid, limit));
+    } catch (e: any) {
+      console.warn("meta sync:", e?.message || e);
+      res.status(400).json({ error: e?.message || "Không quét được bài." });
+    }
+  });
+
+  // Bản tóm tắt nhân vật của trang — đúng thứ MCP đọc, để trên giao diện cũng
+  // thấy được Claude đang đọc gì về trang này.
+  app.get("/api/brands/:id/brief", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const { id } = req.params;
+    if (!UUID_RE.test(id)) return res.status(400).json({ error: "Mã thương hiệu không hợp lệ." });
+    try {
+      const [brand] = await getDb().select().from(brands).where(eq(brands.id, id));
+      if (!brand) return res.status(404).json({ error: "Không tìm thấy thương hiệu." });
+      const pages = await getDb().select().from(brandFanpages).where(eq(brandFanpages.brandId, id));
+      const { buildBrandBrief } = await import("../services/brand-brief");
+      const purpose = req.query.for === "image" ? "image" : "writing";
+      res.json({ brandId: id, for: purpose, brief: buildBrandBrief(brand as any, pages as any, purpose) });
+    } catch (e: any) {
+      console.error("brand brief:", e?.message || e);
+      res.status(500).json({ error: "Không dựng được bản tóm tắt." });
+    }
+  });
+
   app.delete("/api/brands/:id/fanpages/:fid", requireAuth, async (req, res) => {
     if (dbDown(res)) return;
     const { id, fid } = req.params;

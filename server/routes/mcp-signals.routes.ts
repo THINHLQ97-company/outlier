@@ -28,7 +28,7 @@ const SERVER_INSTRUCTIONS = `Bạn là AI Analyst cho fanpage giải trí "Ăn N
 4. GÓC HÀI: với tin queued, signals_suggest_angle đề xuất 1 góc lên nội dung hài (scene cụ thể + chọn characters từ characters_list + dialogue ngắn). Người vận hành sẽ review rồi "Đưa sang Sáng tạo".
 Luôn dùng characters_list để chọn đúng nhân vật fanpage. Tổng điểm rubric chỉ cộng 4 tiêu chí (do_nong+do_cham+do_hop_truc+tuoi_tho), do_an_toan là cổng an toàn.`;
 
-const READONLY_TOOLS = new Set(["signals_list", "signals_get", "rubric_get", "characters_list", "brands_list", "brand_profile_get", "radar_jobs_list", "radar_results", "deconstruct_get", "remake_get", "channels_list", "channel_items", "video_frames", "video_projects_list", "video_get"]);
+const READONLY_TOOLS = new Set(["signals_list", "signals_get", "rubric_get", "characters_list", "brands_list", "brand_profile_get", "brand_brief", "radar_jobs_list", "radar_results", "deconstruct_get", "remake_get", "channels_list", "channel_items", "video_frames", "video_projects_list", "video_get"]);
 
 const TOOLS = [
   {
@@ -123,8 +123,22 @@ const TOOLS = [
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
+    name: "brand_brief",
+    description: "Bản tóm tắt NGẮN về nhân vật của trang, viết sẵn thành văn xuôi để đọc là viết đúng giọng ngay — dùng cái này trước khi soạn caption, comment, kịch bản hay prompt ảnh. Gọn hơn brand_profile_get (không kèm trích dẫn, không kèm dữ liệu thô). Nói rõ mục nào còn thiếu thay vì lấp bằng phỏng đoán.",
+    annotations: { title: "Tóm tắt nhân vật của trang", readOnlyHint: true },
+    inputSchema: {
+      type: "object",
+      properties: {
+        brand_id: { type: "string", description: "Mã thương hiệu (từ brands_list)" },
+        for: { type: "string", enum: ["writing", "image"], description: "writing = soạn chữ (mặc định); image = sinh ảnh, nhấn phần nhận diện hình ảnh" },
+      },
+      required: ["brand_id"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "brand_profile_get",
-    description: "Đọc hồ sơ 1 thương hiệu: bán gì, khách là ai, giọng nói, xưng hô, từ cấm, công dụng được phép nói — MỖI MỤC KÈM CÂU TRÍCH NGUỒN. Mục nào null nghĩa là chưa có dữ liệu (cố ý để thiếu, không bịa).",
+    description: "Đọc hồ sơ ĐẦY ĐỦ 1 thương hiệu, dạng dữ liệu thô: pageRole (trang tồn tại để làm gì), personality, registers (ngữ vực), behaviorRules (luôn làm/không bao giờ làm), catchphrases, visualIdentity (nhận diện hình ảnh — cần khi sinh ảnh), fewShotExamples (bài mẫu đúng giọng), cùng bán gì, khách là ai, giọng nói, xưng hô, từ cấm, công dụng được phép nói — MỖI MỤC KÈM CÂU TRÍCH NGUỒN. Mục nào null nghĩa là chưa có dữ liệu (cố ý để thiếu, không bịa). Chỉ cần viết đúng giọng thì dùng brand_brief cho gọn hơn.",
     annotations: { title: "Đọc hồ sơ thương hiệu", readOnlyHint: true },
     inputSchema: {
       type: "object",
@@ -292,7 +306,7 @@ const TOOLS = [
   },
   {
     name: "brand_set",
-    description: "Ghi TAY một hoặc nhiều mục của hồ sơ thương hiệu. Dùng cho những thứ do người chủ quyết định chứ không bóc ra từ tài liệu — nhất là personality (tính cách), contentPillars (mảng nội dung theo đuổi), trendDos/trendDonts (nguyên tắc khi bắt trend). Mục ghi tay được đánh dấu source='manual' và sẽ KHÔNG bị lần bóc tài liệu sau ghi đè.",
+    description: "Ghi TAY một hoặc nhiều mục của hồ sơ thương hiệu. Dùng cho những thứ do người chủ quyết định chứ không bóc ra từ tài liệu: pageRole (trang tồn tại để làm gì), personality (tính cách), registers (ngữ vực), behaviorRules (luôn làm / không bao giờ làm), catchphrases (câu cửa miệng), visualIdentity (nhận diện hình ảnh, cần cho việc sinh ảnh), fewShotExamples (bài mẫu đúng giọng), contentPillars, trendDos/trendDonts. Mục ghi tay được đánh dấu source='manual' và sẽ KHÔNG bị lần bóc tài liệu sau ghi đè.",
     annotations: { title: "Ghi hồ sơ thương hiệu", readOnlyHint: false },
     inputSchema: {
       type: "object",
@@ -308,6 +322,54 @@ const TOOLS = [
         sells: { type: "array", items: { type: "string" }, description: "Bán gì" },
         banned_terms: { type: "array", items: { type: "string" }, description: "Từ không được dùng" },
         allowed_claims: { type: "array", items: { type: "string" }, description: "Công dụng được phép nói" },
+        page_role: { type: "string", description: "Trang tồn tại để làm gì, trong MỘT câu. Vd 'sân sau của Mắt Bão, bán tên miền bằng trò đố đọc lệch'. Đây là mục quan trọng nhất — đọc nó là hiểu ngay trang này là gì." },
+        catchphrases: { type: "array", items: { type: "string" }, description: "Câu cửa miệng — thứ khiến người đọc nhận ra ngay là trang nào" },
+        registers: {
+          type: "array",
+          description: "Ngữ vực: cùng tính cách nhưng đổi cách nói theo tình huống. Phần lớn trang có đúng hai (nói với khách / nói với khán giả).",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string", description: "Tên ngữ vực, vd 'ngọt với khách'" },
+              when: { type: "string", description: "Dùng khi nào, vd 'trong ảnh chat với khách'" },
+              pronouns: { type: "string", description: "Xưng hô, vd 'em – anh'" },
+              example: { type: "string", description: "Một câu mẫu" },
+            },
+            required: ["name", "when"],
+          },
+        },
+        behavior_rules: {
+          type: "object",
+          description: "HÀNH VI luôn làm / không bao giờ làm. Khác banned_terms: 'không tự nói ra tầng nghĩa bậy' không chặn được bằng danh sách từ.",
+          properties: {
+            always: { type: "array", items: { type: "string" } },
+            never: { type: "array", items: { type: "string" } },
+          },
+        },
+        visual_identity: {
+          type: "object",
+          description: "Nhận diện hình ảnh — thiếu phần này thì ảnh sinh ra 'đúng nội dung, sai trang'.",
+          properties: {
+            template: { type: "string", description: "Khuôn ảnh cứng, vd 'ảnh chat trên nền thanh địa chỉ trình duyệt'" },
+            palette: { type: "array", items: { type: "string" }, description: "Màu chủ đạo" },
+            mustHave: { type: "array", items: { type: "string" }, description: "Thứ luôn phải có trong ảnh" },
+            doNots: { type: "array", items: { type: "string" }, description: "Thứ không bao giờ được xuất hiện" },
+          },
+        },
+        few_shot_examples: {
+          type: "array",
+          description: "Bài mẫu đã được chủ trang duyệt là đúng giọng. Vài ví dụ thật nặng ký hơn nhiều dòng mô tả tính cách.",
+          items: {
+            type: "object",
+            properties: {
+              kind: { type: "string", enum: ["caption", "comment", "inbox", "post", "script"] },
+              text: { type: "string" },
+              register: { type: "string", description: "Khớp tên một ngữ vực ở trên" },
+              note: { type: "string", description: "Vì sao mẫu này đúng giọng" },
+            },
+            required: ["kind", "text"],
+          },
+        },
       },
       required: ["brand_id"],
       additionalProperties: false,
@@ -343,6 +405,35 @@ const TOOLS = [
         is_primary: { type: "boolean", description: "Trang chính" },
       },
       required: ["brand_id", "page_url"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "fanpage_connect_meta",
+    description: "Nối một fanpage (đã thêm bằng brand_fanpage_add) với Meta bằng Page Access Token, để đọc bài của chính page đó miễn phí qua Graph API. Chỉ dùng cho page MÌNH quản lý — page người khác vẫn phải đi qua Apify và tốn tiền. Token được kiểm tra trước khi lưu, và lưu ở dạng mã hoá.",
+    annotations: { title: "Nối fanpage với Meta", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: {
+        fanpage_id: { type: "string", description: "Mã dòng fanpage (từ brand_profile_get, mục pages)" },
+        page_access_token: { type: "string", description: "Page Access Token lấy từ Meta (cần quyền pages_read_engagement)" },
+        page_id: { type: "string", description: "Mã page của Meta, bỏ trống sẽ tự đoán từ link" },
+      },
+      required: ["fanpage_id", "page_access_token"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "fanpage_sync_posts",
+    description: "Quét các bài đã đăng của fanpage đã nối Meta, gộp thành một tài liệu rồi nạp vào hồ sơ thương hiệu. Sau đó gọi brand_extract để bóc giọng nói, xưng hô, chủ đề TỪ CHÍNH BÀI CỦA PAGE — mỗi mục sẽ kèm câu trích có link bài. Lưu ý: bài đã đăng không nói được 'không bao giờ làm', phần đó phải hỏi chủ trang rồi ghi bằng brand_set.",
+    annotations: { title: "Quét bài của fanpage", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: {
+        fanpage_id: { type: "string", description: "Mã dòng fanpage" },
+        limit: { type: "number", description: "Số bài lấy về, 10-500, mặc định 100" },
+      },
+      required: ["fanpage_id"],
       additionalProperties: false,
     },
   },
@@ -566,6 +657,16 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
       .orderBy(desc(brands.updatedAt))
       .limit(100);
     return { count: rows.length, brands: rows };
+  }
+
+  if (name === "brand_brief") {
+    if (!UUID_RE.test(args.brand_id || "")) throw new Error("brand_id không hợp lệ");
+    const [row] = await db.select().from(brands).where(eq(brands.id, args.brand_id));
+    if (!row) throw new Error("Không tìm thấy thương hiệu");
+    const pages = await db.select().from(brandFanpages).where(eq(brandFanpages.brandId, args.brand_id));
+    const { buildBrandBrief } = await import("../services/brand-brief");
+    const text = buildBrandBrief(row as any, pages as any, args.for === "image" ? "image" : "writing");
+    return { brand_id: row.id, name: row.name, for: args.for === "image" ? "image" : "writing", brief: text };
   }
 
   if (name === "brand_profile_get") {
@@ -946,16 +1047,83 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
       const v = arr(args[inKey]);
       patch[col] = v && v.length ? mk(v) : null;
     }
-    for (const [inKey, col] of [["tone_of_voice", "toneOfVoice"], ["addressing", "addressing"], ["audience", "audience"]] as [string, string][]) {
+    for (const [inKey, col] of [["tone_of_voice", "toneOfVoice"], ["addressing", "addressing"], ["audience", "audience"], ["page_role", "pageRole"]] as [string, string][]) {
       if (!(inKey in args)) continue;
       const v = str(args[inKey]);
       patch[col] = v ? mk(v) : null;
+    }
+    if ("catchphrases" in args) {
+      const v = arr(args.catchphrases);
+      patch.catchphrases = v && v.length ? mk(v) : null;
+    }
+    // Ba mục dưới đây có cấu trúc riêng: lọc bỏ phần tử thiếu trường bắt buộc
+    // thay vì nhận bừa, để hồ sơ không chứa mục rỗng khiến model đoán mò.
+    if ("registers" in args) {
+      const list = Array.isArray(args.registers) ? args.registers : [];
+      const clean = list
+        .map((r: any) => ({
+          name: str(r?.name),
+          when: str(r?.when),
+          pronouns: str(r?.pronouns) || undefined,
+          example: str(r?.example) || undefined,
+        }))
+        .filter((r: any) => r.name && r.when);
+      patch.registers = clean.length ? mk(clean) : null;
+    }
+    if ("behavior_rules" in args) {
+      const br = args.behavior_rules || {};
+      const always = arr(br.always) || [];
+      const never = arr(br.never) || [];
+      patch.behaviorRules = always.length || never.length ? mk({ always, never }) : null;
+    }
+    if ("visual_identity" in args) {
+      const vi = args.visual_identity || {};
+      const clean: Record<string, any> = {};
+      if (str(vi.template)) clean.template = str(vi.template);
+      for (const k of ["palette", "mustHave", "doNots"]) {
+        const v = arr(vi[k]);
+        if (v && v.length) clean[k] = v;
+      }
+      patch.visualIdentity = Object.keys(clean).length ? mk(clean) : null;
+    }
+    if ("few_shot_examples" in args) {
+      const list = Array.isArray(args.few_shot_examples) ? args.few_shot_examples : [];
+      const KINDS = ["caption", "comment", "inbox", "post", "script"];
+      const clean = list
+        .map((e: any) => ({
+          kind: KINDS.includes(e?.kind) ? e.kind : "caption",
+          text: str(e?.text),
+          register: str(e?.register) || undefined,
+          note: str(e?.note) || undefined,
+        }))
+        .filter((e: any) => e.text);
+      patch.fewShotExamples = clean.length ? mk(clean) : null;
     }
     if (Object.keys(patch).length === 1) throw new Error("Chưa có mục nào để ghi");
 
     const [updated] = await db.update(brands).set(patch).where(eq(brands.id, args.brand_id)).returning();
     const written = Object.keys(patch).filter((k) => k !== "updatedAt");
     return { ...updated, written_fields: written, note: `Đã ghi ${written.length} mục, đánh dấu là nhập tay nên lần bóc tài liệu sau sẽ không ghi đè.` };
+  }
+
+  if (name === "fanpage_connect_meta") {
+    if (!UUID_RE.test(args.fanpage_id || "")) throw new Error("fanpage_id không hợp lệ");
+    const token = String(args.page_access_token || "").trim();
+    if (!token) throw new Error("Cần page_access_token");
+    const { connectFanpageMeta } = await import("../services/fanpage-sync");
+    const out = await connectFanpageMeta(args.fanpage_id, token, args.page_id ? String(args.page_id).trim() : undefined);
+    return {
+      connected: true,
+      page: out.page,
+      note: "Đã nối. Gọi fanpage_sync_posts để quét bài về, rồi brand_extract để bóc tính cách từ bài thật.",
+    };
+  }
+
+  if (name === "fanpage_sync_posts") {
+    if (!UUID_RE.test(args.fanpage_id || "")) throw new Error("fanpage_id không hợp lệ");
+    const limit = Math.min(500, Math.max(10, Number(args.limit) || 100));
+    const { syncFanpagePosts } = await import("../services/fanpage-sync");
+    return await syncFanpagePosts(args.fanpage_id, limit);
   }
 
   if (name === "brand_fanpage_add") {
