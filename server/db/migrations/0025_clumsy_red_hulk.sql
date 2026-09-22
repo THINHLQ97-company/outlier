@@ -1,0 +1,1 @@
+ALTER TABLE "brand_fanpages" ADD COLUMN "character_ids" jsonb DEFAULT '[]'::jsonb;

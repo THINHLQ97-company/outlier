@@ -445,6 +445,20 @@ const TOOLS = [
     },
   },
   {
+    name: "fanpage_set_characters",
+    description: "Gán nhân vật đại diện (từ characters_list) cho một trang của thương hiệu. Gán rồi thì khi vẽ ảnh bằng remake_image, ảnh mẫu của nhân vật được đưa vào làm chuẩn — nhân vật giữ nguyên ngoại hình qua các bài thay vì mỗi bài một kiểu. Truyền mảng rỗng để bỏ gán.",
+    annotations: { title: "Gán nhân vật cho trang", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: {
+        fanpage_id: { type: "string", description: "Mã dòng fanpage (từ brand_profile_get, mục pages)" },
+        character_ids: { type: "array", items: { type: "string" }, description: "Mã nhân vật, lấy từ characters_list" },
+      },
+      required: ["fanpage_id", "character_ids"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "remake_image",
     description: "Vẽ ảnh minh hoạ cho một bản viết đã có. Ảnh bám nhận diện hình ảnh của thương hiệu (khuôn ảnh quen thuộc, thứ luôn phải có, và nhất là thứ không bao giờ được xuất hiện) — nên hồ sơ có visualIdentity thì ảnh mới ra đúng trang. Bỏ trống prompt thì tự đọc bản viết rồi tả; truyền prompt để tả theo ý mình. Trả về ảnh cho Claude xem luôn.",
     annotations: { title: "Vẽ ảnh cho bản viết", readOnlyHint: false },
@@ -1172,6 +1186,26 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
     const [updated] = await db.update(brands).set(patch).where(eq(brands.id, args.brand_id)).returning();
     const written = Object.keys(patch).filter((k) => k !== "updatedAt");
     return { ...updated, written_fields: written, note: `Đã ghi ${written.length} mục, đánh dấu là nhập tay nên lần bóc tài liệu sau sẽ không ghi đè.` };
+  }
+
+  if (name === "fanpage_set_characters") {
+    if (!UUID_RE.test(args.fanpage_id || "")) throw new Error("fanpage_id không hợp lệ");
+    const ids = Array.isArray(args.character_ids)
+      ? args.character_ids.map((x: any) => String(x).trim()).filter((x: string) => UUID_RE.test(x))
+      : [];
+    const [updated] = await db
+      .update(brandFanpages)
+      .set({ characterIds: ids, updatedAt: new Date() })
+      .where(eq(brandFanpages.id, args.fanpage_id))
+      .returning();
+    if (!updated) throw new Error("Không tìm thấy trang");
+    return {
+      fanpage_id: updated.id,
+      character_ids: ids,
+      note: ids.length
+        ? "Đã gán. Từ giờ remake_image sẽ dùng ảnh mẫu của các nhân vật này làm chuẩn."
+        : "Đã bỏ gán nhân vật cho trang này.",
+    };
   }
 
   if (name === "remake_image") {

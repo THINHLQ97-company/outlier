@@ -788,6 +788,15 @@ export const brandFanpages = pgTable("brand_fanpages", {
   /** Số bài lấy về ở lần quét gần nhất — để biết có đáng bóc lại hồ sơ không. */
   metaLastPostCount: integer("meta_last_post_count"),
 
+  /**
+   * Nhân vật gắn với trang này (characters.id).
+   *
+   * Nhiều trang có một nhân vật đại diện cố định. Gắn ở đây thì lúc vẽ ảnh cho
+   * bản viết, ảnh tham chiếu của nhân vật được đưa vào làm mẫu — nhân vật mới
+   * nhất quán qua các bài thay vì mỗi bài một kiểu.
+   */
+  characterIds: jsonb("character_ids").$type<string[]>().default([]),
+
   /** Ảnh đại diện, hạng mục, giới thiệu — lấy từ Meta, để hiện ngay trên hồ sơ. */
   metaPictureUrl: text("meta_picture_url"),
   metaCategory: text("meta_category"),

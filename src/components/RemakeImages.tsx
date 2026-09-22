@@ -36,6 +36,7 @@ export default function RemakeImages({
   const [prompt, setPrompt] = useState("");
   const [showPrompt, setShowPrompt] = useState(false);
   const [lastDescription, setLastDescription] = useState<string | null>(null);
+  const [charsUsed, setCharsUsed] = useState<{ id: string; name: string; hasReference: boolean }[]>([]);
 
   async function handleGenerate() {
     setBusy(true);
@@ -46,6 +47,7 @@ export default function RemakeImages({
         prompt: prompt.trim() || undefined,
       });
       setLastDescription(out.description);
+      setCharsUsed(out.charactersUsed || []);
       onChanged();
     } catch (e: any) {
       setError(e?.message || "Không vẽ được ảnh.");
@@ -138,6 +140,18 @@ export default function RemakeImages({
               <div role="alert" className="ds-alert ds-alert-danger mt-3">
                 {error}
               </div>
+            )}
+
+            {charsUsed.length > 0 && (
+              <p className="text-xs text-stone-500 mt-2">
+                Vẽ theo nhân vật: {charsUsed.map((c) => c.name).join(", ")}
+                {charsUsed.some((c) => !c.hasReference) && (
+                  <span className="text-amber-600">
+                    {" "}
+                    — có nhân vật chưa có ảnh mẫu nên chỉ tả được bằng chữ, ngoại hình sẽ kém nhất quán.
+                  </span>
+                )}
+              </p>
             )}
 
             {lastDescription && !prompt.trim() && (

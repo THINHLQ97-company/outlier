@@ -199,4 +199,20 @@ export async function getBrandBrief(brandId: string, forWhat: "writing" | "image
   return (await res.json()).brief;
 }
 
+
+/** Gán nhân vật đại diện cho một trang. Mảng rỗng = bỏ gán. */
+export async function setFanpageCharacters(
+  brandId: string,
+  fanpageId: string,
+  characterIds: string[],
+): Promise<BrandFanpage> {
+  const res = await fetch(`/api/brands/${brandId}/fanpages/${fanpageId}`, {
+    method: "PATCH",
+    headers: authHeaders(),
+    body: JSON.stringify({ characterIds }),
+  });
+  if (!res.ok) return asError(res, "Không gán được nhân vật.");
+  return res.json();
+}
+
 export type { BrandField };

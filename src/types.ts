@@ -346,6 +346,8 @@ export interface BrandFanpage {
   audienceNote?: string | null;
   note?: string | null;
   isPrimary: boolean;
+  /** Nhân vật đại diện của trang (characters.id) — dùng làm mẫu khi vẽ ảnh. */
+  characterIds?: string[];
   /** Đã nối Meta chưa — có nối thì đọc bài của chính page được, miễn phí. */
   metaPageId?: string | null;
   metaPictureUrl?: string | null;

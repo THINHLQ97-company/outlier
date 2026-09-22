@@ -1,13 +1,16 @@
-import { useState } from "react";
-import { Loader2, Plus, Trash2, Link2, Link2Off, RefreshCw, ExternalLink, Star } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Loader2, Plus, Trash2, Link2, Link2Off, RefreshCw, ExternalLink, Star, Users } from "lucide-react";
 import {
   addBrandFanpage,
   deleteBrandFanpage,
   connectFanpageMeta,
   disconnectFanpageMeta,
   syncFanpagePosts,
+  setFanpageCharacters,
   type MetaSyncResult,
 } from "../services/brands";
+import { listCharacters } from "../services/characters";
+import type { CharacterRow } from "../types";
 import type { BrandFanpage } from "../types";
 import FanpageStatsPanel from "./FanpageStatsPanel";
 
@@ -55,6 +58,34 @@ export default function BrandFanpages({
   // cũng vậy — cho nhập thẳng Page ID thay vì để người dùng bí.
   const [pageId, setPageId] = useState("");
   const [syncResult, setSyncResult] = useState<MetaSyncResult | null>(null);
+
+  // Thư viện nhân vật dùng chung cho mọi trang trong hồ sơ này — tải một lần.
+  const [allCharacters, setAllCharacters] = useState<CharacterRow[]>([]);
+  const [charsFor, setCharsFor] = useState<string | null>(null);
+  useEffect(() => {
+    listCharacters()
+      .then(setAllCharacters)
+      // Không có thư viện nhân vật thì phần còn lại vẫn dùng được bình thường.
+      .catch(() => setAllCharacters([]));
+  }, []);
+
+  async function toggleCharacter(fp: BrandFanpage, characterId: string) {
+    const current = fp.characterIds || [];
+    const next = current.includes(characterId)
+      ? current.filter((id) => id !== characterId)
+      : [...current, characterId];
+    setBusyId(fp.id);
+    setError(null);
+    try {
+      await setFanpageCharacters(brandId, fp.id, next);
+      onChanged();
+    } catch (e: any) {
+      setError(e?.message || "Không gán được nhân vật.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
 
   async function handleAdd() {
     const url = newUrl.trim();
@@ -259,6 +290,14 @@ export default function BrandFanpages({
                           </button>
                         )}
                         <button
+                          onClick={() => setCharsFor(charsFor === fp.id ? null : fp.id)}
+                          className="ds-btn ds-btn-ghost ds-btn-sm"
+                          title="Gán nhân vật đại diện cho trang này"
+                        >
+                          <Users className="w-3.5 h-3.5" aria-hidden="true" />
+                          Nhân vật{(fp.characterIds?.length || 0) > 0 ? ` (${fp.characterIds!.length})` : ""}
+                        </button>
+                        <button
                           onClick={() => handleDelete(fp)}
                           disabled={busy}
                           className="text-xs font-medium text-red-600 hover:bg-red-50 px-2 py-1.5 rounded-lg transition-colors"
@@ -316,6 +355,61 @@ export default function BrandFanpages({
                         <code className="bg-stone-100 px-1 rounded">me/accounts?fields=id,name,access_token</code> —
                         kết quả có sẵn mã page và token của từng trang bạn quản lý.
                       </p>
+                    </div>
+                  )}
+
+                  {charsFor === fp.id && (
+                    <div className="mt-3 pt-3 border-t border-stone-200">
+                      <h4 className="text-xs font-semibold text-stone-700">Nhân vật đại diện của trang</h4>
+                      <p className="text-[11px] text-stone-400 mt-0.5">
+                        Gán xong thì lúc vẽ ảnh cho bài, ảnh mẫu của nhân vật được đưa vào làm chuẩn — nhân vật
+                        giữ nguyên ngoại hình qua các bài thay vì mỗi bài một kiểu.
+                      </p>
+                      {allCharacters.length === 0 ? (
+                        <p className="text-xs text-stone-400 mt-2">
+                          Thư viện nhân vật đang trống. Thêm ở menu Nhân vật trước.
+                        </p>
+                      ) : (
+                        <ul className="flex flex-wrap gap-2 mt-2">
+                          {allCharacters.map((c) => {
+                            const picked = (fp.characterIds || []).includes(c.id);
+                            return (
+                              <li key={c.id}>
+                                <button
+                                  onClick={() => toggleCharacter(fp, c.id)}
+                                  disabled={busy}
+                                  aria-pressed={picked}
+                                  className={`flex items-center gap-2 border rounded-lg px-2 py-1.5 transition-colors ${
+                                    picked
+                                      ? "border-storm-500 bg-storm-50"
+                                      : "border-stone-200 hover:border-stone-300"
+                                  }`}
+                                >
+                                  {c.referenceImageUrl ? (
+                                    <img
+                                      src={c.referenceImageUrl}
+                                      alt=""
+                                      className="w-7 h-7 rounded-full object-cover bg-stone-100"
+                                      loading="lazy"
+                                    />
+                                  ) : (
+                                    <span
+                                      className="w-7 h-7 rounded-full bg-stone-100 shrink-0"
+                                      aria-hidden="true"
+                                    />
+                                  )}
+                                  <span className="text-xs font-medium text-stone-700">{c.name}</span>
+                                  {!c.referenceImageUrl && (
+                                    <span className="text-[10px] text-amber-600" title="Chưa có ảnh mẫu">
+                                      chưa có ảnh
+                                    </span>
+                                  )}
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
                     </div>
                   )}
 

@@ -176,6 +176,13 @@
       "when": 1790071255213,
       "tag": "0024_flippant_lord_hawal",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1790072354518,
+      "tag": "0025_clumsy_red_hulk",
+      "breakpoints": true
     }
   ]
 }

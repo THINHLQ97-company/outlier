@@ -130,6 +130,8 @@ export function pollRemake(id: string, opts: RemakePollOptions): () => void {
 export interface RemakeImageResult {
   image: RemakeImage;
   description: string;
+  /** Nhân vật đã dùng làm mẫu; hasReference=false nghĩa là chỉ tả bằng chữ. */
+  charactersUsed: { id: string; name: string; hasReference: boolean }[];
 }
 
 export async function generateRemakeImage(

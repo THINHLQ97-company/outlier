@@ -349,6 +349,13 @@ export function registerBrandRoutes(app: Express) {
       for (const k of ["topics", "formats"]) {
         if (Array.isArray(req.body?.[k])) patch[k] = req.body[k].map((x: any) => String(x).trim()).filter(Boolean);
       }
+      // Nhân vật gắn với trang — chỉ nhận id đúng định dạng, tránh ghi rác vào
+      // cột rồi lúc vẽ mới phát hiện.
+      if (Array.isArray(req.body?.characterIds)) {
+        patch.characterIds = req.body.characterIds
+          .map((x: any) => String(x).trim())
+          .filter((x: string) => UUID_RE.test(x));
+      }
       if (req.body?.followerCount !== undefined) {
         const n = Number(req.body.followerCount);
         patch.followerCount = Number.isFinite(n) && n >= 0 ? n : null;

@@ -86,6 +86,13 @@ export function buildBrandBrief(
     }
   }
 
+  // Nhân vật đại diện: model viết chữ cần biết ai đang nói, model vẽ cần biết
+  // vẽ ai. Tên lấy từ chính trang đã gán, không phải đoán.
+  const charNames = pages.flatMap((p) => (p.characterIds || []).length ? [p.pageName || p.pageUrl] : []);
+  if (charNames.length) {
+    out.push(`\n**Trang có nhân vật đại diện đã gán** (${charNames.join(", ")}) — dùng characters_list để xem chi tiết, và remake_image sẽ tự vẽ theo nhân vật đó.`);
+  }
+
   const catchphrases = val<string[]>(row.catchphrases as any);
   if (catchphrases) out.push(`\n## Câu cửa miệng\n${bullets(catchphrases.map((c) => `"${c}"`))}`);
 
