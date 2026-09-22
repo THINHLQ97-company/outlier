@@ -16,11 +16,33 @@ Claude vào, và **toàn bộ quyền** mà MCP được phép làm với dữ l
 
 ## 1. Cách kết nối
 
-### A. Claude Desktop (nội bộ — đang dùng)
+Có **hai bản chạy song song**, cố ý:
 
-Máy phải **trong mạng Mắt Bão** (văn phòng hoặc VPN) và có **Node.js**. Mở file cấu hình:
-- Mac: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+| Bản | Địa chỉ | MCP dùng được với | Vì sao |
+|---|---|---|---|
+| **Vibe Host** | `outlier.n1.tinhgon.xyz` | Claude Chat (claude.ai) **và** Claude Code | Công khai mặc định |
+| **Coolify** | `fanpage-content-create.mk.dev.matbao.ai` | chỉ máy trong mạng Mắt Bão | Sau Traefik nội bộ, claude.ai gọi không tới |
+
+Từ đây trở đi, dùng bản Vibe Host.
+
+### A. Claude Chat (claude.ai) — không cần token
+
+1. Settings → Connectors → **Add custom connector**
+2. Server URL: `https://outlier.n1.tinhgon.xyz/api/mcp-signals`
+3. Claude tự mở trang đăng nhập (OAuth 2.1 + PKCE, đăng ký client động) → đăng nhập bằng
+   tài khoản Outlier → cấp quyền.
+
+### B. Claude Code
+
+```bash
+claude mcp add --transport http outlier \
+  https://outlier.n1.tinhgon.xyz/api/mcp-signals \
+  --header "Authorization: Bearer <SIGNALS_MCP_TOKEN>"
+```
+
+Kiểm tra bằng `/mcp`.
+
+### C. Claude Desktop (bản Coolify, máy trong mạng nội bộ)
 
 ```json
 {
@@ -37,23 +59,19 @@ Máy phải **trong mạng Mắt Bão** (văn phòng hoặc VPN) và có **Node.
 }
 ```
 
-Thay `<SIGNALS_MCP_TOKEN>` bằng token thật (biến `SIGNALS_MCP_TOKEN` đã set trên Coolify).
-Lưu → thoát hẳn & mở lại Claude Desktop → thấy tool `fanpage-signals` là xong.
+`mcp-remote` chạy ngay trên máy bạn nên chỉ cần máy trong mạng Mắt Bão, không cần mở app
+ra public.
 
-`mcp-remote` chạy **ngay trên máy bạn**, gọi thẳng endpoint (không qua server Anthropic) →
-chỉ cần máy trong mạng Mắt Bão là được, không cần mở app ra public.
+### Có cần cài skill không?
 
-### B. Claude.ai web (cần mở public — chưa bật)
-
-Muốn add connector trên **claude.ai web**, endpoint phải **reachable public** (vì server
-Anthropic gọi vào, IP công cộng → hiện bị IP-allowlist chặn). Cần **mở public** cho 3 path
-`/api/mcp-signals`, `/.well-known/*`, `/api/oauth/*` (`mb-deploy set-scope public`, **cần
-manager approval**). Khi đó dùng **OAuth**: add connector bằng URL → đăng nhập tài khoản
-fanpage → cấp quyền. (Giống hệt cách ReportApp connect claude.ai vì nó vốn public.)
+**Không.** Server gửi kèm phần `instructions` ngay khi Claude kết nối: bốn việc chính theo
+thứ tự, tool nào tốn tiền, và những chỗ hay lẫn. Nó tự nạp mỗi lần kết nối nên không phải
+cài và không bao giờ lệch phiên bản. Xem `SERVER_INSTRUCTIONS` trong
+`server/routes/mcp-signals.routes.ts`.
 
 ---
 
-## 2. Bảng đầy đủ 30 tool (quyền tới dữ liệu)
+## 2. Bảng đầy đủ 34 tool (quyền tới dữ liệu)
 
 | Tool | Loại | Làm gì | Đầu vào | Chạm dữ liệu nào |
 |---|---|---|---|---|
@@ -87,10 +105,32 @@ fanpage → cấp quyền. (Giống hệt cách ReportApp connect claude.ai vì 
 | `video_projects_list` | 🟢 Đọc | Danh sách dự án video | — | ĐỌC `video_projects` |
 | `video_get` | 🟢 Đọc | Chi tiết dự án: các cảnh, trạng thái, chi phí ước tính | id | ĐỌC `video_projects`+`video_scenes` |
 | `video_scene_set` | 🔴 Ghi | Sửa lời dẫn / mô tả hình của một cảnh trước khi dựng | scene_id, … | SỬA `video_scenes` |
+| `brand_brief` | 🟢 Đọc | **Tóm tắt nhân vật của trang thành văn xuôi** — đọc là viết đúng giọng ngay. Nói rõ mục nào còn thiếu thay vì lấp bằng phỏng đoán. `for=image` thì nhấn phần nhận diện hình ảnh | brand_id, for? | ĐỌC `brands` + `brand_fanpages` |
+| `trend_draft` | 🔴 Ghi | **Trend đang nóng → mấy phương án đăng được luôn**, đúng giọng trang, đã soi guardrail. `kind=post\|video` dùng hai khuôn khác nhau. Trend không hợp thì nói thẳng là không nên đu | brand_id, trend, kind?, count?, extra? | ĐỌC `brands`; gọi Gemini |
+| `fanpage_connect_meta` | 🔴 Ghi | Nối trang **mình quản lý** với Meta bằng Page Access Token. Token được thử trước khi lưu, và lưu mã hoá | fanpage_id, page_access_token, page_id? | SỬA `brand_fanpages` |
+| `fanpage_sync_posts` | 🔴 Ghi | Quét bài của trang đã nối, gộp thành tài liệu để `brand_extract` bóc tính cách **từ bài thật có link**. Miễn phí (Graph API), khác Apify | fanpage_id, limit? | THÊM `brand_sources`; SỬA `brand_fanpages` |
 
 Ghi chú chấm điểm: tổng = `do_nong + do_cham + do_hop_truc + tuoi_tho` (tối đa 20).
 `≥ queue_min (16)` → **Nên làm** (queued); `12–15` → **Kho ý tưởng** (idea_bank); `<12` hoặc
 `dinh_nhom_cam=true` → **Loại** (rejected). `do_an_toan` là **cổng an toàn**, không cộng tổng.
+
+---
+
+### Bóc tính cách từ chính fanpage — được gì, không được gì
+
+Nối Meta rồi `fanpage_sync_posts` là cách rẻ và chắc nhất để dựng hồ sơ: bài đã đăng là
+bằng chứng thật, nên mục bóc ra đều có câu trích kèm link.
+
+**Lấy được**: giọng nói, xưng hô, câu cửa miệng lặp lại, mảng chủ đề, định dạng hay dùng,
+nhịp đăng, và bài nào ăn khách hơn phần còn lại của chính page.
+
+**Không lấy được**: phần *"không bao giờ làm"*. Luật ngầm không nằm trong bài đã đăng — bài
+vi phạm thì đã không tồn tại để mà đọc. Cả `pageRole` và `visualIdentity` cũng vậy: chúng là
+quyết định của chủ trang, không phải thứ suy ra được từ dữ liệu. Ba mục đó khai bằng
+`brand_set`, và `brand_brief` sẽ nhắc khi còn thiếu.
+
+**Page của người khác** vẫn phải đi qua Apify và tốn tiền — Graph API chỉ cho đọc page mình
+có token.
 
 ---
 
