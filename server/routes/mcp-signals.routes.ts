@@ -17,7 +17,9 @@ import { RUBRIC_DEFAULT_THRESHOLDS } from "../../shared/engine-data";
 import { verifyAccessToken, baseUrl, type McpPrincipal } from "../mcp/oauth";
 
 const PROTOCOL_VERSION = "2024-11-05";
-const SERVER_INFO = { name: "fanpage-signals", title: "Tín hiệu Fanpage — Ăn Nằm Với AI", version: "1.0.0" };
+// Tên này là thứ người dùng thấy trong danh sách connector của Claude. Giữ
+// `name` cũ để client nào đã lưu cấu hình không phải nối lại.
+const SERVER_INFO = { name: "fanpage-signals", title: "Outlier — tìm viral, remake cho brand", version: "2.0.0" };
 const RETENTION_DAYS = 14;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
