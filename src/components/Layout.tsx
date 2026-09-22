@@ -93,11 +93,11 @@ export default function Layout({ children }: { children: ReactNode }) {
         style={{ background: "var(--ds-sidebar-bg)" }}
         aria-label="Điều hướng chính"
       >
-        <div className="flex items-center gap-2 h-14 px-4 shrink-0 border-b border-white/10">
+        <div className="flex items-center gap-2 h-16 px-4 shrink-0 border-b border-white/10">
           {showLabels ? (
-            <img src="/logo-dark.svg" alt="Outlier" className="h-7 w-auto" />
+            <img src="/logo-dark.svg" alt="Outlier" className="h-9 w-auto" />
           ) : (
-            <img src="/mark.svg" alt="Outlier" className="w-7 h-7 mx-auto" />
+            <img src="/mark.svg" alt="Outlier" className="w-9 h-9 mx-auto" />
           )}
           <button
             type="button"
@@ -177,8 +177,8 @@ export default function Layout({ children }: { children: ReactNode }) {
           >
             <Menu className="w-5 h-5" aria-hidden="true" />
           </button>
-          <img src="/mark.svg" alt="" aria-hidden="true" className="w-6 h-6" />
-          <span className="font-display font-bold text-storm-800 text-sm">Outlier</span>
+          <img src="/mark.svg" alt="" aria-hidden="true" className="w-8 h-8" />
+          <span className="font-display font-bold text-storm-800 text-base">Outlier</span>
         </header>
 
         <main className="flex-1 w-full max-w-7xl mx-auto px-4 py-6">{children}</main>

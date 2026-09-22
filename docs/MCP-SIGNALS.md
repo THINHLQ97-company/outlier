@@ -53,7 +53,7 @@ fanpage → cấp quyền. (Giống hệt cách ReportApp connect claude.ai vì 
 
 ---
 
-## 2. Bảng đầy đủ 22 tool (quyền tới dữ liệu)
+## 2. Bảng đầy đủ 23 tool (quyền tới dữ liệu)
 
 | Tool | Loại | Làm gì | Đầu vào | Chạm dữ liệu nào |
 |---|---|---|---|---|
@@ -79,6 +79,7 @@ fanpage → cấp quyền. (Giống hệt cách ReportApp connect claude.ai vì 
 | `channels_list` | 🟢 Đọc | Kênh đang theo dõi + số bài MỚI lần gần nhất; báo rõ kênh nào tốn phí khi làm mới | — | ĐỌC `watched_channels` |
 | `channel_items` | 🟢 Đọc | Bài của một kênh, **bài mới xếp lên đầu** | channel_id, only_new?, limit? | ĐỌC `radar_items` |
 | `channel_refresh` | 🔴 Ghi | Làm mới kênh để xem họ vừa đăng gì. **Kênh có `costsMoneyToRefresh=true` sẽ phát sinh chi phí** | channel_id | THÊM `radar_jobs`+`radar_items`, SỬA `watched_channels` |
+| `video_frames` | 🟢 Đọc | **Trả về ẢNH THẬT** — các khung hình của video để Claude TỰ NHÌN, kèm lời thoại có mốc giây | url \| radar_item_id, count?, include_transcript? | Không ghi gì; chỉ tải video tạm rồi xoá |
 
 Ghi chú chấm điểm: tổng = `do_nong + do_cham + do_hop_truc + tuoi_tho` (tối đa 20).
 `≥ queue_min (16)` → **Nên làm** (queued); `12–15` → **Kho ý tưởng** (idea_bank); `<12` hoặc
@@ -137,6 +138,28 @@ Lớp phòng vệ đầu tiên nằm ở chỗ khác: prompt viết lại **ch�
 Vì sao có kênh tốn phí: YouTube quét được bằng công cụ miễn phí (yt-dlp), nhưng **TikTok thì không** — yt-dlp cần `channel_id` nội bộ mà id đó chỉ moi ra được từ một video cụ thể, nên phải đi qua dịch vụ có phí. Douyin cần bộ quét riêng, chưa nối.
 
 `newSinceLastCheck` và `isNew` là số bài chưa từng thấy ở các lần làm mới TRƯỚC. Lần quét đầu tiên luôn bằng 0 — lúc đó mọi bài đều mới nên đánh dấu là vô nghĩa.
+
+
+### Claude "đọc" video bằng cách nào
+
+MCP không truyền được luồng video cho Claude. Có hai đường, dùng cho hai việc khác nhau:
+
+| | `deconstruct_start` / `deconstruct_get` | `video_frames` |
+|---|---|---|
+| Ai xem video | Gemini xem hộ | **Claude tự nhìn** |
+| Claude nhận gì | Bản mô tả bằng chữ, có mốc giây | **Ảnh thật** + lời thoại |
+| Hợp với | Bóc cấu trúc chuẩn hoá, lưu lại để remake | **Đối chiếu tính cách thương hiệu, gợi ý đu trend** |
+| Chi phí | Gọi Gemini | Gần như 0 — chỉ dùng ffmpeg |
+
+Dùng `video_frames` khi cần **chính Claude** đánh giá phần hình, vì Claude mới là bên đang giữ hồ sơ thương hiệu. Các khung được dồn về 20% đầu video — chỗ quyết định người xem ở lại hay lướt qua.
+
+### Hồ sơ thương hiệu — phân biệt mấy mục dễ nhầm
+
+- **`toneOfVoice`** = CÁCH NÓI (thân thiện, trang trọng…)
+- **`personality`** = CON NGƯỜI đứng sau. Cùng giọng thân thiện, "người anh đi trước chỉ đường" khác hẳn "đứa bạn hay đùa" — đây mới là thứ quyết định trend nào hợp để đu.
+- **`contentPillars`** = mảng nội dung theo đuổi, dùng để lọc trend
+- **`trendDos` / `trendDonts`** = nguyên tắc khi bắt trend
+- **`fanpages`** = trang CỦA CHÍNH thương hiệu (khác `watched_channels` vốn để soi đối thủ) — biết nội dung đăng ở đâu, định dạng nào, cho ai
 
 ## 3. Ranh giới quyền — MCP LÀM ĐƯỢC gì / KHÔNG làm được gì
 

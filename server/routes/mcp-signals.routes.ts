@@ -291,6 +291,62 @@ const TOOLS = [
     },
   },
   {
+    name: "brand_set",
+    description: "Ghi TAY một hoặc nhiều mục của hồ sơ thương hiệu. Dùng cho những thứ do người chủ quyết định chứ không bóc ra từ tài liệu — nhất là personality (tính cách), contentPillars (mảng nội dung theo đuổi), trendDos/trendDonts (nguyên tắc khi bắt trend). Mục ghi tay được đánh dấu source='manual' và sẽ KHÔNG bị lần bóc tài liệu sau ghi đè.",
+    annotations: { title: "Ghi hồ sơ thương hiệu", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: {
+        brand_id: { type: "string", description: "Mã thương hiệu (từ brands_list)" },
+        personality: { type: "array", items: { type: "string" }, description: "Tính cách: con người đứng sau thương hiệu, vd 'người anh đi trước chỉ đường', 'hay đùa nhưng không cợt nhả'" },
+        content_pillars: { type: "array", items: { type: "string" }, description: "Mảng nội dung theo đuổi" },
+        trend_dos: { type: "array", items: { type: "string" }, description: "Nên làm gì khi bắt trend" },
+        trend_donts: { type: "array", items: { type: "string" }, description: "Tránh gì khi bắt trend" },
+        tone_of_voice: { type: "string", description: "Cách nói chuyện (khác tính cách)" },
+        addressing: { type: "string", description: "Xưng hô" },
+        audience: { type: "string", description: "Khách hàng là ai" },
+        sells: { type: "array", items: { type: "string" }, description: "Bán gì" },
+        banned_terms: { type: "array", items: { type: "string" }, description: "Từ không được dùng" },
+        allowed_claims: { type: "array", items: { type: "string" }, description: "Công dụng được phép nói" },
+      },
+      required: ["brand_id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "brand_create",
+    description: "Tạo một thương hiệu mới (chỉ cần tên). Sau đó dùng brand_set để điền tính cách, hoặc brand_ingest + brand_extract để bóc từ tài liệu.",
+    annotations: { title: "Tạo thương hiệu", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: { name: { type: "string", description: "Tên thương hiệu" } },
+      required: ["name"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "brand_fanpage_add",
+    description: "Thêm trang/kênh CỦA CHÍNH thương hiệu (nơi thương hiệu đăng bài) — khác kênh theo dõi đối thủ. Giúp gợi ý đu trend đúng định dạng, đúng người đọc của từng trang.",
+    annotations: { title: "Thêm trang của thương hiệu", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: {
+        brand_id: { type: "string" },
+        page_url: { type: "string", description: "Link trang" },
+        platform: { type: "string", description: "facebook|tiktok|youtube|instagram|threads|zalo (bỏ trống sẽ tự đoán từ link)" },
+        page_name: { type: "string" },
+        follower_count: { type: "number" },
+        topics: { type: "array", items: { type: "string" }, description: "Chủ đề trang này tập trung" },
+        formats: { type: "array", items: { type: "string" }, description: "Định dạng hay dùng: video ngắn, bài dài, carousel ảnh…" },
+        posting_cadence: { type: "string", description: "Tần suất đăng, vd '3 bài/tuần'" },
+        audience_note: { type: "string", description: "Đặc thù người theo dõi riêng của trang này" },
+        is_primary: { type: "boolean", description: "Trang chính" },
+      },
+      required: ["brand_id", "page_url"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "signals_suggest_angle",
     description: "Gợi ý 1 góc lên nội dung hài cho 1 tín hiệu: scene cụ thể + nhân vật (tên từ characters_list) + lời thoại ngắn. Người vận hành sẽ đưa sang Sáng tạo.",
     annotations: { title: "Gợi ý góc hài", readOnlyHint: false },
@@ -810,6 +866,82 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
     });
 
     return { __mcpContent: content };
+  }
+
+  if (name === "brand_create") {
+    const nm = String(args.name || "").trim();
+    if (!nm) throw new Error("Cần tên thương hiệu");
+    const [row] = await db.insert(brands).values({ owner: principal.username, name: nm }).returning();
+    return { ...row, note: "Đã tạo. Dùng brand_set để điền tính cách, hoặc brand_ingest + brand_extract để bóc từ tài liệu." };
+  }
+
+  if (name === "brand_set") {
+    if (!UUID_RE.test(args.brand_id || "")) throw new Error("brand_id không hợp lệ");
+    const [row] = await db.select().from(brands).where(eq(brands.id, args.brand_id));
+    if (!row) throw new Error("Không tìm thấy thương hiệu");
+
+    // Mục ghi tay không cần câu trích (người chủ tự quyết), nhưng phải đánh dấu
+    // source="manual" — vừa để phân biệt với mục bóc từ tài liệu, vừa để lần
+    // bóc sau không ghi đè lên quyết định của người dùng.
+    const mk = (v: any) => ({ value: v, evidence: [], source: "manual" as const });
+    const arr = (v: any) => (Array.isArray(v) ? v.map((x: any) => String(x).trim()).filter(Boolean) : null);
+    const str = (v: any) => (typeof v === "string" && v.trim() ? v.trim() : null);
+
+    const patch: Record<string, any> = { updatedAt: new Date() };
+    const mapArr: [string, string][] = [
+      ["personality", "personality"], ["content_pillars", "contentPillars"],
+      ["trend_dos", "trendDos"], ["trend_donts", "trendDonts"],
+      ["sells", "sells"], ["banned_terms", "bannedTerms"], ["allowed_claims", "allowedClaims"],
+    ];
+    for (const [inKey, col] of mapArr) {
+      if (!(inKey in args)) continue;
+      const v = arr(args[inKey]);
+      patch[col] = v && v.length ? mk(v) : null;
+    }
+    for (const [inKey, col] of [["tone_of_voice", "toneOfVoice"], ["addressing", "addressing"], ["audience", "audience"]] as [string, string][]) {
+      if (!(inKey in args)) continue;
+      const v = str(args[inKey]);
+      patch[col] = v ? mk(v) : null;
+    }
+    if (Object.keys(patch).length === 1) throw new Error("Chưa có mục nào để ghi");
+
+    const [updated] = await db.update(brands).set(patch).where(eq(brands.id, args.brand_id)).returning();
+    const written = Object.keys(patch).filter((k) => k !== "updatedAt");
+    return { ...updated, written_fields: written, note: `Đã ghi ${written.length} mục, đánh dấu là nhập tay nên lần bóc tài liệu sau sẽ không ghi đè.` };
+  }
+
+  if (name === "brand_fanpage_add") {
+    if (!UUID_RE.test(args.brand_id || "")) throw new Error("brand_id không hợp lệ");
+    const [row] = await db.select().from(brands).where(eq(brands.id, args.brand_id));
+    if (!row) throw new Error("Không tìm thấy thương hiệu");
+
+    const pageUrl = String(args.page_url || "").trim();
+    if (!pageUrl) throw new Error("Cần page_url");
+    const { assertPublicUrl } = await import("../services/brand-ingest");
+    assertPublicUrl(pageUrl);
+
+    const u = pageUrl.toLowerCase();
+    const guessed =
+      u.includes("facebook.com") || u.includes("fb.com") ? "facebook" :
+      u.includes("tiktok.com") ? "tiktok" :
+      u.includes("youtube.com") || u.includes("youtu.be") ? "youtube" :
+      u.includes("instagram.com") ? "instagram" :
+      u.includes("threads.net") || u.includes("threads.com") ? "threads" :
+      u.includes("zalo.me") ? "zalo" : null;
+    const platform = String(args.platform || "").trim() || guessed;
+    if (!platform) throw new Error("Không nhận ra nền tảng, hãy truyền platform");
+
+    const arr = (v: any) => (Array.isArray(v) ? v.map((x: any) => String(x).trim()).filter(Boolean) : []);
+    const [fp] = await db.insert(brandFanpages).values({
+      brandId: args.brand_id, platform, pageUrl,
+      pageName: String(args.page_name || "").trim() || null,
+      followerCount: Number.isFinite(Number(args.follower_count)) ? Number(args.follower_count) : null,
+      topics: arr(args.topics), formats: arr(args.formats),
+      postingCadence: String(args.posting_cadence || "").trim() || null,
+      audienceNote: String(args.audience_note || "").trim() || null,
+      isPrimary: args.is_primary === true,
+    }).returning();
+    return { ...fp, note: "Đã thêm trang của thương hiệu. Xem lại bằng brand_profile_get." };
   }
 
   if (name === "signals_suggest_angle") {
