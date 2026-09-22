@@ -47,9 +47,32 @@ async function graphGet(path: string, token: string, params: Record<string, stri
 
 /** Kiểm tra token và lấy thông tin page. Gọi trước khi lưu để không cất token hỏng. */
 export async function fetchPageInfo(pageId: string, token: string): Promise<MetaPageInfo> {
-  const d = await graphGet(pageId, token, {
-    fields: "id,name,username,category,followers_count,fan_count,about,link",
-  });
+  let d: any;
+  try {
+    d = await graphGet(pageId, token, {
+      fields: "id,name,username,category,followers_count,fan_count,about,link",
+    });
+  } catch (e: any) {
+    // Graph báo "nonexisting field (category)" khi đối tượng không phải Trang —
+    // tài khoản cá nhân không có hạng mục. Nguyên văn lỗi đó không giúp gì cho
+    // người dùng, nên hỏi lại tên rồi nói thẳng vấn đề.
+    if (/nonexisting field \(category\)/i.test(e?.message || "")) {
+      let who = "";
+      try {
+        const basic = await graphGet(pageId, token, { fields: "id,name" });
+        who = basic?.name ? ` Graph trả về "${basic.name}".` : "";
+      } catch {
+        // Không lấy được cả tên thì thôi, thông báo bên dưới vẫn đủ ý.
+      }
+      throw new Error(
+        `"${pageId}" không phải một Trang.${who} Thường là do token đang dùng là User Access Token ` +
+          `chứ không phải Page Access Token. Trong Graph API Explorer gọi ` +
+          `me/accounts?fields=id,name,access_token để lấy đúng token của Trang — nếu Trang cần dùng ` +
+          `không có trong danh sách đó thì app chưa được cấp quyền cho Trang, phải cấp trước.`,
+      );
+    }
+    throw e;
+  }
   return {
     id: String(d.id),
     name: d.name || "",
