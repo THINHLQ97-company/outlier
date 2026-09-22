@@ -303,6 +303,34 @@ export interface BrandSource {
   createdAt?: string;
 }
 
+/** Số liệu rút từ lần quét fanpage gần nhất — mirror server/services/fanpage-stats.ts. */
+export interface FanpageTopPost {
+  id: string;
+  message: string;
+  permalink?: string;
+  thumbnailUrl?: string;
+  createdTime: string;
+  likes: number;
+  comments: number;
+  shares: number;
+  mediaType: string;
+  /** Gấp mấy lần bài trung vị của CHÍNH trang này. */
+  outperformRatio: number;
+}
+
+export interface FanpageStats {
+  postCount: number;
+  spanDays: number;
+  postsPerWeek: number;
+  medianLikes: number;
+  medianComments: number;
+  medianShares: number;
+  medianLength: number;
+  formatMix: Record<string, number>;
+  topHours: { hour: number; count: number }[];
+  topPosts: FanpageTopPost[];
+}
+
 /** Trang/kênh của chính thương hiệu — khác kênh theo dõi đối thủ. */
 export interface BrandFanpage {
   id: string;
@@ -320,6 +348,10 @@ export interface BrandFanpage {
   isPrimary: boolean;
   /** Đã nối Meta chưa — có nối thì đọc bài của chính page được, miễn phí. */
   metaPageId?: string | null;
+  metaPictureUrl?: string | null;
+  metaCategory?: string | null;
+  metaAbout?: string | null;
+  metaStatsJson?: FanpageStats | null;
   metaConnectedAt?: string | null;
   metaLastSyncAt?: string | null;
   metaLastPostCount?: number | null;

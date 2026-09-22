@@ -15,6 +15,7 @@ export interface MetaPageInfo {
   followers?: number;
   about?: string;
   link?: string;
+  pictureUrl?: string;
 }
 
 export interface MetaPost {
@@ -27,6 +28,7 @@ export interface MetaPost {
   shares: number;
   /** Bài có ảnh/video hay chỉ chữ — quyết định remake theo hướng bài viết hay video. */
   mediaType: "text" | "photo" | "video" | "link" | "other";
+  thumbnailUrl?: string;
 }
 
 async function graphGet(path: string, token: string, params: Record<string, string> = {}): Promise<any> {
@@ -50,7 +52,7 @@ export async function fetchPageInfo(pageId: string, token: string): Promise<Meta
   let d: any;
   try {
     d = await graphGet(pageId, token, {
-      fields: "id,name,username,category,followers_count,fan_count,about,link",
+      fields: "id,name,username,category,followers_count,fan_count,about,link,picture.width(200).height(200)",
     });
   } catch (e: any) {
     // Graph báo "nonexisting field (category)" khi đối tượng không phải Trang —
@@ -81,6 +83,7 @@ export async function fetchPageInfo(pageId: string, token: string): Promise<Meta
     followers: d.followers_count ?? d.fan_count ?? undefined,
     about: d.about || undefined,
     link: d.link || undefined,
+    pictureUrl: d.picture?.data?.url || undefined,
   };
 }
 
@@ -110,7 +113,7 @@ export async function fetchPagePosts(pageId: string, token: string, limit = 100)
   for (let page = 0; page < 10 && out.length < limit; page++) {
     const params: Record<string, string> = {
       fields:
-        "id,message,created_time,permalink_url,attachments{media_type}," +
+        "id,message,created_time,permalink_url,full_picture,attachments{media_type}," +
         "likes.summary(true).limit(0),comments.summary(true).limit(0),shares",
       limit: String(perPage),
     };
@@ -132,6 +135,7 @@ export async function fetchPagePosts(pageId: string, token: string, limit = 100)
         comments: countOf(p, "comments"),
         shares: p.shares?.count ?? 0,
         mediaType: mediaTypeOf(p),
+        thumbnailUrl: p.full_picture || undefined,
       });
       if (out.length >= limit) break;
     }

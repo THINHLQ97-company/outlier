@@ -9,6 +9,7 @@ import {
   type MetaSyncResult,
 } from "../services/brands";
 import type { BrandFanpage } from "../types";
+import FanpageStatsPanel from "./FanpageStatsPanel";
 
 // Trang của CHÍNH thương hiệu — khác "Kênh theo dõi" (là kênh người khác để học).
 //
@@ -189,7 +190,16 @@ export default function BrandFanpages({
               return (
                 <li key={fp.id} className="border border-stone-200 rounded-xl p-3">
                   <div className="flex items-start justify-between gap-3 flex-wrap">
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex gap-3">
+                      {fp.metaPictureUrl && (
+                        <img
+                          src={fp.metaPictureUrl}
+                          alt=""
+                          className="w-11 h-11 rounded-full object-cover shrink-0 bg-stone-100"
+                          loading="lazy"
+                        />
+                      )}
+                      <div className="min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         {fp.isPrimary && <Star className="w-3.5 h-3.5 text-amber-500" aria-label="Trang chính" />}
                         <span className="font-semibold text-stone-800 truncate">{fp.pageName || fp.pageUrl}</span>
@@ -205,12 +215,17 @@ export default function BrandFanpages({
                           Mở trang <ExternalLink className="w-3 h-3" aria-hidden="true" />
                         </a>
                         {fp.followerCount != null && <span>{fp.followerCount.toLocaleString("vi-VN")} người theo dõi</span>}
+                        {fp.metaCategory && <span>{fp.metaCategory}</span>}
                         {fp.metaLastSyncAt && (
                           <span>
                             Quét lần cuối {formatDate(fp.metaLastSyncAt)}
                             {fp.metaLastPostCount != null && ` · ${fp.metaLastPostCount} bài`}
                           </span>
                         )}
+                      </div>
+                      {fp.metaAbout && (
+                        <p className="text-[11px] text-stone-500 mt-1 line-clamp-2">{fp.metaAbout}</p>
+                      )}
                       </div>
                     </div>
 
@@ -303,6 +318,8 @@ export default function BrandFanpages({
                       </p>
                     </div>
                   )}
+
+                  {fp.metaStatsJson && <FanpageStatsPanel stats={fp.metaStatsJson} />}
                 </li>
               );
             })}

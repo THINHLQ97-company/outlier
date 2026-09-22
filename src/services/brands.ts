@@ -1,7 +1,7 @@
 // Brand Profile client — hồ sơ thương hiệu bóc từ tài liệu thật, mỗi field kèm
 // trích dẫn nguồn. Endpoint: server/routes/brands.routes.ts.
 import { authHeaders, asError } from "./http";
-import type { BrandRow, BrandDetail, BrandSource, BrandField, BrandFanpage } from "../types";
+import type { BrandRow, BrandDetail, BrandSource, BrandField, BrandFanpage, FanpageStats } from "../types";
 
 export async function listBrands(): Promise<BrandRow[]> {
   const res = await fetch("/api/brands", { headers: authHeaders(false) });
@@ -174,6 +174,7 @@ export interface MetaSyncResult {
   sourceId: string;
   charCount: number;
   videoRatio: number;
+  stats: FanpageStats;
   note: string;
 }
 

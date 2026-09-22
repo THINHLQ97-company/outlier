@@ -710,6 +710,35 @@ export const channelSeenItems = pgTable("channel_seen_items", {
 // Khác `watched_channels` (kênh đối thủ để soi): đây là nơi thương hiệu đăng bài.
 // Dùng để Claude biết nội dung sẽ đăng ở đâu, định dạng nào, cho ai — từ đó gợi
 // ý đu trend cho đúng chỗ thay vì gợi ý chung chung.
+// Ảnh chụp số liệu của một fanpage tại lần quét gần nhất. Giữ nguyên hình dạng
+// mà server/services/fanpage-stats.ts sinh ra.
+export interface FanpageTopPostSnapshot {
+  id: string;
+  message: string;
+  permalink?: string;
+  thumbnailUrl?: string;
+  createdTime: string;
+  likes: number;
+  comments: number;
+  shares: number;
+  mediaType: string;
+  /** Gấp mấy lần bài trung vị của CHÍNH trang này. */
+  outperformRatio: number;
+}
+
+export interface FanpageStatsSnapshot {
+  postCount: number;
+  spanDays: number;
+  postsPerWeek: number;
+  medianLikes: number;
+  medianComments: number;
+  medianShares: number;
+  medianLength: number;
+  formatMix: Record<string, number>;
+  topHours: { hour: number; count: number }[];
+  topPosts: FanpageTopPostSnapshot[];
+}
+
 export const brandFanpages = pgTable("brand_fanpages", {
   id: uuid("id").primaryKey().defaultRandom(),
   brandId: uuid("brand_id").notNull(),
@@ -739,6 +768,17 @@ export const brandFanpages = pgTable("brand_fanpages", {
   metaLastSyncAt: timestamp("meta_last_sync_at", { withTimezone: true }),
   /** Số bài lấy về ở lần quét gần nhất — để biết có đáng bóc lại hồ sơ không. */
   metaLastPostCount: integer("meta_last_post_count"),
+
+  /** Ảnh đại diện, hạng mục, giới thiệu — lấy từ Meta, để hiện ngay trên hồ sơ. */
+  metaPictureUrl: text("meta_picture_url"),
+  metaCategory: text("meta_category"),
+  metaAbout: text("meta_about"),
+  /**
+   * Số liệu rút từ lần quét gần nhất: nhịp đăng, định dạng hay dùng, mốc trung
+   * vị của chính trang, và những bài ăn hơn hẳn phần còn lại.
+   * Xem server/services/fanpage-stats.ts.
+   */
+  metaStatsJson: jsonb("meta_stats_json").$type<FanpageStatsSnapshot | null>(),
 
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

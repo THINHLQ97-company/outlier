@@ -13,6 +13,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "../db/client";
 import { brandFanpages, brandSources } from "../db/schema";
 import { fetchPageInfo, fetchPagePosts, postsToDocument, type MetaPageInfo } from "./meta-graph";
+import { summarizePosts, statsToText, type FanpageStats } from "./fanpage-stats";
 import { encryptToken, decryptToken } from "./meta-token";
 
 // Những đoạn đường dẫn của Facebook không bao giờ là tên page.
@@ -86,6 +87,9 @@ export async function connectFanpageMeta(
       pageName: row.pageName || page.name,
       handle: row.handle || (page.username ? `@${page.username}` : null),
       followerCount: page.followers ?? row.followerCount,
+      metaPictureUrl: page.pictureUrl ?? null,
+      metaCategory: page.category ?? null,
+      metaAbout: page.about ?? null,
     })
     .where(eq(brandFanpages.id, fanpageRowId));
 
@@ -107,6 +111,7 @@ export interface SyncResult {
   charCount: number;
   /** Tỉ lệ bài có video — gợi ý nên remake theo hướng bài viết hay video. */
   videoRatio: number;
+  stats: FanpageStats;
   note: string;
 }
 
@@ -130,7 +135,10 @@ export async function syncFanpagePosts(fanpageRowId: string, limit = 100): Promi
     throw new Error("Không lấy được bài nào có chữ. Page chưa đăng bài, hoặc token thiếu quyền pages_read_engagement.");
   }
 
-  const doc = postsToDocument(page, posts);
+  const stats = summarizePosts(posts);
+  // Số liệu đi kèm vào tài liệu chứ không để riêng: nhờ vậy khi bóc hồ sơ, model
+  // thấy luôn bài nào của trang ăn hơn hẳn phần còn lại và học giọng từ bài đó.
+  const doc = `${postsToDocument(page, posts)}\n--- SỐ LIỆU CỦA TRANG ---\n${statsToText(stats)}\n`;
   const [source] = await db
     .insert(brandSources)
     .values({
@@ -153,6 +161,10 @@ export async function syncFanpagePosts(fanpageRowId: string, limit = 100): Promi
       metaLastSyncAt: new Date(),
       metaLastPostCount: posts.length,
       followerCount: page.followers ?? row.followerCount,
+      metaPictureUrl: page.pictureUrl ?? row.metaPictureUrl,
+      metaCategory: page.category ?? row.metaCategory,
+      metaAbout: page.about ?? row.metaAbout,
+      metaStatsJson: stats,
     })
     .where(eq(brandFanpages.id, fanpageRowId));
 
@@ -163,6 +175,7 @@ export async function syncFanpagePosts(fanpageRowId: string, limit = 100): Promi
     sourceId: source.id,
     charCount: doc.length,
     videoRatio,
+    stats,
     note:
       `Đã nạp ${posts.length} bài thành tài liệu. Gọi brand_extract để bóc giọng nói, xưng hô, ` +
       `chủ đề từ chính bài của page (mỗi mục sẽ kèm câu trích có link). Riêng "không bao giờ làm" ` +

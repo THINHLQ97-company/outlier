@@ -10,6 +10,7 @@
 // đọc "chưa có dữ liệu" sẽ hỏi lại hoặc né; đọc một câu trơn tru bịa ra thì không.
 import type { brands, brandFanpages } from "../db/schema";
 import type { BrandField, BrandRegister, BrandBehaviorRules, BrandVisualIdentity, BrandExample } from "../db/schema";
+import { statsToText } from "./fanpage-stats";
 
 type BrandRow = typeof brands.$inferSelect;
 type FanpageRow = typeof brandFanpages.$inferSelect;
@@ -49,7 +50,12 @@ export function buildBrandBrief(
   if (audience) facts.push(`Người đọc: ${audience}`);
   else missing.push("audience (khách là ai)");
   if (pages.length > 0) {
-    const where = pages.map((p) => `${p.pageName || p.pageUrl} (${p.platform}${p.postingCadence ? `, ${p.postingCadence}` : ""})`);
+    const where = pages.map((p) => {
+      const bits = [p.platform];
+      if (p.followerCount != null) bits.push(`${p.followerCount.toLocaleString("vi-VN")} theo dõi`);
+      if (p.postingCadence) bits.push(p.postingCadence);
+      return `${p.pageName || p.pageUrl} (${bits.join(", ")})`;
+    });
     facts.push(`Đăng ở: ${where.join(" · ")}`);
   }
   if (facts.length) out.push(`\n${bullets(facts)}`);
@@ -117,6 +123,16 @@ export function buildBrandBrief(
     }
   } else if (visual?.template) {
     out.push(`\n**Khuôn ảnh quen thuộc của trang:** ${visual.template}`);
+  }
+
+  // Số liệu thật của trang: thứ giữ cho việc viết lại bám vào cái trang này đang
+  // làm được, thay vì bám cảm tính. Chỉ lấy trang chính (hoặc trang đầu có số liệu).
+  const withStats = pages.find((p) => p.isPrimary && p.metaStatsJson) || pages.find((p) => p.metaStatsJson);
+  if (withStats?.metaStatsJson) {
+    const text = statsToText(withStats.metaStatsJson as any);
+    if (text) out.push(`\n## Trang này đang chạy thế nào\n${text}`);
+  } else if (pages.length > 0) {
+    missing.push("số liệu thật của trang — nối Meta rồi quét bài về để có nhịp đăng, định dạng hay dùng, và bài nào ăn hơn hẳn");
   }
 
   const examples = val<BrandExample[]>(row.fewShotExamples as any);
