@@ -50,6 +50,9 @@ export default function BrandFanpages({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [tokenFor, setTokenFor] = useState<string | null>(null);
   const [token, setToken] = useState("");
+  // Link dạng facebook.com/tenpage thường đoán được, nhưng không phải lúc nào
+  // cũng vậy — cho nhập thẳng Page ID thay vì để người dùng bí.
+  const [pageId, setPageId] = useState("");
   const [syncResult, setSyncResult] = useState<MetaSyncResult | null>(null);
 
   async function handleAdd() {
@@ -74,8 +77,9 @@ export default function BrandFanpages({
     setBusyId(fp.id);
     setError(null);
     try {
-      const out = await connectFanpageMeta(brandId, fp.id, value);
+      const out = await connectFanpageMeta(brandId, fp.id, value, pageId.trim() || undefined);
       setToken("");
+      setPageId("");
       setTokenFor(null);
       setError(null);
       onChanged();
@@ -261,14 +265,26 @@ export default function BrandFanpages({
                         <code className="bg-stone-100 px-1 rounded">pages_read_engagement</code>. Token được kiểm tra
                         trước khi lưu, và lưu ở dạng mã hoá.
                       </p>
-                      <div className="flex gap-2 mt-2">
+                      <input
+                        id={`token-${fp.id}`}
+                        type="password"
+                        className="ds-input w-full font-mono text-xs mt-2"
+                        placeholder="EAAG..."
+                        value={token}
+                        onChange={(e) => setToken(e.target.value)}
+                        autoComplete="off"
+                      />
+
+                      <label htmlFor={`pageid-${fp.id}`} className="block text-xs font-medium text-stone-600 mt-3">
+                        Page ID <span className="font-normal text-stone-400">— bỏ trống nếu link đã có mã số</span>
+                      </label>
+                      <div className="flex gap-2 mt-1">
                         <input
-                          id={`token-${fp.id}`}
-                          type="password"
+                          id={`pageid-${fp.id}`}
                           className="ds-input flex-1 font-mono text-xs"
-                          placeholder="EAAG..."
-                          value={token}
-                          onChange={(e) => setToken(e.target.value)}
+                          placeholder="Ví dụ 1234567890"
+                          value={pageId}
+                          onChange={(e) => setPageId(e.target.value)}
                           autoComplete="off"
                         />
                         <button
@@ -280,6 +296,11 @@ export default function BrandFanpages({
                           Kiểm tra và nối
                         </button>
                       </div>
+                      <p className="text-[11px] text-stone-400 mt-1.5">
+                        Cách nhanh nhất lấy cả hai: trong Graph API Explorer gọi{" "}
+                        <code className="bg-stone-100 px-1 rounded">me/accounts?fields=id,name,access_token</code> —
+                        kết quả có sẵn mã page và token của từng trang bạn quản lý.
+                      </p>
                     </div>
                   )}
                 </li>

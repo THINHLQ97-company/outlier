@@ -15,12 +15,26 @@ import { brandFanpages, brandSources } from "../db/schema";
 import { fetchPageInfo, fetchPagePosts, postsToDocument, type MetaPageInfo } from "./meta-graph";
 import { encryptToken, decryptToken } from "./meta-token";
 
-/** Lấy page id từ URL fanpage, nếu URL có dạng .../pages/ten/123 hoặc ?id=123. */
+// Những đoạn đường dẫn của Facebook không bao giờ là tên page.
+const NOT_A_PAGE_SLUG = new Set([
+  "profile.php", "pages", "groups", "people", "watch", "marketplace",
+  "events", "story.php", "photo.php", "permalink.php", "share", "sharer",
+]);
+
+/**
+ * Lấy mã page từ link fanpage. Nhận cả ba dạng hay gặp:
+ *   facebook.com/pages/ten-page/123456   → 123456
+ *   facebook.com/profile.php?id=123456   → 123456
+ *   facebook.com/tenpage                 → tenpage (Graph tra được bằng username)
+ */
 export function guessPageIdFromUrl(url: string): string | null {
   const byQuery = /[?&]id=(\d{5,})/.exec(url);
   if (byQuery) return byQuery[1];
   const byPath = /facebook\.com\/(?:pages\/[^/]+\/)?(\d{5,})(?:\/|$|\?)/.exec(url);
   if (byPath) return byPath[1];
+  // Tên rút gọn: Graph API tra được page bằng username y như bằng mã số.
+  const bySlug = /(?:facebook|fb)\.com\/([A-Za-z0-9._-]{3,})(?:\/|$|\?)/.exec(url);
+  if (bySlug && !NOT_A_PAGE_SLUG.has(bySlug[1].toLowerCase())) return bySlug[1];
   return null;
 }
 
@@ -42,8 +56,26 @@ export async function connectFanpageMeta(
   const [row] = await db.select().from(brandFanpages).where(eq(brandFanpages.id, fanpageRowId));
   if (!row) throw new Error("Không tìm thấy fanpage trong hồ sơ thương hiệu.");
 
-  const pageId = (explicitPageId || row.metaPageId || guessPageIdFromUrl(row.pageUrl) || "me").trim();
+  const pageId = (explicitPageId || row.metaPageId || guessPageIdFromUrl(row.pageUrl) || "").trim();
+  if (!pageId) {
+    // Trước đây chỗ này lùi về "me". Với Page Access Token thì "me" đúng là
+    // page, nhưng với User Access Token "me" lại là tài khoản cá nhân — nối
+    // xong sẽ quét nhầm dòng thời gian của người dùng mà không báo gì.
+    throw new Error(
+      "Không đoán được mã page từ link này. Nhập thẳng Page ID (lấy ở Trang → Giới thiệu → " +
+        "ID trang, hoặc gọi me/accounts trong Graph API Explorer).",
+    );
+  }
+
   const page = await fetchPageInfo(pageId, pageAccessToken);
+  // Token của người dùng cũng gọi lọt endpoint này, và khi đó trả về hồ sơ cá
+  // nhân chứ không phải page. Page luôn có category; tài khoản cá nhân thì không.
+  if (!page.category && page.followers == null) {
+    throw new Error(
+      `"${page.name}" trông không phải một Trang (không có hạng mục lẫn số người theo dõi). ` +
+        "Nhiều khả năng đây là tài khoản cá nhân — kiểm tra lại Page ID và token.",
+    );
+  }
 
   await db
     .update(brandFanpages)

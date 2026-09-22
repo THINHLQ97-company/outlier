@@ -147,11 +147,12 @@ export async function connectFanpageMeta(
   brandId: string,
   fanpageId: string,
   pageAccessToken: string,
+  pageId?: string,
 ): Promise<MetaConnectResult> {
   const res = await fetch(`/api/brands/${brandId}/fanpages/${fanpageId}/meta/connect`, {
     method: "POST",
     headers: authHeaders(),
-    body: JSON.stringify({ pageAccessToken }),
+    body: JSON.stringify(pageId ? { pageAccessToken, pageId } : { pageAccessToken }),
   });
   if (!res.ok) return asError(res, "Không nối được với Meta.");
   return res.json();
