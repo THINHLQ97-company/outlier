@@ -564,7 +564,7 @@ function DeconstructDetailPanel({
           <div className="flex items-center gap-2 shrink-0">
             {row.status === "ready" && (
               <button onClick={onRemake} className="ds-btn ds-btn-primary ds-btn-sm">
-                <PenLine className="w-3.5 h-3.5" aria-hidden="true" /> Viết lại cho thương hiệu
+                <PenLine className="w-3.5 h-3.5" aria-hidden="true" /> Remake bài viết cho thương hiệu
               </button>
             )}
             <button

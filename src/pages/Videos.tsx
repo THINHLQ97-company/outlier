@@ -44,6 +44,7 @@ import type {
   VideoAspectRatio,
   VideoQuote,
 } from "../types";
+import RemakeModeSwitch from "../components/RemakeModeSwitch";
 
 // Trang "Dựng video" — mảnh CUỐI khép kín vòng sản phẩm: biến một bản viết
 // (Viết lại) thành video. Quy trình 4 bước CÓ ĐIỂM DỪNG vì bước 3 (dựng
@@ -248,13 +249,16 @@ export default function Videos() {
     <div className="flex flex-col gap-4">
       <div>
         <h1 className="text-lg font-bold text-stone-800 font-display flex items-center gap-2">
-          <Clapperboard className="w-5 h-5 text-storm-500" aria-hidden="true" /> Dựng video
+          <Clapperboard className="w-5 h-5 text-storm-500" aria-hidden="true" /> Remake video
         </h1>
         <p className="text-sm text-stone-500">
           Biến một bản viết thành video: tách cảnh (miễn phí) → bạn sửa/duyệt từng cảnh → dựng hình bằng AI (tốn phí, cần xác
-          nhận) → ghép thành video hoàn chỉnh (miễn phí).
+          nhận) → ghép thành video hoàn chỉnh (miễn phí). Bước này <strong>cần sẵn một bản Remake bài viết đã duyệt</strong> —
+          chưa có thì quay lại bước trước.
         </p>
       </div>
+
+      <RemakeModeSwitch current="video" />
 
       <NewVideoForm remakes={readyRemakes} remakesLoading={remakesLoading} onCreated={handleCreated} />
 

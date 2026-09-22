@@ -22,6 +22,7 @@ import { listDeconstructions } from "../services/deconstruct";
 import { listRemakes, getRemake, createRemake, reviseRemake, recheckRemake, deleteRemake, pollRemake } from "../services/remakes";
 import ConfirmDialog from "../components/ConfirmDialog";
 import type { BrandRow, DeconstructionRow, RemakeRow, RemakeFormat, GuardrailReport, GuardrailIssue, GuardrailCode } from "../types";
+import RemakeModeSwitch from "../components/RemakeModeSwitch";
 
 // Trang "Viết lại" — màn CUỐI khép kín vòng sản phẩm: tìm bài (Radar) → bóc
 // cấu trúc (Bóc cấu trúc) → viết lại cho thương hiệu (ở đây) → kiểm tra.
@@ -315,13 +316,16 @@ export default function Remake() {
     <div className="flex flex-col gap-4">
       <div>
         <h1 className="text-lg font-bold text-stone-800 font-display flex items-center gap-2">
-          <PenLine className="w-5 h-5 text-storm-500" aria-hidden="true" /> Viết lại
+          <PenLine className="w-5 h-5 text-storm-500" aria-hidden="true" /> Remake bài viết
         </h1>
         <p className="text-sm text-stone-500">
           Học cách triển khai của một bài đã bóc cấu trúc, viết lại bằng ruột của thương hiệu bạn — rồi kiểm tra kỹ trước khi
-          đem dùng.
+          đem dùng. Đầu ra là <strong>chữ</strong>: caption, bài đăng, hoặc kịch bản. Muốn thành video thì làm xong bước này
+          rồi sang <strong>Remake video</strong>.
         </p>
       </div>
+
+      <RemakeModeSwitch current="post" />
 
       <NewRemakeForm
         brands={brands}
