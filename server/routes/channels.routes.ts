@@ -96,6 +96,7 @@ export async function refreshChannelInBackground(channelId: string, limit = DEFA
       channelKey: c.channelKey ?? null, channelName: c.channelName ?? null,
       followerCount: c.followerCount ?? null,
       views: c.views ?? null, likes: c.likes ?? null,
+      contentKind: (c as any).contentKind || "unknown",
       metricsSource: (c as any).__fromApify ? "apify" : "scan",
       isNew: newKeys.includes(c.itemKey),
     })));
@@ -142,6 +143,8 @@ async function scanChannelViaApify(platform: string, channelUrl: string, limit: 
   const candidates = out.metrics.map((m) => ({
     platform, itemKey: m.itemKey, url: m.url,
     title: m.title, coverUrl: undefined, durationSec: undefined,
+    // Apify chỉ dùng cho TikTok/Instagram ở đây, đều là video.
+    contentKind: "video" as const,
     publishedAt: m.publishedAt,
     channelKey: m.channelKey, channelName: m.channelName,
     followerCount: m.followerCount,

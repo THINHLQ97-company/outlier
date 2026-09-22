@@ -76,6 +76,25 @@ export function subtitleToTranscript(vtt: string): string {
   return out.join("\n");
 }
 
+/**
+ * Nền tảng nào KHÔNG tải trực tiếp được nữa, phải đi qua dịch vụ có phí.
+ * - tiktok: yt-dlp bản mới nhất (2026.08.19) lỗi "Unexpected response from
+ *   webpage request" với mọi video TikTok — đã thử, không phải do bản cũ.
+ * - facebook: yt-dlp trả 404 với link bài; nhưng cào MỘT BÀI qua Apify thì
+ *   lấy được đủ nội dung + lượt thích/bình luận/chia sẻ + ảnh bài.
+ */
+export const NEEDS_PAID_FETCH = new Set(["tiktok", "facebook", "instagram"]);
+
+export function platformOfUrl(url: string): string | null {
+  const u = url.toLowerCase();
+  if (u.includes("tiktok.com")) return "tiktok";
+  if (u.includes("facebook.com") || u.includes("fb.com") || u.includes("fb.watch")) return "facebook";
+  if (u.includes("instagram.com")) return "instagram";
+  if (u.includes("youtube.com") || u.includes("youtu.be")) return "youtube";
+  if (u.includes("douyin.com")) return "douyin";
+  return null;
+}
+
 /** Lấy metadata + phụ đề. KHÔNG tải video (nhẹ, nhanh). */
 export async function fetchMediaInfo(url: string): Promise<MediaInfo> {
   const { out, err, code } = await run(ytDlpPath(), [

@@ -7,7 +7,10 @@ import { desc, eq } from "drizzle-orm";
 import { getDb, isDbConfigured } from "../db/client";
 import { deconstructions, radarItems } from "../db/schema";
 import { requireAuth, getAuthUser } from "../auth-mw";
-import { deconstruct } from "../services/deconstruct";
+import { deconstruct, NEEDS_PAID_FETCH, platformOfUrl } from "../services/deconstruct";
+import { fetchPostViaApify } from "../services/post-fetch";
+import { estimateCostUsd, isApifyConfigured } from "../services/apify";
+import { deconstructFromTranscript } from "../services/deconstruct";
 import { assertPublicUrl } from "../services/brand-ingest";
 import { isActiveAdmin } from "./studio.routes";
 
@@ -22,9 +25,77 @@ function dbDown(res: any): boolean {
 }
 
 /** Phân tích chạy nền; lỗi ghi thẳng vào bản ghi vì request đã trả về rồi. */
-export async function runDeconstructInBackground(id: string, url: string) {
+export async function runDeconstructInBackground(id: string, url: string, allowPaid = false) {
   try {
     await getDb().update(deconstructions).set({ status: "analyzing", updatedAt: new Date() }).where(eq(deconstructions.id, id));
+
+    const platform = platformOfUrl(url);
+
+    // TikTok/Facebook/Instagram không tải trực tiếp được nữa — phải qua dịch vụ
+    // có phí. Chỉ chạy khi người dùng đã đồng ý trả phí.
+    if (platform && NEEDS_PAID_FETCH.has(platform)) {
+      if (!allowPaid) {
+        await getDb().update(deconstructions).set({
+          status: "error",
+          contentKind: platform === "facebook" ? "post" : "video",
+          errorMessage:
+            `Nội dung ${platform === "facebook" ? "Facebook" : platform === "tiktok" ? "TikTok" : "Instagram"} ` +
+            `không lấy được bằng công cụ miễn phí. Cần dùng dịch vụ có phí — khoảng ` +
+            `${estimateCostUsd(1).toFixed(3)} USD cho một bài. Bấm "Phân tích có phí" để tiếp tục.`,
+          updatedAt: new Date(),
+        }).where(eq(deconstructions.id, id));
+        return;
+      }
+      if (!isApifyConfigured()) {
+        await getDb().update(deconstructions)
+          .set({ status: "error", errorMessage: "Chưa cấu hình dịch vụ lấy bài có phí.", updatedAt: new Date() })
+          .where(eq(deconstructions.id, id));
+        return;
+      }
+
+      const out = await fetchPostViaApify(url);
+      if (!out.post) {
+        await getDb().update(deconstructions)
+          .set({ status: "error", errorMessage: out.warning || "Không lấy được nội dung bài.", updatedAt: new Date() })
+          .where(eq(deconstructions.id, id));
+        return;
+      }
+      const post = out.post;
+
+      // Bài chữ thì phân tích phần chữ; video thì vẫn đi đường phân tích video.
+      let structure: any = null;
+      let dropped: string[] = [];
+      let warn = out.warning;
+      if (post.text && post.text.trim().length > 40) {
+        const viaText = await deconstructFromTranscript(post.text, {
+          title: post.title, durationSec: post.durationSec,
+        });
+        structure = viaText.structure;
+        dropped = viaText.dropped;
+        warn = [warn, viaText.warning].filter(Boolean).join(" · ") || undefined;
+      }
+      const hasContent = !!(structure && (structure.hook3s || structure.formula || (structure.retentionBeats || []).length));
+
+      await getDb().update(deconstructions).set({
+        status: hasContent || post.text ? "ready" : "error",
+        title: post.text ? post.text.slice(0, 120) : null,
+        platform: platform,
+        contentKind: post.kind,
+        thumbnailUrl: post.thumbnailUrl ?? null,
+        bodyText: post.text ?? null,
+        views: post.views ?? null, likes: post.likes ?? null,
+        comments: post.comments ?? null, shares: post.shares ?? null,
+        followerCount: post.followerCount ?? null,
+        channelName: post.channelName ?? null,
+        durationSec: post.durationSec ?? null,
+        structure: hasContent ? structure : null,
+        analysisMode: "transcript",
+        analyzedBy: "apify+gemini",
+        errorMessage: [warn, ...dropped].filter(Boolean).join(" · ").slice(0, 500) || null,
+        updatedAt: new Date(),
+      } as any).where(eq(deconstructions.id, id));
+      return;
+    }
 
     const r = await deconstruct(url);
     const hasContent = !!(r.structure.hook3s || r.structure.formula || (r.structure.retentionBeats || []).length);
@@ -116,7 +187,7 @@ export function registerDeconstructRoutes(app: Express) {
         message: "Đang phân tích bài này. Việc này mất khoảng 1-3 phút.",
       });
 
-      void runDeconstructInBackground(row.id, url);
+      void runDeconstructInBackground(row.id, url, req.body?.allowPaid === true);
     } catch (e: any) {
       console.error("deconstruct create:", e?.message || e);
       res.status(500).json({ error: "Không bắt đầu phân tích được." });

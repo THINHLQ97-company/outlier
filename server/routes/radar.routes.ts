@@ -131,6 +131,7 @@ async function runScanInBackground(
           channelKey: c.channelKey ?? null, channelName: c.channelName ?? null,
           followerCount: c.followerCount ?? null,
           views: c.views ?? null, likes: c.likes ?? null,
+          contentKind: c.contentKind || "unknown",
           metricsSource: "scan",
         })));
       }

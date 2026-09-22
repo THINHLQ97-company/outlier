@@ -396,6 +396,13 @@ export const radarItems = pgTable("radar_items", {
   comments: integer("comments"),
   shares: integer("shares"),
 
+  /**
+   * Loại nội dung — quyết định chỉ số nào có nghĩa và phân tích bằng cách nào.
+   *   video → có lượt xem, thời lượng; phân tích được bằng khung hình
+   *   post  → bài chữ/ảnh, KHÔNG có lượt xem; chỉ phân tích được phần chữ
+   * Suy ra từ dữ liệu quét (có thời lượng → video), không bắt người dùng chọn.
+   */
+  contentKind: text("content_kind").notNull().default("unknown"), // video | post | image | unknown
   metricsSource: text("metrics_source").notNull().default("scan"), // scan | apify
   /** true = bài chưa từng thấy ở các lần quét trước của cùng kênh theo dõi. */
   isNew: boolean("is_new").notNull().default(false),
@@ -467,6 +474,19 @@ export const deconstructions = pgTable("deconstructions", {
 
   status: text("status").notNull().default("pending"), // pending|downloading|analyzing|ready|error
   errorMessage: text("error_message"),
+
+  /** Loại nội dung — quyết định phân tích bằng cách nào và chỉ số nào có nghĩa. */
+  contentKind: text("content_kind").notNull().default("unknown"), // video | post | image | unknown
+  thumbnailUrl: text("thumbnail_url"),
+  /** Chỉ số của bài gốc — người duyệt cần thấy bài này thật sự có chạy không. */
+  views: integer("views"),
+  likes: integer("likes"),
+  comments: integer("comments"),
+  shares: integer("shares"),
+  followerCount: integer("follower_count"),
+  channelName: text("channel_name"),
+  /** Nội dung chữ của bài (bài viết Facebook thì đây là toàn bộ nội dung). */
+  bodyText: text("body_text"),
 
   transcript: text("transcript"),                       // lời thoại (nếu lấy được)
   structure: jsonb("structure").$type<DeconstructedStructure | null>(),

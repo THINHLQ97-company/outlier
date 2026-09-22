@@ -127,6 +127,20 @@
       "when": 1790042895226,
       "tag": "0017_brand_personality_fanpages",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790047178201,
+      "tag": "0018_content_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790047505451,
+      "tag": "0019_decon_metrics",
+      "breakpoints": true
     }
   ]
 }

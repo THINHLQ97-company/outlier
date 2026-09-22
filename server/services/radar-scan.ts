@@ -11,8 +11,26 @@ import fs from "fs";
 const SCAN_TIMEOUT_MS = 90_000;
 const HARD_MAX = 100; // chặn trên, tránh quét vô tận
 
+/**
+ * Loại nội dung. Quan trọng vì chỉ số có nghĩa khác nhau: bài chữ trên Facebook
+ * không có "lượt xem", nên hiển thị ô lượt xem trống ở đó là gây hiểu nhầm.
+ */
+export type ContentKind = "video" | "post" | "image" | "unknown";
+
+/** Suy loại nội dung từ dữ liệu quét thay vì bắt người dùng chọn. */
+export function inferContentKind(e: { durationSec?: number; platform?: string; url?: string }): ContentKind {
+  if (typeof e.durationSec === "number" && e.durationSec > 0) return "video";
+  const u = (e.url || "").toLowerCase();
+  if (u.includes("/video") || u.includes("/watch") || u.includes("/shorts") || u.includes("youtu.be")) return "video";
+  if (u.includes("/posts/") || u.includes("permalink") || u.includes("story_fbid")) return "post";
+  // TikTok/Douyin/YouTube gần như chỉ có video; nền tảng khác thì chưa chắc.
+  if (["tiktok", "douyin", "youtube"].includes(e.platform || "")) return "video";
+  return "unknown";
+}
+
 export interface ScanCandidate {
   platform: string;
+  contentKind?: ContentKind;
   itemKey: string;
   url: string;
   title?: string;
@@ -104,13 +122,15 @@ function toCandidate(e: any, platform: string, chan: ChannelInfo = {}): ScanCand
   const url = e?.webpage_url || e?.url || e?.original_url;
   const id = e?.id ?? url;
   if (!url || !id) return null;
+  const durationSec = n(e?.duration);
   return {
     platform,
+    contentKind: inferContentKind({ durationSec, platform, url: String(url) }),
     itemKey: String(id),
     url: String(url),
     title: e?.title || e?.description || undefined,
     coverUrl: e?.thumbnail || (Array.isArray(e?.thumbnails) && e.thumbnails.at(-1)?.url) || undefined,
-    durationSec: n(e?.duration),
+    durationSec,
     publishedAt: pubDate(e),
     channelKey: e?.channel_id || e?.uploader_id || chan.channelKey || undefined,
     channelName: e?.channel || e?.uploader || chan.channelName || undefined,

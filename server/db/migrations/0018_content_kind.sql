@@ -1,0 +1,1 @@
+ALTER TABLE "radar_items" ADD COLUMN "content_kind" text DEFAULT 'unknown' NOT NULL;
