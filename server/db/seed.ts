@@ -18,6 +18,7 @@ import { getDb, getPool, isDbConfigured } from "./client";
 import { characters, rubricVersions, signals, styles, users } from "./schema";
 import { hashPassword } from "../password";
 import { CHARACTERS, RUBRIC_DEFAULT_WEIGHTS, RUBRIC_DEFAULT_THRESHOLDS } from "../../shared/engine-data";
+import { pathToFileURL } from "url";
 
 dotenv.config();
 
@@ -275,21 +276,32 @@ async function seedAdminUser() {
   console.log(`[seed] users: tạo tài khoản admin "${username}" OK.`);
 }
 
-async function main() {
-  if (!isDbConfigured()) {
-    console.error("[seed] DATABASE_URL chưa cấu hình — không thể seed.");
-    process.exit(1);
-  }
+// Mọi bước seed đều bỏ qua nếu dữ liệu đã có, nên gọi lại nhiều lần là an
+// toàn. Server gọi hàm này mỗi lần khởi động: trên Vibe Host không mở được
+// shell nên đây là cách duy nhất tạo tài khoản admin đầu tiên.
+export async function seedAll(): Promise<void> {
   await seedCharacters();
   await seedRubric();
   await seedDemoSignals();
   await seedStyles();
   await seedAdminUser();
+}
+
+async function main() {
+  if (!isDbConfigured()) {
+    console.error("[seed] DATABASE_URL chưa cấu hình — không thể seed.");
+    process.exit(1);
+  }
+  await seedAll();
   console.log("[seed] Done.");
   await getPool().end();
 }
 
-main().catch((e) => {
-  console.error("[seed] Lỗi:", e?.message || e);
-  process.exit(1);
-});
+// Chỉ tự chạy khi gọi thẳng `node --import tsx server/db/seed.ts`, không chạy
+// khi server import hàm seedAll ở trên.
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  main().catch((e) => {
+    console.error("[seed] Lỗi:", e?.message || e);
+    process.exit(1);
+  });
+}

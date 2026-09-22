@@ -3,6 +3,8 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import dotenv from "dotenv";
 import { runMigrations } from "./server/db/migrate";
+import { seedAll } from "./server/db/seed";
+import { isDbConfigured } from "./server/db/client";
 import { registerAuthRoutes } from "./server/routes/auth.routes";
 import { registerFileRoutes } from "./server/routes/files.routes";
 import { registerCharacterRoutes } from "./server/routes/characters.routes";
@@ -65,6 +67,18 @@ async function startServer() {
   // Run DB migrations on boot (no-op + warning if DATABASE_URL is unset, see
   // server/db/migrate.ts) so the app keeps serving even without Postgres yet.
   await runMigrations();
+
+  // Seed sau migration: các bước seed đều bỏ qua nếu dữ liệu đã có. Cần chạy
+  // ở đây vì Vibe Host không mở được shell để gọi `npm run db:seed` bằng tay,
+  // mà không có bước này thì không tài khoản nào đăng nhập được.
+  // Seed hỏng không được làm chết app — chỉ ghi log.
+  if (isDbConfigured()) {
+    try {
+      await seedAll();
+    } catch (e: any) {
+      console.error("[boot] seed lỗi (bỏ qua, app vẫn chạy):", e?.message || e);
+    }
+  }
 
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok" });
