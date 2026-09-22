@@ -19,7 +19,7 @@ const UPLOAD_DIR = process.env.UPLOAD_DIR || "/data/uploads";
 // Namespace hợp lệ cho key: "characters" (ảnh reference nhân vật), "posts"
 // (ảnh biến thể + ảnh cuối bài viết — thay cho việc nhét base64 vào Postgres),
 // "misc" (dự phòng).
-export const KEY_PREFIXES = ["characters", "posts", "assets", "styles", "misc"] as const;
+export const KEY_PREFIXES = ["characters", "posts", "assets", "styles", "videos", "misc"] as const;
 export type KeyPrefix = (typeof KEY_PREFIXES)[number];
 
 class FsDriver implements StorageDriver {

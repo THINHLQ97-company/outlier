@@ -179,7 +179,7 @@ function GalleryTab() {
         ))}
       </div>
 
-      {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+      {error && <div role="alert" className="ds-alert ds-alert-danger">{error}</div>}
 
       {loading ? (
         <div className="ds-card">
@@ -371,10 +371,10 @@ function GalleryDetailModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-stone-100">
-          <h3 className="font-semibold text-stone-800 font-display">Chi tiết ảnh</h3>
+    <div className="ds-modal-overlay open" style={{ zIndex: 100 }}>
+      <div className="ds-modal max-w-lg max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="gallery-detail-title">
+        <div className="ds-modal-header">
+          <h3 id="gallery-detail-title" className="ds-modal-title font-display">Chi tiết ảnh</h3>
           <div className="flex items-center gap-1.5">
             <button
               onClick={onToggleFavorite}
@@ -392,12 +392,12 @@ function GalleryDetailModal({
               )}
               {isFavorite ? "Đã thích" : "Thích"}
             </button>
-            <button onClick={onClose} className="p-1.5 text-stone-400 hover:bg-stone-100 rounded-full" aria-label="Đóng">
+            <button onClick={onClose} className="ds-modal-close" aria-label="Đóng">
               <X className="w-4 h-4" aria-hidden="true" />
             </button>
           </div>
         </div>
-        <div className="p-5 flex flex-col gap-3">
+        <div className="ds-modal-body flex flex-col gap-3">
           <div className="rounded-lg overflow-hidden bg-stone-100 flex items-center justify-center">
             {url ? <img src={url} alt="" className="w-full max-h-96 object-contain" /> : <ImageOff className="w-8 h-8 text-stone-300 m-10" aria-hidden="true" />}
           </div>
@@ -469,14 +469,14 @@ function GalleryDetailModal({
             </div>
           )}
 
-          {saveErr && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{saveErr}</div>}
-          {saveMsg && <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">{saveMsg}</div>}
+          {saveErr && <div role="alert" className="ds-alert ds-alert-danger">{saveErr}</div>}
+          {saveMsg && <div role="status" className="ds-alert ds-alert-success">{saveMsg}</div>}
 
           <div className="flex flex-wrap items-center gap-2 pt-1">
             <button
               onClick={handleDownload}
               disabled={!url}
-              className="flex items-center gap-1.5 text-sm font-medium text-stone-700 bg-stone-100 hover:bg-stone-200 px-3 py-2 rounded-lg disabled:opacity-50"
+              className="ds-btn"
             >
               <Download className="w-4 h-4" aria-hidden="true" /> Tải ảnh
             </button>
@@ -517,19 +517,19 @@ function GalleryDetailModal({
 
           {showSaveForm && (
             <div className="flex flex-col gap-2 bg-stone-50 border border-stone-200 rounded-lg p-3">
-              <label className="text-xs font-medium text-stone-600" htmlFor="save-asset-name">Tên</label>
+              <label className="ds-label" htmlFor="save-asset-name">Tên</label>
               <input
                 id="save-asset-name"
                 value={assetName}
                 onChange={(e) => setAssetName(e.target.value)}
-                className="w-full rounded-lg border border-stone-300 px-2.5 py-1.5 text-sm"
+                className="ds-input"
               />
-              <label className="text-xs font-medium text-stone-600" htmlFor="save-asset-kind">Loại</label>
+              <label className="ds-label" htmlFor="save-asset-kind">Loại</label>
               <select
                 id="save-asset-kind"
                 value={assetKind}
                 onChange={(e) => setAssetKind(e.target.value as AssetKind)}
-                className="w-full rounded-lg border border-stone-300 px-2.5 py-1.5 text-sm"
+                className="ds-select"
               >
                 <option value="reference">Ảnh tham chiếu</option>
                 <option value="meme_template">Ảnh mẫu meme</option>
@@ -541,7 +541,7 @@ function GalleryDetailModal({
               <button
                 onClick={handleSaveAsAsset}
                 disabled={saving}
-                className="flex items-center justify-center gap-2 bg-storm-600 hover:bg-storm-700 text-white text-sm font-medium rounded-lg py-2 disabled:opacity-60"
+                className="ds-btn ds-btn-primary justify-center"
               >
                 {saving && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />} Xác nhận lưu
               </button>
@@ -651,7 +651,7 @@ function CharactersTab() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setFormTarget("new")}
-            className="flex items-center gap-1.5 text-sm font-medium text-white bg-storm-600 hover:bg-storm-700 px-3 py-2 rounded-lg transition-colors disabled:opacity-60"
+            className="ds-btn ds-btn-primary"
             disabled={isDemoMode}
             title={isDemoMode ? "Chưa cấu hình DATABASE_URL — chỉ xem được dữ liệu demo." : undefined}
           >
@@ -661,12 +661,12 @@ function CharactersTab() {
       </div>
 
       {isDemoMode && (
-        <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+        <div className="ds-alert ds-alert-warning">
           Đang xem dữ liệu demo tĩnh (thiếu DATABASE_URL) — không thể thêm/sửa/xoá cho tới khi cấu hình DB.
         </div>
       )}
       {error && (
-        <div role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+        <div role="alert" className="ds-alert ds-alert-danger">
           {error}
         </div>
       )}
@@ -752,7 +752,8 @@ function CharacterCard({
   const busyAny = !!busy;
 
   return (
-    <div className="flex flex-col gap-3 bg-white p-4 rounded-xl border border-stone-200 shadow-sm hover:border-stone-300 transition-all">
+    <div className="ds-card hover:border-storm-300 transition-colors">
+    <div className="ds-card-body flex flex-col gap-3">
       <div className="flex items-start gap-3">
         <div className="w-16 h-16 rounded-lg overflow-hidden bg-stone-100 border border-stone-200 shrink-0 flex items-center justify-center">
           {c.referenceImageUrl && !c.imageMissing ? (
@@ -836,6 +837,7 @@ function CharacterCard({
         </button>
       </div>
     </div>
+    </div>
   );
 }
 
@@ -878,34 +880,34 @@ function CharacterForm({
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-stone-100">
-          <h3 className="font-semibold text-stone-800 font-display">
+    <div className="ds-modal-overlay open" style={{ zIndex: 100 }}>
+      <div className="ds-modal max-w-lg max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="character-form-title">
+        <div className="ds-modal-header">
+          <h3 id="character-form-title" className="ds-modal-title font-display">
             {initial ? `Sửa nhân vật — ${initial.name}` : "Thêm nhân vật mới"}
           </h3>
-          <button onClick={onClose} className="p-1.5 text-stone-400 hover:bg-stone-100 rounded-full" aria-label="Đóng">
+          <button onClick={onClose} className="ds-modal-close" aria-label="Đóng">
             <X className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
-        <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
+        <form onSubmit={handleSubmit} className="ds-modal-body flex flex-col gap-3">
           <div>
-            <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="ch-name">Tên nhân vật</label>
+            <label className="ds-label" htmlFor="ch-name">Tên nhân vật</label>
             <input
               id="ch-name"
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
+              className="ds-input"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="ch-kind">Loại</label>
+            <label className="ds-label" htmlFor="ch-kind">Loại</label>
             <select
               id="ch-kind"
               value={kind}
               onChange={(e) => setKind(e.target.value as CharacterKind)}
-              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
+              className="ds-select"
             >
               <option value="nguoi">Người</option>
               <option value="ai">AI</option>
@@ -913,7 +915,7 @@ function CharacterForm({
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="ch-prompt">
+            <label className="ds-label" htmlFor="ch-prompt">
               Mô tả ngoại hình (dùng để vẽ ảnh)
             </label>
             <textarea
@@ -922,11 +924,11 @@ function CharacterForm({
               rows={4}
               value={promptDescription}
               onChange={(e) => setPromptDescription(e.target.value)}
-              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
+              className="ds-textarea"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="ch-personality">
+            <label className="ds-label" htmlFor="ch-personality">
               Tính cách / vai kể chuyện
             </label>
             <textarea
@@ -934,25 +936,25 @@ function CharacterForm({
               rows={2}
               value={personality}
               onChange={(e) => setPersonality(e.target.value)}
-              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
+              className="ds-textarea"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="ch-catchphrase">
+            <label className="ds-label" htmlFor="ch-catchphrase">
               Câu cửa miệng (tuỳ chọn)
             </label>
             <input
               id="ch-catchphrase"
               value={catchphrase}
               onChange={(e) => setCatchphrase(e.target.value)}
-              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
+              className="ds-input"
             />
           </div>
-          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+          {error && <div role="alert" className="ds-alert ds-alert-danger">{error}</div>}
           <button
             type="submit"
             disabled={saving}
-            className="mt-2 flex items-center justify-center gap-2 bg-storm-600 hover:bg-storm-700 text-white text-sm font-medium rounded-lg py-2.5 disabled:opacity-60"
+            className="ds-btn ds-btn-primary justify-center mt-2"
           >
             {saving && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />} Lưu nhân vật
           </button>
@@ -1084,7 +1086,7 @@ function StylesTab() {
           </button>
           <button
             onClick={() => setFormTarget("new")}
-            className="flex items-center gap-1.5 text-sm font-medium text-white bg-storm-600 hover:bg-storm-700 px-3 py-2 rounded-lg transition-colors"
+            className="ds-btn ds-btn-primary"
           >
             <Plus className="w-4 h-4" aria-hidden="true" /> Thêm phong cách
           </button>
@@ -1092,14 +1094,14 @@ function StylesTab() {
       </div>
 
       {drawAllProgress && (
-        <div className="text-sm text-storm-700 bg-storm-50 border border-storm-200 rounded-lg px-3 py-2 flex items-center gap-2">
+        <div role="status" className="ds-alert ds-alert-info">
           <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> {drawAllProgress}
         </div>
       )}
       {drawAllResult && !drawingAll && (
         <div className="text-sm text-stone-700 bg-stone-100 border border-stone-200 rounded-lg px-3 py-2">{drawAllResult}</div>
       )}
-      {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+      {error && <div role="alert" className="ds-alert ds-alert-danger">{error}</div>}
 
       {loading ? (
         <div className="ds-card">
@@ -1183,7 +1185,8 @@ function StyleCard({
   const hasImage = !!s.referenceImageUrl && !s.imageMissing;
 
   return (
-    <div className="flex flex-col gap-3 bg-white p-3 rounded-xl border border-stone-200 shadow-sm hover:border-stone-300 transition-all">
+    <div className="ds-card hover:border-storm-300 transition-colors">
+    <div className="ds-card-body flex flex-col gap-3">
       <div className="aspect-video rounded-lg overflow-hidden bg-stone-100 flex items-center justify-center">
         {img ? (
           <img src={img} alt={s.name} className="w-full h-full object-cover" />
@@ -1198,7 +1201,7 @@ function StyleCard({
       </div>
 
       {fields.length === 0 && (
-        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 leading-snug">
+        <p className="ds-alert ds-alert-warning !text-[11px] leading-snug">
           Chưa có mô tả nét vẽ. {hasImage ? 'Bấm "Phân tích lại nét vẽ" để AI đọc ảnh và tạo mô tả.' : "Tải/vẽ ảnh minh hoạ trước rồi phân tích."}
         </p>
       )}
@@ -1266,6 +1269,7 @@ function StyleCard({
           </>
         )}
       </div>
+    </div>
     </div>
   );
 }
@@ -1341,7 +1345,8 @@ function RagTab() {
       </p>
 
       {/* Hồ sơ sở thích đã chưng cất */}
-      <div className="bg-white border border-stone-200 rounded-xl p-4 flex flex-col gap-2">
+      <div className="ds-card">
+      <div className="ds-card-body flex flex-col gap-2">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <p className="text-sm font-semibold text-stone-800 flex items-center gap-1.5">
             <Brain className="w-4 h-4 text-storm-600" aria-hidden="true" /> Hồ sơ gu của bạn
@@ -1367,6 +1372,7 @@ function RagTab() {
           <p className="text-[11px] text-stone-400">Chưng cất từ {profile.exampleCount} ảnh đã thích.</p>
         )}
       </div>
+      </div>
 
       <div className="flex items-center gap-1.5">
         {SCOPE_OPTIONS.map((o) => (
@@ -1382,7 +1388,7 @@ function RagTab() {
         ))}
       </div>
 
-      {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+      {error && <div role="alert" className="ds-alert ds-alert-danger">{error}</div>}
 
       {loading ? (
         <div className="ds-card">
@@ -1501,28 +1507,28 @@ function StyleForm({
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-stone-100">
-          <h3 className="font-semibold text-stone-800 font-display">
+    <div className="ds-modal-overlay open" style={{ zIndex: 100 }}>
+      <div className="ds-modal max-w-lg max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="style-form-title">
+        <div className="ds-modal-header">
+          <h3 id="style-form-title" className="ds-modal-title font-display">
             {initial ? `Sửa phong cách — ${initial.name}` : "Thêm phong cách mới"}
           </h3>
-          <button onClick={onClose} className="p-1.5 text-stone-400 hover:bg-stone-100 rounded-full" aria-label="Đóng">
+          <button onClick={onClose} className="ds-modal-close" aria-label="Đóng">
             <X className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
-        <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
+        <form onSubmit={handleSubmit} className="ds-modal-body flex flex-col gap-3">
           <p className="text-xs text-stone-500">
             Tải 1 ảnh mẫu đúng phong cách bạn muốn — hệ thống sẽ tự phân tích nét vẽ (nét, màu, hiệu ứng) để dùng lại khi tạo ảnh.
           </p>
           <div>
-            <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="sty-name">Tên phong cách</label>
+            <label className="ds-label" htmlFor="sty-name">Tên phong cách</label>
             <input
               id="sty-name"
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
+              className="ds-input"
             />
           </div>
           <label className="flex items-center gap-1.5 text-sm text-stone-600">
@@ -1530,7 +1536,7 @@ function StyleForm({
             Chia sẻ cả nhóm
           </label>
           <div>
-            <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="sty-file">
+            <label className="ds-label" htmlFor="sty-file">
               Ảnh mẫu {initial ? "(để trống nếu giữ ảnh cũ)" : "(bắt buộc)"}
             </label>
             <div className="flex items-center gap-2">
@@ -1563,12 +1569,12 @@ function StyleForm({
               )}
             </div>
           </div>
-          {warning && <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">{warning}</div>}
-          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+          {warning && <div className="ds-alert ds-alert-warning">{warning}</div>}
+          {error && <div role="alert" className="ds-alert ds-alert-danger">{error}</div>}
           <button
             type="submit"
             disabled={saving}
-            className="mt-2 flex items-center justify-center gap-2 bg-storm-600 hover:bg-storm-700 text-white text-sm font-medium rounded-lg py-2.5 disabled:opacity-60"
+            className="ds-btn ds-btn-primary justify-center mt-2"
           >
             {saving && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />} Lưu phong cách
           </button>

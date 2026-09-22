@@ -561,6 +561,84 @@ export interface RemakeCreateResult extends RemakeRow {
   hint?: string;
 }
 
+// ===== video_projects/video_scenes — "Dựng video": biến một bản viết thành
+// video. Mirror server/db/schema.ts (videoProjects/videoScenes) + tuyến
+// server/routes/videos.routes.ts. Quy trình 4 bước có điểm dừng vì bước dựng
+// hình (generate) TỐN TIỀN THẬT — xem services/videos.ts.
+export type VideoAspectRatio = "9:16" | "16:9";
+export type VideoProjectStatus = "draft" | "splitting" | "scenes_ready" | "generating" | "rendering" | "ready" | "error";
+export type VideoSceneStatus = "pending" | "generating" | "ready" | "error";
+
+export interface VideoProject {
+  id: string;
+  owner: string;
+  remakeId?: string | null;
+  title?: string | null;
+  aspectRatio: VideoAspectRatio;
+  status: VideoProjectStatus;
+  errorMessage?: string | null;
+  scriptText?: string | null;
+  finalVideoKey?: string | null;
+  generatedCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface VideoScene {
+  id: string;
+  projectId: string;
+  orderIndex: number;
+  narration?: string | null;
+  visualPrompt?: string | null;
+  durationSec: number;
+  status: VideoSceneStatus;
+  errorMessage?: string | null;
+  clipKey?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// GET /api/videos/:id — kèm cảnh + ước tính chi phí phần còn phải dựng.
+export interface VideoProjectDetail extends VideoProject {
+  scenes: VideoScene[];
+  pendingScenes: number;
+  estimatedCostUsd: number;
+  usdPerScene: number;
+}
+
+// POST /api/videos trả về NGAY (status="splitting") — tách cảnh chạy nền,
+// client tự theo dõi bằng pollVideo() (xem services/videos.ts).
+export interface VideoCreateResult extends VideoProject {
+  polling: true;
+  message: string;
+  note?: string;
+}
+
+// GET /api/videos/:id/quote — ước tính chi phí TRƯỚC khi dựng hình, PHẢI hiện
+// cho người dùng xác nhận trước khi gọi generateVideoScenes().
+export interface VideoQuote {
+  pendingScenes: number;
+  estimatedCostUsd: number;
+  usdPerScene: number;
+  note: string;
+}
+
+// POST /api/videos/:id/generate — trả về NGAY, dựng hình chạy nền (TỐN
+// TIỀN). Nếu mọi cảnh đã có hình, backend trả kèm `message` mà KHÔNG có
+// `polling`/`willGenerate` (không tốn thêm tiền).
+export interface VideoGenerateResult extends VideoProject {
+  polling?: true;
+  willGenerate?: number;
+  estimatedCostUsd?: number;
+  message: string;
+}
+
+// POST /api/videos/:id/render — trả về NGAY, ghép chạy nền (miễn phí).
+export interface VideoRenderResult extends VideoProject {
+  polling?: true;
+  message: string;
+}
+
 // ===== gallery — post có ảnh, kèm trục + quyền sở hữu =====
 export interface GalleryPost {
   id: string;

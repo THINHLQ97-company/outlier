@@ -18,6 +18,7 @@ import { registerRadarRoutes } from "./server/routes/radar.routes";
 import { registerDeconstructRoutes } from "./server/routes/deconstruct.routes";
 import { registerRemakeRoutes } from "./server/routes/remakes.routes";
 import { registerChannelRoutes } from "./server/routes/channels.routes";
+import { registerVideoRoutes } from "./server/routes/videos.routes";
 import { registerGalleryRoutes } from "./server/routes/gallery.routes";
 import { registerRagRoutes } from "./server/routes/rag.routes";
 import { registerMcpOAuthRoutes } from "./server/routes/mcp-oauth.routes";
@@ -90,6 +91,9 @@ async function startServer() {
 
   // Kênh theo dõi — xem đối thủ vừa đăng gì (docs/PRD.md §4 J2)
   registerChannelRoutes(app);
+
+  // Dựng video từ bản viết (docs/PRD.md §4 J5)
+  registerVideoRoutes(app);
 
   // ===== GALLERY — thư viện ảnh + lưu ảnh thành asset =====
   registerGalleryRoutes(app);

@@ -451,11 +451,12 @@ export default function Studio() {
       {!post && !loadingExisting && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {/* CỘT TRÁI — nhân vật & ảnh tham chiếu */}
-          <div className="flex flex-col gap-4 bg-white border border-stone-200 rounded-xl p-4">
-            <h2 className="text-sm font-semibold text-stone-800">Nhân vật & ảnh tham chiếu</h2>
+          <div className="ds-card">
+            <div className="ds-card-body flex flex-col gap-4">
+            <h2 className="ds-card-title">Nhân vật & ảnh tham chiếu</h2>
 
             <div>
-              <p className="text-xs font-medium text-stone-600 mb-1.5">Chọn nhân vật (tuỳ chọn)</p>
+              <p className="ds-label mb-1.5">Chọn nhân vật (tuỳ chọn)</p>
               <CharacterPicker
                 characters={characters}
                 selectedIds={selectedCharacterIds}
@@ -466,7 +467,7 @@ export default function Studio() {
 
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <p className="text-xs font-medium text-stone-600">Ảnh tham chiếu / ảnh mẫu meme (tuỳ chọn)</p>
+                <p className="ds-label mb-0">Ảnh tham chiếu / ảnh mẫu meme (tuỳ chọn)</p>
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
@@ -603,15 +604,17 @@ export default function Studio() {
                 </div>
               </div>
             )}
+            </div>
           </div>
 
           {/* CỘT PHẢI — nội dung & phong cách */}
-          <div className="flex flex-col gap-4 bg-white border border-stone-200 rounded-xl p-4">
-            <h2 className="text-sm font-semibold text-stone-800">Nội dung & phong cách</h2>
+          <div className="ds-card">
+            <div className="ds-card-body flex flex-col gap-4">
+            <h2 className="ds-card-title">Nội dung & phong cách</h2>
 
             <div>
               <div className="flex items-center justify-between mb-1 gap-2">
-                <label className="block text-xs font-medium text-stone-600" htmlFor="st-prompt">
+                <label className="ds-label mb-0" htmlFor="st-prompt">
                   Mô tả bối cảnh
                 </label>
                 <button
@@ -631,7 +634,7 @@ export default function Studio() {
                 value={promptText}
                 onChange={(e) => setPromptText(e.target.value)}
                 placeholder="Gõ ý tưởng/chủ đề thô (VD: ChatGPT hay bịa số liệu) rồi bấm 'AI viết kịch bản hài' để dựng cảnh cụ thể — hoặc tự mô tả chi tiết bối cảnh."
-                className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
+                className="ds-textarea"
               />
               {suggestWarning && (
                 <p className="text-[11px] text-amber-700 mt-1">{suggestWarning}</p>
@@ -640,7 +643,7 @@ export default function Studio() {
 
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <p className="text-xs font-medium text-stone-600">Lời thoại (tuỳ chọn)</p>
+                <p className="ds-label mb-0">Lời thoại (tuỳ chọn)</p>
                 <button
                   type="button"
                   onClick={addDialogueLine}
@@ -663,7 +666,7 @@ export default function Studio() {
                         aria-label={`Nhân vật nói dòng thoại ${i + 1}`}
                         value={line.character}
                         onChange={(e) => updateDialogueLine(i, { character: e.target.value })}
-                        className="rounded-lg border border-stone-300 px-2 py-1.5 text-xs shrink-0 w-28"
+                        className="ds-select shrink-0 w-28 !text-xs"
                       >
                         {selectedCharacters.map((c) => (
                           <option key={c.id} value={c.name}>
@@ -676,7 +679,7 @@ export default function Studio() {
                         value={line.text}
                         onChange={(e) => updateDialogueLine(i, { text: e.target.value })}
                         placeholder="Nội dung câu thoại..."
-                        className="flex-1 rounded-lg border border-stone-300 px-2.5 py-1.5 text-sm"
+                        className="ds-input flex-1"
                       />
                       <button
                         type="button"
@@ -697,7 +700,7 @@ export default function Studio() {
             </div>
 
             <div>
-              <p className="text-xs font-medium text-stone-600 mb-1.5">Phong cách vẽ</p>
+              <p className="ds-label mb-1.5">Phong cách vẽ</p>
               {stylesLoading ? (
                 <div className="flex items-center gap-2 text-stone-400 text-xs py-2">
                   <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> Đang tải thư viện phong cách...
@@ -749,15 +752,15 @@ export default function Studio() {
             </div>
 
             <div className="flex flex-wrap items-end gap-3">
-              <div>
-                <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="st-layout">
+              <div className="w-40">
+                <label className="ds-label" htmlFor="st-layout">
                   Kiểu bố cục
                 </label>
                 <select
                   id="st-layout"
                   value={panelLayout}
                   onChange={(e) => setPanelLayout(e.target.value)}
-                  className="rounded-lg border border-stone-300 px-3 py-2 text-sm"
+                  className="ds-select"
                 >
                   {PANEL_LAYOUTS.map((l) => (
                     <option key={l.key} value={l.key}>
@@ -766,15 +769,15 @@ export default function Studio() {
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="st-bg">
+              <div className="w-40">
+                <label className="ds-label" htmlFor="st-bg">
                   Nền ảnh
                 </label>
                 <select
                   id="st-bg"
                   value={background}
                   onChange={(e) => setBackground(e.target.value)}
-                  className="rounded-lg border border-stone-300 px-3 py-2 text-sm"
+                  className="ds-select"
                   title="Nền trắng / tối giản giúp ảnh sạch hơn (bớt chi tiết thừa gây rối)"
                 >
                   {BACKGROUND_OPTIONS.map((b) => (
@@ -784,15 +787,15 @@ export default function Studio() {
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="st-ratio">
+              <div className="w-40">
+                <label className="ds-label" htmlFor="st-ratio">
                   Tỉ lệ khung
                 </label>
                 <select
                   id="st-ratio"
                   value={aspectRatio}
                   onChange={(e) => setAspectRatio(e.target.value)}
-                  className="rounded-lg border border-stone-300 px-3 py-2 text-sm"
+                  className="ds-select"
                 >
                   {ASPECT_RATIO_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>
@@ -827,7 +830,7 @@ export default function Studio() {
             <button
               onClick={handleGenerate}
               disabled={generating}
-              className="self-start flex items-center gap-1.5 text-sm font-medium text-white bg-storm-600 hover:bg-storm-700 px-4 py-2.5 rounded-lg disabled:opacity-60"
+              className="ds-btn ds-btn-primary ds-btn-lg self-start"
             >
               {generating ? (
                 <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
@@ -838,6 +841,7 @@ export default function Studio() {
             </button>
 
             {generating && <GenerationProgress />}
+            </div>
           </div>
         </div>
       )}
@@ -846,7 +850,7 @@ export default function Studio() {
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={handleReset}
-            className="flex items-center gap-1.5 text-sm font-medium text-stone-600 bg-stone-100 hover:bg-stone-200 px-3 py-2 rounded-lg"
+            className="ds-btn"
           >
             <Plus className="w-4 h-4" aria-hidden="true" /> Tạo ảnh mới
           </button>
@@ -867,12 +871,12 @@ export default function Studio() {
       )}
 
       {warning && (
-        <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-start gap-2">
+        <div role="alert" className="ds-alert ds-alert-warning">
           <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
           <span>{warning}</span>
         </div>
       )}
-      {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+      {error && <div role="alert" className="ds-alert ds-alert-danger">{error}</div>}
 
       {post && !post.selectedImageUrl && (
         <div className="grid grid-cols-2 gap-3 max-w-xl">
@@ -896,13 +900,14 @@ export default function Studio() {
 
       {post && post.selectedImageUrl && (
         <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+          <div role="status" className="ds-alert ds-alert-success">
             <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" /> Ảnh tự động lưu trong Thư viện — chỉnh tiếp bao nhiêu lần cũng được.
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
             {/* CỘT TRÁI — ảnh + khoanh vùng + câu lệnh chỉnh */}
-            <div className="bg-white border border-stone-200 rounded-xl p-4 flex flex-col gap-3">
+            <div className="ds-card">
+            <div className="ds-card-body flex flex-col gap-3">
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <p className="text-sm font-semibold text-stone-800 flex items-center gap-1.5">
@@ -938,6 +943,7 @@ export default function Studio() {
                 onSubmit={handleEditImage}
               />
             </div>
+            </div>
 
             {/* CỘT PHẢI — bối cảnh, lịch sử, prompt, chữ & watermark */}
             <div className="flex flex-col gap-3">
@@ -955,7 +961,8 @@ export default function Studio() {
                 ];
                 if (items.length <= 1) return null;
                 return (
-                  <div className="bg-white border border-stone-200 rounded-xl p-3">
+                  <div className="ds-card">
+                  <div className="ds-card-body">
                     <p className="text-xs font-medium text-stone-600 mb-2">Lịch sử ảnh — bấm để quay lại một bản trước</p>
                     <div className="flex gap-2 overflow-x-auto pb-1">
                       {items.map((it, i) => {
@@ -975,12 +982,14 @@ export default function Studio() {
                       })}
                     </div>
                   </div>
+                  </div>
                 );
               })()}
 
               {/* Minh bạch: prompt JSON đã gửi Gemini + nhân vật đã dùng */}
               {post.overlayJson?.promptDebug && (
-                <div className="bg-white border border-stone-200 rounded-xl p-3">
+                <div className="ds-card">
+                <div className="ds-card-body">
                   <button
                     onClick={() => setShowPrompt((v) => !v)}
                     className="flex items-center gap-1 text-xs font-medium text-stone-500 hover:text-stone-700"
@@ -994,10 +1003,12 @@ export default function Studio() {
                     </pre>
                   )}
                 </div>
+                </div>
               )}
 
               {/* Bước riêng: gắn chữ & watermark (tuỳ chọn) */}
-              <div className="bg-white border border-stone-200 rounded-xl p-3">
+              <div className="ds-card">
+              <div className="ds-card-body">
                 <button
                   onClick={() => setShowFinish((v) => !v)}
                   className="flex items-center gap-1.5 text-sm font-medium text-stone-700"
@@ -1017,6 +1028,7 @@ export default function Studio() {
                     />
                   </div>
                 )}
+              </div>
               </div>
             </div>
           </div>
@@ -1142,10 +1154,10 @@ function GenerationProgress() {
     };
   }, []);
   return (
-    <div className="mt-3 bg-storm-50 border border-storm-200 rounded-lg p-3 flex flex-col gap-2">
-      <div className="flex items-center justify-between text-xs font-medium text-storm-800">
+    <div role="status" className="ds-alert ds-alert-info mt-3 flex-col !items-stretch gap-2">
+      <div className="flex items-center justify-between text-xs font-medium">
         <span>Đang tạo ảnh...</span>
-        <span className="text-storm-500 tabular-nums">{elapsed}s</span>
+        <span className="tabular-nums">{elapsed}s</span>
       </div>
       {STEPS.map((label, i) => {
         const done = i < step;
@@ -1155,7 +1167,7 @@ function GenerationProgress() {
             {done ? (
               <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0 mt-px" aria-hidden="true" />
             ) : active ? (
-              <Loader2 className="w-4 h-4 text-storm-600 shrink-0 mt-px animate-spin" aria-hidden="true" />
+              <Loader2 className="w-4 h-4 shrink-0 mt-px animate-spin" aria-hidden="true" />
             ) : (
               <span className="w-4 h-4 rounded-full border border-stone-300 shrink-0 mt-px" aria-hidden="true" />
             )}
@@ -1178,15 +1190,15 @@ function ScenarioPickerModal({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-stone-100 sticky top-0 bg-white">
-          <h3 className="font-semibold text-stone-800 font-display">AI gợi ý kịch bản — chọn 1 phương án</h3>
-          <button onClick={onClose} className="p-1.5 text-stone-400 hover:bg-stone-100 rounded-full" aria-label="Đóng">
+    <div className="ds-modal-overlay open" style={{ zIndex: 100 }}>
+      <div className="ds-modal max-w-2xl max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="scenario-picker-title">
+        <div className="ds-modal-header sticky top-0 bg-[var(--ds-surface-overlay)]">
+          <h3 id="scenario-picker-title" className="ds-modal-title font-display">AI gợi ý kịch bản — chọn 1 phương án</h3>
+          <button onClick={onClose} className="ds-modal-close" aria-label="Đóng">
             <X className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
-        <div className="p-5 flex flex-col gap-3">
+        <div className="ds-modal-body flex flex-col gap-3">
           {scenarios.length === 0 && (
             <p className="text-sm text-stone-400">AI chưa gợi ý được kịch bản nào. Thử mô tả ý tưởng rõ hơn.</p>
           )}
@@ -1213,7 +1225,7 @@ function ScenarioPickerModal({
               )}
               <button
                 onClick={() => onPick(v)}
-                className="self-start mt-1 flex items-center gap-1.5 text-sm font-medium text-white bg-storm-600 hover:bg-storm-700 px-3 py-1.5 rounded-lg"
+                className="ds-btn ds-btn-primary ds-btn-sm self-start mt-1"
               >
                 <Check className="w-4 h-4" aria-hidden="true" /> Dùng phương án này
               </button>

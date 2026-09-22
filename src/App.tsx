@@ -11,6 +11,7 @@ import Radar from "./pages/Radar";
 import Channels from "./pages/Channels";
 import Deconstruct from "./pages/Deconstruct";
 import Remake from "./pages/Remake";
+import Videos from "./pages/Videos";
 import AdminUsers from "./pages/AdminUsers";
 
 function Gate() {
@@ -37,6 +38,7 @@ function Gate() {
         <Route path="/channels" element={<Channels />} />
         <Route path="/deconstruct" element={<Deconstruct />} />
         <Route path="/remakes" element={<Remake />} />
+        <Route path="/videos" element={<Videos />} />
         <Route path="/signals" element={<SignalsQueue />} />
         <Route path="/admin/users" element={<AdminUsers />} />
         <Route path="*" element={<Navigate to="/studio" replace />} />

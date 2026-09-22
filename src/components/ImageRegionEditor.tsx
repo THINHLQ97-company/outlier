@@ -142,9 +142,8 @@ export default function ImageRegionEditor({
         <button
           type="button"
           onClick={() => setDrawMode((v) => !v)}
-          className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border transition-colors ${
-            drawMode ? "bg-storm-600 border-storm-600 text-white" : "bg-white border-stone-200 text-stone-600 hover:border-storm-300"
-          }`}
+          aria-pressed={drawMode}
+          className={`ds-btn ds-btn-sm ${drawMode ? "ds-btn-primary" : ""}`}
           title="Bật/tắt chế độ khoanh vùng — kéo chuột để khoanh chỗ cần chỉnh/xóa"
         >
           <Lasso className="w-3.5 h-3.5" aria-hidden="true" /> {drawMode ? "Đang khoanh vùng" : "Khoanh vùng"}
@@ -153,7 +152,7 @@ export default function ImageRegionEditor({
           <button
             type="button"
             onClick={clearRegion}
-            className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:border-red-300 hover:text-red-600 bg-white"
+            className="ds-btn ds-btn-sm hover:!text-red-600 hover:!border-red-300"
             title="Xoá vùng đã khoanh"
           >
             <Eraser className="w-3.5 h-3.5" aria-hidden="true" /> Xoá vùng
@@ -197,12 +196,12 @@ export default function ImageRegionEditor({
               ? "VD: xóa vật thể trong vùng này / thay bằng bàn làm việc..."
               : "VD: Grok đang quỳ lạy (không đứng), nền trắng, bỏ 2 nhân vật không xác định ở góc..."
           }
-          className="flex-1 rounded-lg border border-stone-300 px-3 py-2 text-sm disabled:opacity-60"
+          className="ds-textarea flex-1"
         />
         <button
           onClick={handleSubmit}
           disabled={editing || !instruction.trim()}
-          className="shrink-0 flex items-center gap-1.5 text-sm font-medium text-white bg-storm-600 hover:bg-storm-700 px-3 py-2 rounded-lg disabled:opacity-60"
+          className="ds-btn ds-btn-primary shrink-0"
         >
           {editing ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Sparkles className="w-4 h-4" aria-hidden="true" />}
           Chỉnh

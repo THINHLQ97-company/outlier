@@ -9,7 +9,7 @@ import type { Express } from "express";
 import crypto from "crypto";
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import { getDb, isDbConfigured } from "../db/client";
-import { signals, rubricVersions, characters as charactersTable, brands, brandSources, radarJobs, radarItems, deconstructions, remakes, watchedChannels, brandFanpages } from "../db/schema";
+import { signals, rubricVersions, characters as charactersTable, brands, brandSources, radarJobs, radarItems, deconstructions, remakes, watchedChannels, brandFanpages, videoProjects, videoScenes } from "../db/schema";
 import { ingestUrl, ingestRawText } from "../services/brand-ingest";
 import { extractBrandProfile, type SourceDoc } from "../services/brand-extract";
 import { computeSignalStatus } from "../services/rubric-scoring";
@@ -28,7 +28,7 @@ const SERVER_INSTRUCTIONS = `Bạn là AI Analyst cho fanpage giải trí "Ăn N
 4. GÓC HÀI: với tin queued, signals_suggest_angle đề xuất 1 góc lên nội dung hài (scene cụ thể + chọn characters từ characters_list + dialogue ngắn). Người vận hành sẽ review rồi "Đưa sang Sáng tạo".
 Luôn dùng characters_list để chọn đúng nhân vật fanpage. Tổng điểm rubric chỉ cộng 4 tiêu chí (do_nong+do_cham+do_hop_truc+tuoi_tho), do_an_toan là cổng an toàn.`;
 
-const READONLY_TOOLS = new Set(["signals_list", "signals_get", "rubric_get", "characters_list", "brands_list", "brand_profile_get", "radar_jobs_list", "radar_results", "deconstruct_get", "remake_get", "channels_list", "channel_items", "video_frames"]);
+const READONLY_TOOLS = new Set(["signals_list", "signals_get", "rubric_get", "characters_list", "brands_list", "brand_profile_get", "radar_jobs_list", "radar_results", "deconstruct_get", "remake_get", "channels_list", "channel_items", "video_frames", "video_projects_list", "video_get"]);
 
 const TOOLS = [
   {
@@ -343,6 +343,54 @@ const TOOLS = [
         is_primary: { type: "boolean", description: "Trang chính" },
       },
       required: ["brand_id", "page_url"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "video_make",
+    description: "Tạo dự án dựng video từ một bản viết rồi tách thành các cảnh. Bước tách cảnh MIỄN PHÍ — người dùng xem và sửa cảnh trước, sau đó mới bấm dựng hình (bước đó tốn tiền và PHẢI do người dùng tự bấm trên giao diện).",
+    annotations: { title: "Tạo dự án video", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: {
+        remake_id: { type: "string", description: "Mã bản viết (từ remake_get)" },
+        script: { type: "string", description: "Hoặc dán thẳng kịch bản" },
+        title: { type: "string" },
+        aspect_ratio: { type: "string", enum: ["9:16", "16:9"], description: "Mặc định dọc 9:16" },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "video_projects_list",
+    description: "Liệt kê các dự án dựng video.",
+    annotations: { title: "Danh sách dự án video", readOnlyHint: true },
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "video_get",
+    description: "Xem một dự án video: các cảnh, lời dẫn, mô tả hình, trạng thái từng cảnh và chi phí ước tính nếu dựng hình.",
+    annotations: { title: "Xem dự án video", readOnlyHint: true },
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "video_scene_set",
+    description: "Sửa lời dẫn hoặc mô tả hình của một cảnh TRƯỚC khi dựng. Sửa mô tả hình sẽ bỏ clip cũ của cảnh đó.",
+    annotations: { title: "Sửa cảnh video", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: {
+        scene_id: { type: "string" },
+        narration: { type: "string", description: "Lời dẫn (tiếng Việt)" },
+        visual_prompt: { type: "string", description: "Mô tả hình (tiếng Anh, gửi cho mô hình dựng hình)" },
+        duration_sec: { type: "number", description: "3-10 giây" },
+      },
+      required: ["scene_id"],
       additionalProperties: false,
     },
   },
@@ -942,6 +990,72 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
       isPrimary: args.is_primary === true,
     }).returning();
     return { ...fp, note: "Đã thêm trang của thương hiệu. Xem lại bằng brand_profile_get." };
+  }
+
+  if (name === "video_make") {
+    let script = typeof args.script === "string" ? args.script.trim() : "";
+    let title = typeof args.title === "string" ? args.title.trim() : "";
+    const remakeId = UUID_RE.test(args.remake_id || "") ? args.remake_id : null;
+    if (!script && remakeId) {
+      const [r] = await db.select().from(remakes).where(eq(remakes.id, remakeId));
+      if (!r) throw new Error("Không tìm thấy bản viết");
+      if (!r.draft) throw new Error("Bản viết này chưa có nội dung");
+      script = r.draft;
+      title = title || r.sourceTitle || "";
+    }
+    if (!script) throw new Error("Cần remake_id hoặc script");
+
+    const [row] = await db.insert(videoProjects).values({
+      owner: principal.username, remakeId, title: title || null, scriptText: script,
+      aspectRatio: args.aspect_ratio === "16:9" ? "16:9" : "9:16", status: "splitting",
+    }).returning();
+
+    const { runSplitForMcp } = await import("./videos.routes");
+    void runSplitForMcp(row.id, script);
+    return {
+      ...row,
+      note: "Đang tách cảnh (miễn phí), khoảng 20-40 giây. Gọi video_get để xem. " +
+            "Bước dựng hình TỐN TIỀN nên phải do người dùng tự bấm trên giao diện — bạn đừng tự chạy.",
+    };
+  }
+
+  if (name === "video_projects_list") {
+    const rows = await db.select().from(videoProjects).orderBy(desc(videoProjects.createdAt)).limit(50);
+    return { count: rows.length, projects: rows };
+  }
+
+  if (name === "video_get") {
+    if (!UUID_RE.test(args.id || "")) throw new Error("id không hợp lệ");
+    const [row] = await db.select().from(videoProjects).where(eq(videoProjects.id, args.id));
+    if (!row) throw new Error("Không tìm thấy dự án");
+    const scenes = await db.select().from(videoScenes).where(eq(videoScenes.projectId, args.id));
+    scenes.sort((a: any, b: any) => a.orderIndex - b.orderIndex);
+    const { estimateSceneCostUsd } = await import("../services/video-build");
+    const pending = scenes.filter((s: any) => !s.clipKey).length;
+    return {
+      ...row, scenes,
+      pendingScenes: pending,
+      estimatedCostUsd: Number(estimateSceneCostUsd(pending).toFixed(2)),
+      note: "Sửa cảnh bằng video_scene_set trước khi dựng. Dựng hình tốn tiền — để người dùng tự bấm.",
+    };
+  }
+
+  if (name === "video_scene_set") {
+    if (!UUID_RE.test(args.scene_id || "")) throw new Error("scene_id không hợp lệ");
+    const patch: Record<string, any> = { updatedAt: new Date() };
+    if (typeof args.narration === "string") patch.narration = args.narration.trim() || null;
+    if (typeof args.visual_prompt === "string") {
+      patch.visualPrompt = args.visual_prompt.trim() || null;
+      // Đổi mô tả hình thì clip cũ không còn đúng nữa.
+      patch.clipKey = null; patch.status = "pending";
+    }
+    const d = Number(args.duration_sec);
+    if (Number.isFinite(d) && d >= 3 && d <= 10) patch.durationSec = Math.round(d);
+    if (Object.keys(patch).length === 1) throw new Error("Chưa có gì để sửa");
+
+    const [row] = await db.update(videoScenes).set(patch).where(eq(videoScenes.id, args.scene_id)).returning();
+    if (!row) throw new Error("Không tìm thấy cảnh");
+    return { ...row, note: patch.visualPrompt !== undefined ? "Đã đổi mô tả hình nên cảnh này cần dựng lại." : undefined };
   }
 
   if (name === "signals_suggest_angle") {

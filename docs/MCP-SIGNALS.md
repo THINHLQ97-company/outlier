@@ -53,7 +53,7 @@ fanpage → cấp quyền. (Giống hệt cách ReportApp connect claude.ai vì 
 
 ---
 
-## 2. Bảng đầy đủ 23 tool (quyền tới dữ liệu)
+## 2. Bảng đầy đủ 30 tool (quyền tới dữ liệu)
 
 | Tool | Loại | Làm gì | Đầu vào | Chạm dữ liệu nào |
 |---|---|---|---|---|
@@ -80,6 +80,13 @@ fanpage → cấp quyền. (Giống hệt cách ReportApp connect claude.ai vì 
 | `channel_items` | 🟢 Đọc | Bài của một kênh, **bài mới xếp lên đầu** | channel_id, only_new?, limit? | ĐỌC `radar_items` |
 | `channel_refresh` | 🔴 Ghi | Làm mới kênh để xem họ vừa đăng gì. **Kênh có `costsMoneyToRefresh=true` sẽ phát sinh chi phí** | channel_id | THÊM `radar_jobs`+`radar_items`, SỬA `watched_channels` |
 | `video_frames` | 🟢 Đọc | **Trả về ẢNH THẬT** — các khung hình của video để Claude TỰ NHÌN, kèm lời thoại có mốc giây | url \| radar_item_id, count?, include_transcript? | Không ghi gì; chỉ tải video tạm rồi xoá |
+| `brand_create` | 🔴 Ghi | Tạo thương hiệu mới | name | THÊM dòng `brands` |
+| `brand_set` | 🔴 Ghi | **Ghi TAY** hồ sơ — nhất là `personality`, `contentPillars`, `trendDos/Donts`. Đánh dấu `manual` nên lần bóc tài liệu sau không đè lên | brand_id + các mục | SỬA `brands` |
+| `brand_fanpage_add` | 🔴 Ghi | Thêm trang CỦA CHÍNH thương hiệu | brand_id, page_url, … | THÊM `brand_fanpages` |
+| `video_make` | 🔴 Ghi | Tạo dự án dựng video + tách cảnh (**miễn phí**) | remake_id \| script | THÊM `video_projects`+`video_scenes` |
+| `video_projects_list` | 🟢 Đọc | Danh sách dự án video | — | ĐỌC `video_projects` |
+| `video_get` | 🟢 Đọc | Chi tiết dự án: các cảnh, trạng thái, chi phí ước tính | id | ĐỌC `video_projects`+`video_scenes` |
+| `video_scene_set` | 🔴 Ghi | Sửa lời dẫn / mô tả hình của một cảnh trước khi dựng | scene_id, … | SỬA `video_scenes` |
 
 Ghi chú chấm điểm: tổng = `do_nong + do_cham + do_hop_truc + tuoi_tho` (tối đa 20).
 `≥ queue_min (16)` → **Nên làm** (queued); `12–15` → **Kho ý tưởng** (idea_bank); `<12` hoặc
@@ -160,6 +167,20 @@ Dùng `video_frames` khi cần **chính Claude** đánh giá phần hình, vì C
 - **`contentPillars`** = mảng nội dung theo đuổi, dùng để lọc trend
 - **`trendDos` / `trendDonts`** = nguyên tắc khi bắt trend
 - **`fanpages`** = trang CỦA CHÍNH thương hiệu (khác `watched_channels` vốn để soi đối thủ) — biết nội dung đăng ở đâu, định dạng nào, cho ai
+
+
+### Dựng video — ranh giới với chi phí
+
+Quy trình có 4 bước, Claude **chỉ được làm 2 bước đầu**:
+
+| Bước | Ai làm | Chi phí |
+|---|---|---|
+| 1. Tách kịch bản thành cảnh | `video_make` — Claude làm được | Miễn phí |
+| 2. Sửa lời dẫn / mô tả hình | `video_scene_set` — Claude làm được | Miễn phí |
+| 3. **Dựng hình bằng AI** | **CHỈ người dùng bấm trên giao diện** | **Tốn tiền (~0,2 USD/cảnh)** |
+| 4. Ghép thành video | Người dùng bấm | Miễn phí |
+
+Không có tool MCP nào cho bước 3 — cố ý. Claude chuẩn bị sẵn cảnh cho tốt, còn quyết định tiêu tiền thuộc về người dùng.
 
 ## 3. Ranh giới quyền — MCP LÀM ĐƯỢC gì / KHÔNG làm được gì
 

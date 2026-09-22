@@ -11,6 +11,7 @@ import {
   Scissors,
   PenLine,
   Eye,
+  Clapperboard,
   Menu,
   X,
   ChevronsLeft,
@@ -44,6 +45,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/deconstruct", label: "Bóc cấu trúc", icon: Scissors },
       { to: "/remakes", label: "Viết lại", icon: PenLine },
+      { to: "/videos", label: "Dựng video", icon: Clapperboard },
       { to: "/studio", label: "Sáng tạo", icon: Wand2 },
       { to: "/library", label: "Thư viện", icon: Images },
     ],
