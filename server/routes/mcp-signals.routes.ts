@@ -21,12 +21,46 @@ const SERVER_INFO = { name: "fanpage-signals", title: "Tín hiệu Fanpage — �
 const RETENTION_DAYS = 14;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const SERVER_INSTRUCTIONS = `Bạn là AI Analyst cho fanpage giải trí "Ăn Nằm Với AI" của Mắt Bão (chủ đề: AI, kế toán, hosting — hài hước, meme). Quy trình:
-1. THU: web-search tin nóng liên quan (ưu tiên 14 ngày gần nhất) → signals_add mỗi tin (kèm truc: ai|ke_toan|hosting, sourceUrl, publishedDate).
-2. GỘP: signals_list rồi signals_set_cluster gom các tin trùng/cùng chủ đề thành 1 cụm (giảm nhiễu).
-3. CHẤM: signals_score mỗi tin theo rubric (rubric_get để biết định nghĩa + ngưỡng) — 5 tiêu chí 1-5 + reasoning ngắn. Server tự route status (queued/idea_bank/rejected). Dính nhóm cấm (chính trị/tôn giáo/thiên tai/tai nạn/người nổi tiếng bị chỉ trích) → dinh_nhom_cam=true → loại thẳng.
-4. GÓC HÀI: với tin queued, signals_suggest_angle đề xuất 1 góc lên nội dung hài (scene cụ thể + chọn characters từ characters_list + dialogue ngắn). Người vận hành sẽ review rồi "Đưa sang Sáng tạo".
-Luôn dùng characters_list để chọn đúng nhân vật fanpage. Tổng điểm rubric chỉ cộng 4 tiêu chí (do_nong+do_cham+do_hop_truc+tuoi_tho), do_an_toan là cổng an toàn.`;
+// Lời chào server gửi cho Claude ngay khi kết nối. Đây là thứ thay cho một
+// "skill" phải cài riêng: nó tự nạp mỗi lần kết nối, nên phải nói đủ ba điều —
+// công cụ này để làm gì, đi theo thứ tự nào, và chỗ nào dễ làm sai.
+const SERVER_INSTRUCTIONS = `Đây là Outlier — công cụ tìm nội dung đang bật lên rồi remake cho thương hiệu của người dùng.
+
+QUY TẮC XUYÊN SUỐT
+- Luôn bắt đầu bằng brand_brief để biết mình đang viết cho TRANG NÀO. Không có hồ sơ trang thì mọi thứ viết ra chỉ là giọng chung chung.
+- Hồ sơ nói mục nào "chưa có dữ liệu" thì ĐỪNG tự suy ra. Hỏi người dùng rồi ghi bằng brand_set.
+- Nhiều thao tác quét tốn tiền thật (Apify tính theo từng kết quả). Tool nào tốn tiền đều nói rõ trong mô tả — hỏi người dùng trước khi gọi.
+
+BỐN VIỆC CHÍNH
+
+1. DỰNG HỒ SƠ TRANG (làm một lần, nhưng quyết định chất lượng mọi thứ sau đó)
+   - brands_list → brand_brief xem đã có gì.
+   - Trang của chính người dùng: fanpage_connect_meta rồi fanpage_sync_posts → brand_extract. Cách này bóc tính cách từ chính bài đã đăng, mỗi mục có câu trích kèm link, và miễn phí.
+   - Thứ tài liệu không nói được (pageRole, "không bao giờ làm", nhận diện hình ảnh, bài mẫu đúng giọng) thì hỏi người dùng rồi ghi bằng brand_set.
+
+2. TÌM NỘI DUNG ĐANG BẬT LÊN
+   - Tự search tin nóng rồi signals_add (kèm truc, sourceUrl, publishedDate) — nhanh nhất, không tốn tiền.
+   - channels_list / channel_items xem các kênh đang theo dõi; channel_refresh để quét lại (tốn tiền).
+   - radar_results đọc kết quả radar đã chạy.
+   - Điểm "vượt trội" so với baseline của CHÍNH kênh đó, không so với kênh khác — một kênh nhỏ có bài gấp 10 lần thường ngày đáng học hơn kênh lớn đăng bài bình thường.
+
+3. BẮT TREND → RA NỘI DUNG
+   - trend_draft là đường ngắn nhất: mô tả trend càng cụ thể càng tốt → ra mấy phương án đăng được luôn, đã soi guardrail.
+   - kind="post" cho bài viết, kind="video" cho kịch bản video. Hai khuôn khác nhau, đừng dùng lẫn.
+   - Phương án nào bị đánh dấu blocked thì ĐỪNG đưa cho người dùng như thể dùng được — chỉ ra nó sai ở đâu.
+   - Nếu trend không hợp với trang, nói thẳng là không nên đu. Đó là câu trả lời hợp lệ.
+
+4. HỌC TỪ MỘT BÀI CỤ THỂ RỒI VIẾT LẠI
+   - deconstruct_start (một link) → deconstruct_get để lấy cấu trúc.
+   - remake_start → remake_get. remake_check soi lại bản viết.
+   - Nguồn là video thì video_frames cho xem hình từng mốc thời gian.
+   - Học CÁCH TRIỂN KHAI, không bê câu chữ. Guardrail sẽ chặn nếu trùng quá 7 từ liên tiếp với bài gốc.
+
+PHÂN BIỆT HAI THỨ HAY LẪN
+- "Trang của thương hiệu" (brand_fanpage_add) = nơi người dùng tự đăng bài.
+- "Kênh theo dõi" (channels_list) = kênh người khác, để học và bắt trend.
+
+Còn một luồng cũ vẫn dùng được: signals_score chấm tin theo rubric (rubric_get để biết ngưỡng), signals_suggest_angle gợi ý góc hài với dàn nhân vật cố định (characters_list).`;
 
 const READONLY_TOOLS = new Set(["signals_list", "signals_get", "rubric_get", "characters_list", "brands_list", "brand_profile_get", "brand_brief", "radar_jobs_list", "radar_results", "deconstruct_get", "remake_get", "channels_list", "channel_items", "video_frames", "video_projects_list", "video_get"]);
 
@@ -1281,20 +1315,29 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
 
 function landingPage(url: string): string {
   return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MCP Tín hiệu — Fanpage Ăn Nằm Với AI</title>
-<style>body{font-family:system-ui,sans-serif;background:#FAF9F6;color:#2D2D2D;max-width:720px;margin:40px auto;padding:0 20px;line-height:1.6}
-code{background:#F1EEE9;padding:2px 6px;border-radius:6px}h1{color:#D97757}.box{background:#fff;border:1px solid #eadfd8;border-radius:12px;padding:16px 20px;margin:16px 0}</style></head><body>
-<h1>🛰️ MCP Tín hiệu — Fanpage "Ăn Nằm Với AI"</h1>
-<p>Kết nối Claude làm AI Analyst cho bước THU + LỌC tín hiệu: tự tìm tin nóng, gom cụm, chấm điểm có lý do, gợi ý góc hài.</p>
-<div class="box"><b>Thêm connector trên Claude.ai:</b><ol>
+<title>Outlier — MCP cho Claude</title>
+<style>body{font-family:system-ui,sans-serif;background:#f8fafc;color:#1e293b;max-width:760px;margin:40px auto;padding:0 20px;line-height:1.6}
+code{background:#eef2ff;padding:2px 6px;border-radius:6px;font-size:13px}h1{color:#4f46e5;margin-bottom:4px}
+.lead{color:#64748b;margin-top:0}.box{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px 20px;margin:16px 0}
+li{margin:6px 0}</style></head><body>
+<h1>Outlier</h1>
+<p class="lead">Tìm nội dung đang bật lên → học cách nó được dựng → viết lại cho thương hiệu của bạn.</p>
+<div class="box"><b>Nối vào Claude Chat</b><ol>
 <li>Settings → Connectors → Add custom connector</li>
 <li>Server URL: <code>${esc(url)}</code></li>
-<li>Đăng nhập bằng tài khoản Fanpage (OAuth) — cấp quyền cho Claude</li>
-<li>Prompt thử: <i>"Tìm 5 tin AI nóng tuần này, chấm điểm kèm lý do, gom cụm và gợi ý góc hài."</i></li>
+<li>Đăng nhập bằng tài khoản Outlier (OAuth) để cấp quyền cho Claude</li>
 </ol></div>
-<p>Kết quả Claude tạo (điểm + lý do + cụm + góc hài) hiện trong tab <b>Tín hiệu</b> của app để người vận hành review.</p>
+<div class="box"><b>Nối vào Claude Code</b>
+<p style="margin:8px 0 0"><code>claude mcp add --transport http outlier ${esc(url)}</code></p></div>
+<div class="box"><b>Thử ngay sau khi nối</b><ul>
+<li>“Hồ sơ trang của tôi đang có gì, thiếu gì?”</li>
+<li>“Drama X đang nóng, viết cho tôi 3 phương án bài đăng đúng giọng trang.”</li>
+<li>“Kênh tôi đang theo dõi có bài nào vượt trội so với chính nó không?”</li>
+</ul></div>
+<p style="color:#94a3b8;font-size:13px">Claude tự đọc hướng dẫn sử dụng khi kết nối — không cần cài thêm skill nào.</p>
 </body></html>`;
 }
+
 function esc(s = ""): string {
   return String(s).replace(/[<>"&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", '"': "&quot;", "&": "&amp;" }[c] as string));
 }

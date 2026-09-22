@@ -32,6 +32,7 @@ import {
 } from "../services/brands";
 import ConfirmDialog from "../components/ConfirmDialog";
 import type { BrandRow, BrandDetail, BrandSource, BrandField, BrandRejectedField } from "../types";
+import BrandFanpages from "../components/BrandFanpages";
 
 // Trang "Thương hiệu" — hồ sơ brand bóc từ tài liệu thật, MỖI FIELD KÈM TRÍCH
 // DẪN NGUỒN. Linh hồn màn này: field nào không kiểm chứng được thì để trống,
@@ -417,6 +418,13 @@ function BrandDetailPanel({
         </div>
         {headerError && <div className="ds-alert ds-alert-danger mx-4 mb-4">{headerError}</div>}
       </div>
+
+      <BrandFanpages
+        brandId={brand.id}
+        fanpages={brand.fanpages || []}
+        canEdit
+        onChanged={onSourcesChanged}
+      />
 
       <SourcesSection brandId={brand.id} sources={brand.sources} onChanged={onSourcesChanged} />
 

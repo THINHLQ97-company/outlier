@@ -303,8 +303,32 @@ export interface BrandSource {
   createdAt?: string;
 }
 
+/** Trang/kênh của chính thương hiệu — khác kênh theo dõi đối thủ. */
+export interface BrandFanpage {
+  id: string;
+  brandId: string;
+  platform: string;
+  pageUrl: string;
+  pageName?: string | null;
+  handle?: string | null;
+  followerCount?: number | null;
+  topics?: string[];
+  formats?: string[];
+  postingCadence?: string | null;
+  audienceNote?: string | null;
+  note?: string | null;
+  isPrimary: boolean;
+  /** Đã nối Meta chưa — có nối thì đọc bài của chính page được, miễn phí. */
+  metaPageId?: string | null;
+  metaConnectedAt?: string | null;
+  metaLastSyncAt?: string | null;
+  metaLastPostCount?: number | null;
+  createdAt: string;
+}
+
 export interface BrandDetail extends BrandRow {
   sources: BrandSource[];
+  fanpages?: BrandFanpage[];
 }
 
 // Field bị AI khai nhưng không kiểm chứng lại được trong tài liệu → hệ thống

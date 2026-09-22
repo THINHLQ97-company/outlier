@@ -1,7 +1,7 @@
 // Brand Profile client — hồ sơ thương hiệu bóc từ tài liệu thật, mỗi field kèm
 // trích dẫn nguồn. Endpoint: server/routes/brands.routes.ts.
 import { authHeaders, asError } from "./http";
-import type { BrandRow, BrandDetail, BrandSource, BrandField } from "../types";
+import type { BrandRow, BrandDetail, BrandSource, BrandField, BrandFanpage } from "../types";
 
 export async function listBrands(): Promise<BrandRow[]> {
   const res = await fetch("/api/brands", { headers: authHeaders(false) });
@@ -109,6 +109,92 @@ export function fileToDataUrl(file: File): Promise<string> {
     reader.onerror = () => reject(new Error("Đọc file thất bại."));
     reader.readAsDataURL(file);
   });
+}
+
+
+// ===== Trang của chính thương hiệu + nối Meta =====
+// Nối được Meta thì đọc bài của page mình qua Graph API: miễn phí, đầy đủ, và
+// bóc tính cách ra có câu trích từ bài thật. Apify chỉ còn dùng cho page người khác.
+
+export async function addBrandFanpage(
+  brandId: string,
+  input: { pageUrl: string; platform?: string; pageName?: string; isPrimary?: boolean },
+): Promise<BrandFanpage> {
+  const res = await fetch(`/api/brands/${brandId}/fanpages`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) return asError(res, "Không thêm được trang.");
+  return res.json();
+}
+
+export async function deleteBrandFanpage(brandId: string, fanpageId: string): Promise<void> {
+  const res = await fetch(`/api/brands/${brandId}/fanpages/${fanpageId}`, {
+    method: "DELETE",
+    headers: authHeaders(false),
+  });
+  if (!res.ok) return asError(res, "Không xoá được trang.");
+}
+
+export interface MetaConnectResult {
+  connected: true;
+  page: { id: string; name: string; username?: string; category?: string; followers?: number };
+}
+
+/** Token đi trong body, không bao giờ trong URL. */
+export async function connectFanpageMeta(
+  brandId: string,
+  fanpageId: string,
+  pageAccessToken: string,
+): Promise<MetaConnectResult> {
+  const res = await fetch(`/api/brands/${brandId}/fanpages/${fanpageId}/meta/connect`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ pageAccessToken }),
+  });
+  if (!res.ok) return asError(res, "Không nối được với Meta.");
+  return res.json();
+}
+
+export async function disconnectFanpageMeta(brandId: string, fanpageId: string): Promise<void> {
+  const res = await fetch(`/api/brands/${brandId}/fanpages/${fanpageId}/meta/disconnect`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: "{}",
+  });
+  if (!res.ok) return asError(res, "Không ngắt được kết nối.");
+}
+
+export interface MetaSyncResult {
+  fanpageId: string;
+  pageName: string;
+  postCount: number;
+  sourceId: string;
+  charCount: number;
+  videoRatio: number;
+  note: string;
+}
+
+export async function syncFanpagePosts(
+  brandId: string,
+  fanpageId: string,
+  limit = 100,
+): Promise<MetaSyncResult> {
+  const res = await fetch(`/api/brands/${brandId}/fanpages/${fanpageId}/meta/sync`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ limit }),
+  });
+  if (!res.ok) return asError(res, "Không quét được bài.");
+  return res.json();
+}
+
+/** Bản tóm tắt nhân vật của trang — đúng thứ Claude đọc qua MCP. */
+export async function getBrandBrief(brandId: string, forWhat: "writing" | "image" = "writing"): Promise<string> {
+  const res = await fetch(`/api/brands/${brandId}/brief?for=${forWhat}`, { headers: authHeaders(false) });
+  if (!res.ok) return asError(res, "Không dựng được bản tóm tắt.");
+  return (await res.json()).brief;
 }
 
 export type { BrandField };
