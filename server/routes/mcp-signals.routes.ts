@@ -409,6 +409,23 @@ const TOOLS = [
     },
   },
   {
+    name: "trend_draft",
+    description: "Từ một trend đang nóng (drama, tin hot, meme đang lan) → mấy phương án nội dung ĐĂNG ĐƯỢC LUÔN, viết đúng giọng của trang và đã soi qua guardrail. Đây là bước nối giữa 'tìm được trend' và 'có bài để đăng'. Chọn kind='post' cho bài viết, kind='video' cho kịch bản video — hai khuôn khác nhau. Nếu trend không hợp với trang, tool sẽ nói thẳng là KHÔNG NÊN ĐU thay vì cố viết.",
+    annotations: { title: "Trend → nội dung", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: {
+        brand_id: { type: "string", description: "Mã thương hiệu (từ brands_list)" },
+        trend: { type: "string", description: "Mô tả trend càng cụ thể càng tốt: chuyện gì, ai đang bàn, vì sao nóng, người ta đang đùa kiểu gì" },
+        kind: { type: "string", enum: ["post", "video"], description: "post = bài viết (mặc định), video = kịch bản video" },
+        count: { type: "number", description: "Số phương án, 1-5, mặc định 3" },
+        extra: { type: "string", description: "Yêu cầu thêm, vd 'nhấn vào chuyện deploy ngày cuối tuần'" },
+      },
+      required: ["brand_id", "trend"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "fanpage_connect_meta",
     description: "Nối một fanpage (đã thêm bằng brand_fanpage_add) với Meta bằng Page Access Token, để đọc bài của chính page đó miễn phí qua Graph API. Chỉ dùng cho page MÌNH quản lý — page người khác vẫn phải đi qua Apify và tốn tiền. Token được kiểm tra trước khi lưu, và lưu ở dạng mã hoá.",
     annotations: { title: "Nối fanpage với Meta", readOnlyHint: false },
@@ -1104,6 +1121,18 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
     const [updated] = await db.update(brands).set(patch).where(eq(brands.id, args.brand_id)).returning();
     const written = Object.keys(patch).filter((k) => k !== "updatedAt");
     return { ...updated, written_fields: written, note: `Đã ghi ${written.length} mục, đánh dấu là nhập tay nên lần bóc tài liệu sau sẽ không ghi đè.` };
+  }
+
+  if (name === "trend_draft") {
+    if (!UUID_RE.test(args.brand_id || "")) throw new Error("brand_id không hợp lệ");
+    const { draftFromTrend } = await import("../services/trend-draft");
+    return await draftFromTrend({
+      brandId: args.brand_id,
+      trend: String(args.trend || ""),
+      kind: args.kind === "video" ? "video" : "post",
+      count: Number(args.count) || 3,
+      extra: args.extra ? String(args.extra) : undefined,
+    });
   }
 
   if (name === "fanpage_connect_meta") {
