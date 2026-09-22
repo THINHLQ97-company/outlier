@@ -204,7 +204,13 @@ export function checkAddressing(draft: string, addressing: string): GuardrailIss
   // Trích các cách xưng hô được đặt trong ngoặc kép ở mô tả của brand.
   const quoted = [...addressing.matchAll(/["“”']([^"“”']{1,20})["“”']/g)].map((m) => m[1].trim().toLowerCase());
   if (quoted.length === 0) return [];
-  const used = quoted.some((q) => matchTerm(draft, q) >= 0);
+  // Người ta hay viết gộp mấy lựa chọn vào một cặp ngoặc: "t/mẹ/má" nghĩa là ba
+  // cách xưng chứ không phải một cụm phải xuất hiện nguyên vẹn. Tách ra, nếu
+  // không thì bài xưng "má" vẫn bị báo là sai xưng hô.
+  const variants = quoted.flatMap((q) =>
+    q.split(/[/,|]/).map((v) => v.trim()).filter(Boolean),
+  );
+  const used = variants.some((q) => matchTerm(draft, q) >= 0);
   if (used) return [];
   return [{
     code: "wrong_addressing",

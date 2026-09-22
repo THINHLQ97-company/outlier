@@ -208,4 +208,14 @@ describe("Chống báo động giả — bài học từ lần chạy thật 202
     assert.equal(findBannedTerms("Chưa có gì để nói", ["chữa"]).length, 0);
     assert.equal(findBannedTerms("Thuốc này chữa bệnh", ["chữa"]).length, 1);
   });
+
+  test('xưng hô viết gộp "t/mẹ/má" được tách thành từng lựa chọn', () => {
+    // Trang ghi gộp ba cách xưng vào một cặp ngoặc. Bài chỉ dùng một trong ba
+    // vẫn là xưng hô đúng — trước đây bị báo sai vì đi tìm nguyên cụm.
+    const addressing = `tự xưng là "em", "chị", "t/mẹ/má", gọi khách là "anh", "mấy chị"`;
+    assert.equal(checkAddressing("t đọc là năm cũ mà mấy má nghĩ đi đâu á", addressing).length, 0);
+    assert.equal(checkAddressing("dạ tên này còn trống nè anh", addressing).length, 0);
+    // Không dùng cách xưng nào của trang thì vẫn phải cảnh báo.
+    assert.equal(checkAddressing("Sản phẩm phù hợp cho mọi doanh nghiệp.", addressing).length, 1);
+  });
 });

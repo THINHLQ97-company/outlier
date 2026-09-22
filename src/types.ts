@@ -484,6 +484,9 @@ export interface DeconstructionRow {
   platform?: string | null;
   title?: string | null;
   durationSec?: number | null;
+  /** video | post | image | unknown — quyết định remake đi đường bài viết hay video. */
+  contentKind?: string | null;
+  thumbnailUrl?: string | null;
   status: DeconstructionStatus;
   /** true = nội dung chỉ lấy được bằng dịch vụ có phí, cần người dùng đồng ý. */
   needsPaid?: boolean;

@@ -26,7 +26,10 @@ export interface TrendDraft {
   angle: string;        // góc tiếp cận, một câu
   hook: string;         // câu mở đầu / 3 giây đầu
   body: string;         // nội dung chính (caption hoặc lời thoại theo cảnh)
-  cta?: string;         // kêu gọi, thường để trong comment chứ không trong caption
+  cta?: string;         // kêu gọi, một câu
+  /** Comment trang tự đăng dưới bài. Nhiều trang chốt đơn ở đây chứ không ở
+   *  caption, nên phải tách thành từng comment dùng được, không dồn một ô. */
+  selfComments?: string[];
   imagePrompt?: string; // gợi ý ảnh, bám nhận diện hình ảnh của trang
   whyItWorks: string;   // vì sao góc này hợp trang này, không phải hợp chung chung
   guardrail: GuardrailReport;
@@ -47,7 +50,8 @@ function postShape(): string {
 - "angle": góc tiếp cận, MỘT câu
 - "hook": câu đầu tiên người đọc nhìn thấy
 - "body": nội dung bài, viết sẵn để đăng được luôn
-- "cta": lời kêu gọi NGẮN, đặt ở comment chứ không nhét vào bài (bỏ trống nếu trang không chốt đơn kiểu đó)
+- "cta": lời kêu gọi NGẮN, MỘT câu (bỏ trống nếu trang không chốt đơn kiểu đó)
+- "selfComments": mảng các comment trang tự đăng dưới bài, MỖI COMMENT MỘT PHẦN TỬ — nếu hồ sơ nói trang chốt đơn ở comment thì để CTA ở đây
 - "imagePrompt": mô tả ảnh cần vẽ, bám đúng khuôn ảnh quen thuộc của trang
 - "whyItWorks": vì sao góc này hợp TRANG NÀY`;
 }
@@ -58,6 +62,7 @@ function videoShape(): string {
 - "hook": 3 giây đầu — thứ giữ người xem lại, viết đúng lời sẽ nói
 - "body": kịch bản theo cảnh, mỗi cảnh một dòng dạng "[0-3s] hình: ... | lời: ..."
 - "cta": câu chốt cuối video (bỏ trống nếu không hợp)
+- "selfComments": mảng comment trang tự đăng dưới video, mỗi comment một phần tử
 - "imagePrompt": mô tả khung hình mở đầu
 - "whyItWorks": vì sao góc này hợp TRANG NÀY`;
 }
@@ -142,14 +147,22 @@ export async function draftFromTrend(opts: {
   const drafts: TrendDraft[] = list.slice(0, count).map((d: any) => {
     const body = String(d?.body || "").trim();
     const hook = String(d?.hook || "").trim();
-    // Soi cả hook lẫn body: câu mở đầu là chỗ dễ vi phạm nhất vì nó được viết
-    // để gây sốc.
-    const report = runGuardrail(`${hook}\n${body}`, { brand: guard });
+    const cta = d?.cta ? String(d.cta).trim() : undefined;
+    const selfComments = Array.isArray(d?.selfComments)
+      ? d.selfComments.map((c: any) => String(c).trim()).filter(Boolean)
+      : undefined;
+    // Soi tất cả những gì sẽ đăng lên, không riêng bài: câu mở đầu là chỗ dễ vi
+    // phạm nhất vì nó viết để gây chú ý, còn comment là chỗ hay bị quên soi
+    // nhất — mà với nhiều trang, chốt đơn lại nằm đúng ở đó.
+    const report = runGuardrail([hook, body, cta, ...(selfComments || [])].filter(Boolean).join("\n"), {
+      brand: guard,
+    });
     return {
       angle: String(d?.angle || "").trim(),
       hook,
       body,
-      cta: d?.cta ? String(d.cta).trim() : undefined,
+      cta,
+      selfComments,
       imagePrompt: d?.imagePrompt ? String(d.imagePrompt).trim() : undefined,
       whyItWorks: String(d?.whyItWorks || "").trim(),
       guardrail: report,

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback} from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Loader2,
   Trash2,
@@ -19,6 +19,7 @@ import {
   Megaphone,
   Sparkles,
   PenLine,
+  Clapperboard,
   type LucideIcon, Coins } from "lucide-react";
 import {
   listDeconstructions,
@@ -36,6 +37,13 @@ import type { DeconstructionRow, DeconstructedStructure, RetentionBeat, Deconstr
 // dùng tự kiểm chứng AI có nói đúng không. Theo dõi tiến độ dùng lại đúng cơ
 // chế poll của trang Radar (services/deconstruct.ts::pollDeconstruction, port
 // từ pollRadarJob).
+// Nguồn là video hay bài viết — cùng một chữ "remake" nhưng hai đường khác nhau.
+const CONTENT_KIND_LABEL: Record<string, string> = {
+  video: "Nguồn: video",
+  post: "Nguồn: bài viết",
+  image: "Nguồn: ảnh",
+};
+
 const STATUS_META: Record<DeconstructionRow["status"], { label: string; cls: string }> = {
   pending: { label: "Đang chờ", cls: "" },
   downloading: { label: "Đang tải video...", cls: "ds-badge-warning" },
@@ -548,6 +556,11 @@ function DeconstructDetailPanel({
             <h2 className="text-lg font-bold text-stone-800 font-display truncate">{row.title || row.sourceUrl}</h2>
             <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
               <span className={`ds-badge ${STATUS_META[row.status].cls}`}>{STATUS_META[row.status].label}</span>
+              {/* Loại nguồn đứng ngay cạnh trạng thái: nó quyết định remake đi
+                  đường bài viết hay video, nên phải thấy trước khi bấm gì. */}
+              {row.contentKind && row.contentKind !== "unknown" && (
+                <span className="ds-badge">{CONTENT_KIND_LABEL[row.contentKind] || row.contentKind}</span>
+              )}
               {row.platform && <span className="text-[11px] text-stone-400 capitalize">{row.platform}</span>}
               {duration && <span className="text-[11px] text-stone-400">Dài {duration}</span>}
               <span className="text-[11px] text-stone-400">{formatDate(row.createdAt)}</span>
@@ -563,9 +576,19 @@ function DeconstructDetailPanel({
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {row.status === "ready" && (
-              <button onClick={onRemake} className="ds-btn ds-btn-primary ds-btn-sm">
-                <PenLine className="w-3.5 h-3.5" aria-hidden="true" /> Remake bài viết cho thương hiệu
-              </button>
+              <>
+                <button onClick={onRemake} className="ds-btn ds-btn-primary ds-btn-sm">
+                  <PenLine className="w-3.5 h-3.5" aria-hidden="true" /> Remake bài viết
+                </button>
+                {/* Nguồn là video thì lối sang dựng video mới đáng gợi ý; bản
+                    viết vẫn phải làm trước nên nút này chỉ dẫn đường, không
+                    nhảy cóc. */}
+                {row.contentKind === "video" && (
+                  <Link to="/videos" className="ds-btn ds-btn-ghost ds-btn-sm" title="Cần có bản viết đã duyệt trước">
+                    <Clapperboard className="w-3.5 h-3.5" aria-hidden="true" /> Remake video
+                  </Link>
+                )}
+              </>
             )}
             <button
               onClick={onRequestDelete}
