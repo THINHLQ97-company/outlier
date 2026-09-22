@@ -262,6 +262,64 @@ export function registerRemakeRoutes(app: Express) {
     }
   });
 
+  // ===== Vẽ ảnh cho bản viết =====
+  // Vẽ mất khoảng 10-30 giây, dưới ngưỡng proxy cắt (60s) nên gọi thẳng, không
+  // cần cơ chế việc chạy nền như bên dựng video.
+  app.post("/api/remakes/:id/image", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const { id } = req.params;
+    if (!UUID_RE.test(id)) return res.status(400).json({ error: "Mã không hợp lệ." });
+    try {
+      const [row] = await getDb().select().from(remakes).where(eq(remakes.id, id));
+      if (!row) return res.status(404).json({ error: "Không tìm thấy bản viết." });
+      const username = getAuthUser(req)!;
+      if (row.owner !== username && !(await isActiveAdmin(username))) {
+        return res.status(403).json({ error: "Không có quyền sửa bản viết này." });
+      }
+
+      const { generateRemakeImage } = await import("../services/remake-image");
+      const out = await generateRemakeImage({
+        remakeId: id,
+        aspectRatio: typeof req.body?.aspectRatio === "string" ? req.body.aspectRatio : undefined,
+        customPrompt: typeof req.body?.prompt === "string" ? req.body.prompt : undefined,
+      });
+      res.json(out);
+    } catch (e: any) {
+      console.warn("remake image:", e?.message || e);
+      res.status(400).json({ error: e?.message || "Không vẽ được ảnh." });
+    }
+  });
+
+  // Chọn lại một ảnh đã vẽ trước đó.
+  app.post("/api/remakes/:id/select-image", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const { id } = req.params;
+    if (!UUID_RE.test(id)) return res.status(400).json({ error: "Mã không hợp lệ." });
+    const url = typeof req.body?.url === "string" ? req.body.url.trim() : "";
+    if (!url) return res.status(400).json({ error: "Cần url ảnh." });
+    try {
+      const [row] = await getDb().select().from(remakes).where(eq(remakes.id, id));
+      if (!row) return res.status(404).json({ error: "Không tìm thấy bản viết." });
+      const username = getAuthUser(req)!;
+      if (row.owner !== username && !(await isActiveAdmin(username))) {
+        return res.status(403).json({ error: "Không có quyền sửa bản viết này." });
+      }
+      // Chỉ nhận ảnh đã thuộc bản viết này — không để client trỏ sang ảnh bất kỳ.
+      const images = (row.imagesJson as any[]) || [];
+      if (!images.some((img) => img.url === url)) {
+        return res.status(400).json({ error: "Ảnh này không thuộc bản viết." });
+      }
+      const [updated] = await getDb().update(remakes)
+        .set({ selectedImageUrl: url, updatedAt: new Date() })
+        .where(eq(remakes.id, id))
+        .returning();
+      res.json(updated);
+    } catch (e: any) {
+      console.error("remake select image:", e?.message || e);
+      res.status(500).json({ error: "Không chọn được ảnh." });
+    }
+  });
+
   app.delete("/api/remakes/:id", requireAuth, async (req, res) => {
     if (dbDown(res)) return;
     const { id } = req.params;

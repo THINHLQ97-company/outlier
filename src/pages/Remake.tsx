@@ -23,6 +23,7 @@ import { listRemakes, getRemake, createRemake, reviseRemake, recheckRemake, dele
 import ConfirmDialog from "../components/ConfirmDialog";
 import type { BrandRow, DeconstructionRow, RemakeRow, RemakeFormat, GuardrailReport, GuardrailIssue, GuardrailCode } from "../types";
 import RemakeModeSwitch from "../components/RemakeModeSwitch";
+import RemakeImages from "../components/RemakeImages";
 
 // Trang "Viết lại" — màn CUỐI khép kín vòng sản phẩm: tìm bài (Radar) → bóc
 // cấu trúc (Bóc cấu trúc) → viết lại cho thương hiệu (ở đây) → kiểm tra.
@@ -428,6 +429,7 @@ export default function Remake() {
                 onRevise={handleRevise}
                 revising={revising}
                 reviseError={reviseError}
+                onChanged={() => loadAndWatch(detail.id)}
               />
             </>
           ) : detailLoading ? (
@@ -680,6 +682,7 @@ function RemakeDetailPanel({
   onRevise,
   revising,
   reviseError,
+  onChanged,
 }: {
   row: RemakeRow;
   watching: boolean;
@@ -688,6 +691,7 @@ function RemakeDetailPanel({
   hint: string | null;
   onDismissHint: () => void;
   onRequestDelete: () => void;
+  onChanged: () => void;
   onRecheck: (draft: string) => void;
   rechecking: boolean;
   recheckError: string | null;
@@ -874,6 +878,14 @@ function RemakeDetailPanel({
             )}
           </div>
           </form>
+
+          <RemakeImages
+            remakeId={row.id}
+            images={row.imagesJson || []}
+            selectedUrl={row.selectedImageUrl}
+            hasDraft={!!row.draft?.trim()}
+            onChanged={onChanged}
+          />
 
           {revisions.length > 0 && (
             <div className="ds-card">

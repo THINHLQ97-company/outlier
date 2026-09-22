@@ -169,6 +169,13 @@
       "when": 1790070413364,
       "tag": "0023_true_sunset_bain",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790071255213,
+      "tag": "0024_flippant_lord_hawal",
+      "breakpoints": true
     }
   ]
 }

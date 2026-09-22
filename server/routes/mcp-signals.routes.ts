@@ -445,6 +445,21 @@ const TOOLS = [
     },
   },
   {
+    name: "remake_image",
+    description: "Vẽ ảnh minh hoạ cho một bản viết đã có. Ảnh bám nhận diện hình ảnh của thương hiệu (khuôn ảnh quen thuộc, thứ luôn phải có, và nhất là thứ không bao giờ được xuất hiện) — nên hồ sơ có visualIdentity thì ảnh mới ra đúng trang. Bỏ trống prompt thì tự đọc bản viết rồi tả; truyền prompt để tả theo ý mình. Trả về ảnh cho Claude xem luôn.",
+    annotations: { title: "Vẽ ảnh cho bản viết", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: {
+        remake_id: { type: "string", description: "Mã bản viết (từ remake_get)" },
+        prompt: { type: "string", description: "Tự tả ảnh cần vẽ; bỏ trống thì tool tự đọc bản viết rồi tả" },
+        aspect_ratio: { type: "string", description: "Tỉ lệ khung: 1:1 (mặc định), 4:5, 16:9, 9:16" },
+      },
+      required: ["remake_id"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "trend_draft",
     description: "Từ một trend đang nóng (drama, tin hot, meme đang lan) → mấy phương án nội dung ĐĂNG ĐƯỢC LUÔN, viết đúng giọng của trang và đã soi qua guardrail. Đây là bước nối giữa 'tìm được trend' và 'có bài để đăng'. Chọn kind='post' cho bài viết, kind='video' cho kịch bản video — hai khuôn khác nhau. Nếu trend không hợp với trang, tool sẽ nói thẳng là KHÔNG NÊN ĐU thay vì cố viết.",
     annotations: { title: "Trend → nội dung", readOnlyHint: false },
@@ -1157,6 +1172,32 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
     const [updated] = await db.update(brands).set(patch).where(eq(brands.id, args.brand_id)).returning();
     const written = Object.keys(patch).filter((k) => k !== "updatedAt");
     return { ...updated, written_fields: written, note: `Đã ghi ${written.length} mục, đánh dấu là nhập tay nên lần bóc tài liệu sau sẽ không ghi đè.` };
+  }
+
+  if (name === "remake_image") {
+    if (!UUID_RE.test(args.remake_id || "")) throw new Error("remake_id không hợp lệ");
+    const { generateRemakeImage } = await import("../services/remake-image");
+    const out = await generateRemakeImage({
+      remakeId: args.remake_id,
+      aspectRatio: args.aspect_ratio ? String(args.aspect_ratio) : undefined,
+      customPrompt: args.prompt ? String(args.prompt) : undefined,
+    });
+
+    // Trả ảnh về dạng Claude xem được, không chỉ đường dẫn: người dùng hỏi "vẽ
+    // giúp" thì muốn thấy ngay kết quả chứ không phải mở link.
+    const { storage, internalKeyFromUrl } = await import("../storage");
+    const key = internalKeyFromUrl(out.image.url);
+    let __mcpContent: any[] | undefined;
+    if (key) {
+      const buf = await storage.get(key).catch(() => null);
+      if (buf) {
+        __mcpContent = [
+          { type: "image", data: buf.toString("base64"), mimeType: "image/png" },
+          { type: "text", text: `Đã vẽ xong. Mô tả đã dùng: ${out.description}` },
+        ];
+      }
+    }
+    return { image: out.image, description: out.description, ...(__mcpContent ? { __mcpContent } : {}) };
   }
 
   if (name === "trend_draft") {

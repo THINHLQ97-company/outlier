@@ -608,8 +608,20 @@ export interface RemakeRow {
   revisionsJson?: RemakeRevision[];
   sourceUrl?: string | null;
   sourceTitle?: string | null;
+  /** Các phương án ảnh đã vẽ cho bản viết này. */
+  imagesJson?: RemakeImage[];
+  selectedImageUrl?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Một phương án ảnh — mirror server/db/schema.ts (RemakeImage). */
+export interface RemakeImage {
+  url: string;
+  prompt: string;
+  aspectRatio: string;
+  createdAt: string;
+  isDemo?: boolean;
 }
 
 // POST /api/remakes và /api/remakes/:id/revise trả về NGAY (status

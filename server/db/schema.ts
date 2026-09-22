@@ -570,6 +570,17 @@ export type DeconstructionRow = typeof deconstructions.$inferSelect;
 // Giữ CÁCH TRIỂN KHAI của bài gốc, thay ruột bằng sản phẩm/khách hàng/thông tin
 // của brand mình (docs/PRD.md §4 J4). Mỗi bản đều kèm guardrailJson — kết quả
 // kiểm tra 4 nguyên tắc; có lỗi mức chặn thì không cho xuất.
+// Một phương án ảnh cho bản viết. Giữ luôn prompt đã dùng: vẽ lại lần sau cần
+// biết lần trước đã tả thế nào, và người dùng hay muốn sửa một chi tiết nhỏ.
+export interface RemakeImage {
+  url: string;        // "/api/files/<key>" — dùng thẳng được trong thẻ img
+  prompt: string;
+  aspectRatio: string;
+  createdAt: string;
+  /** true = vẽ hỏng, trả về ảnh chỗ trống thay vì ảnh thật. */
+  isDemo?: boolean;
+}
+
 export const remakes = pgTable("remakes", {
   id: uuid("id").primaryKey().defaultRandom(),
   owner: text("owner").notNull(),
@@ -588,6 +599,14 @@ export const remakes = pgTable("remakes", {
   // Luôn giữ đường dẫn về bài gốc: người duyệt cần biết bản này học từ đâu.
   sourceUrl: text("source_url"),
   sourceTitle: text("source_title"),
+
+  /**
+   * Ảnh đã vẽ cho bản viết này. Giữ nhiều phương án chứ không một ảnh: lần vẽ
+   * đầu hiếm khi trúng, và người dùng cần so sánh rồi chọn.
+   */
+  imagesJson: jsonb("images_json").$type<RemakeImage[]>().default([]),
+  /** URL ảnh đang chọn trong imagesJson. */
+  selectedImageUrl: text("selected_image_url"),
 
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

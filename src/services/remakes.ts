@@ -9,7 +9,7 @@
 // services/deconstruct.ts. Riêng /recheck là ĐỒNG BỘ — trả kết quả ngay,
 // không cần poll (dùng khi người dùng tự sửa tay nội dung).
 import { authHeaders, asError } from "./http";
-import type { RemakeRow, RemakeCreateResult, RemakeFormat } from "../types";
+import type { RemakeRow, RemakeCreateResult, RemakeFormat, RemakeImage } from "../types";
 
 export async function listRemakes(): Promise<RemakeRow[]> {
   const res = await fetch("/api/remakes", { headers: authHeaders(false) });
@@ -122,4 +122,35 @@ export function pollRemake(id: string, opts: RemakePollOptions): () => void {
     if (timer) clearTimeout(timer);
     timer = null;
   };
+}
+
+// ===== Ảnh cho bản viết =====
+// Vẽ mất khoảng 10-30 giây nên gọi thẳng, không cần theo dõi việc chạy nền.
+
+export interface RemakeImageResult {
+  image: RemakeImage;
+  description: string;
+}
+
+export async function generateRemakeImage(
+  id: string,
+  opts: { prompt?: string; aspectRatio?: string } = {},
+): Promise<RemakeImageResult> {
+  const res = await fetch(`/api/remakes/${id}/image`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify(opts),
+  });
+  if (!res.ok) return asError(res, "Không vẽ được ảnh.");
+  return res.json();
+}
+
+export async function selectRemakeImage(id: string, url: string): Promise<RemakeRow> {
+  const res = await fetch(`/api/remakes/${id}/select-image`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ url }),
+  });
+  if (!res.ok) return asError(res, "Không chọn được ảnh.");
+  return res.json();
 }
