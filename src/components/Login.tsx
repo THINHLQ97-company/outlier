@@ -3,7 +3,11 @@ import { Loader2 } from "lucide-react";
 import { login as apiLogin, googleLogin } from "../services/auth";
 import { useAppContext } from "../AppContext";
 
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
+// Vibe Host không cho đặt biến rỗng; "off" là sentinel nghĩa là chưa cấu hình
+// (xem OPTIONAL_ENV_KEYS trong server.ts).
+const RAW_CLIENT_ID = ((import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) || "").trim();
+const GOOGLE_CLIENT_ID =
+  RAW_CLIENT_ID && RAW_CLIENT_ID.toLowerCase() !== "off" ? RAW_CLIENT_ID : undefined;
 
 // Minimal login screen — internal tool. Đăng nhập bằng Google (SSO, khuyến nghị)
 // hoặc tài khoản nội bộ (username/password, cho các tài khoản cũ).

@@ -26,6 +26,26 @@ import { registerMcpSignalsRoutes } from "./server/routes/mcp-signals.routes";
 
 dotenv.config();
 
+// Các tích hợp tuỳ chọn: thiếu thì app vẫn chạy, chỉ tắt tính năng tương ứng.
+// Nhưng Vibe Host bắt buộc mọi biến trong .env.example phải có giá trị và từ
+// chối cả chuỗi rỗng lẫn khoảng trắng, nên trên host ta điền sentinel "off".
+// Xoá chúng ngay từ đầu để mọi chỗ kiểm tra `if (!process.env.X)` hiểu đúng.
+const OPTIONAL_ENV_KEYS = [
+  "GOOGLE_CLIENT_ID",
+  "MARKET_RADAR_MCP_URL",
+  "MARKET_RADAR_MCP_TOKEN",
+  "GROUP_INSIGHTS_MCP_URL",
+  "GROUP_INSIGHTS_MCP_TOKEN",
+  "SOCIAL_BACKEND_URL",
+  "SOCIAL_BACKEND_TOKEN",
+  "FB_PAGE_ID",
+  "FB_ACCESS_TOKEN",
+];
+for (const key of OPTIONAL_ENV_KEYS) {
+  const value = (process.env[key] || "").trim();
+  if (value === "" || value.toLowerCase() === "off") delete process.env[key];
+}
+
 // Express serves Vite middleware in dev / dist/ in prod — same pattern as
 // share-projects/marcow-crop's server.ts. Route registration (auth, signals,
 // scripts, images, posts, characters) lands in later PLAN.md steps; this
