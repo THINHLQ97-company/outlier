@@ -182,11 +182,24 @@ function GalleryTab() {
       {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
 
       {loading ? (
-        <div className="flex items-center justify-center py-16 text-stone-400 gap-2">
-          <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+        <div className="ds-card">
+          <div className="flex items-center justify-center py-16 text-stone-400 gap-2">
+            <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+          </div>
         </div>
       ) : items.length === 0 ? (
-        <div className="text-center py-16 text-stone-400 text-sm">Chưa có ảnh nào. Tạo ảnh mới ở trang Sáng tạo.</div>
+        <div className="ds-card">
+          <div className="ds-empty">
+            <div className="ds-empty-icon">
+              <ImageOff className="w-8 h-8" aria-hidden="true" />
+            </div>
+            <p className="ds-empty-title">Chưa có ảnh nào</p>
+            <p className="ds-empty-desc">Tạo ảnh mới ở trang Sáng tạo rồi lưu vào thư viện.</p>
+            <Link to="/studio" className="ds-btn ds-btn-primary ds-btn-sm mt-1">
+              <Wand2 className="w-3.5 h-3.5" aria-hidden="true" /> Đi tới Sáng tạo
+            </Link>
+          </div>
+        </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           {items.map((p) => {
@@ -659,11 +672,21 @@ function CharactersTab() {
       )}
 
       {loading ? (
-        <div className="flex items-center justify-center py-16 text-stone-400 gap-2">
-          <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+        <div className="ds-card">
+          <div className="flex items-center justify-center py-16 text-stone-400 gap-2">
+            <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+          </div>
         </div>
       ) : items.length === 0 ? (
-        <div className="text-center py-16 text-stone-400 text-sm">Chưa có nhân vật nào.</div>
+        <div className="ds-card">
+          <div className="ds-empty">
+            <div className="ds-empty-icon">
+              <UserRound className="w-8 h-8" aria-hidden="true" />
+            </div>
+            <p className="ds-empty-title">Chưa có nhân vật nào</p>
+            <p className="ds-empty-desc">Thêm nhân vật để dùng làm ảnh tham chiếu khi sáng tạo.</p>
+          </div>
+        </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {items.map((c) => (
@@ -1079,11 +1102,21 @@ function StylesTab() {
       {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
 
       {loading ? (
-        <div className="flex items-center justify-center py-16 text-stone-400 gap-2">
-          <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+        <div className="ds-card">
+          <div className="flex items-center justify-center py-16 text-stone-400 gap-2">
+            <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+          </div>
         </div>
       ) : items.length === 0 ? (
-        <div className="text-center py-16 text-stone-400 text-sm">Chưa có phong cách nào.</div>
+        <div className="ds-card">
+          <div className="ds-empty">
+            <div className="ds-empty-icon">
+              <Sparkles className="w-8 h-8" aria-hidden="true" />
+            </div>
+            <p className="ds-empty-title">Chưa có phong cách nào</p>
+            <p className="ds-empty-desc">Thêm phong cách vẽ để áp dụng nhất quán cho ảnh sáng tạo.</p>
+          </div>
+        </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {items.map((s) => (
@@ -1352,12 +1385,20 @@ function RagTab() {
       {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
 
       {loading ? (
-        <div className="flex items-center justify-center py-16 text-stone-400 gap-2">
-          <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+        <div className="ds-card">
+          <div className="flex items-center justify-center py-16 text-stone-400 gap-2">
+            <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+          </div>
         </div>
       ) : items.length === 0 ? (
-        <div className="text-center py-16 text-stone-400 text-sm">
-          Chưa có ảnh đã thích. Vào Thư viện → tab Ảnh (hoặc trang Sáng tạo) và bấm ❤️ trên ảnh bạn ưng.
+        <div className="ds-card">
+          <div className="ds-empty">
+            <div className="ds-empty-icon">
+              <Heart className="w-8 h-8" aria-hidden="true" />
+            </div>
+            <p className="ds-empty-title">Chưa có ảnh đã thích</p>
+            <p className="ds-empty-desc">Vào tab Ảnh (hoặc trang Sáng tạo) và bấm ❤️ trên ảnh bạn ưng.</p>
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">

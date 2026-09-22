@@ -38,6 +38,19 @@ export function ytDlpPath(): string {
   return process.env.YTDLP_PATH || "yt-dlp";
 }
 
+/**
+ * Thư mục chứa ffmpeg, để chỉ đường cho yt-dlp khi nó cần ghép hình + tiếng.
+ * yt-dlp chỉ tìm ffmpeg trong PATH, KHÔNG đọc biến FFMPEG_PATH — nên phải
+ * truyền --ffmpeg-location tường minh, nếu không sẽ lỗi "công cụ tải trả lỗi"
+ * rất khó đoán nguyên nhân.
+ */
+export function ffmpegLocationArgs(): string[] {
+  const p = process.env.FFMPEG_PATH;
+  if (!p) return [];
+  const dir = p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "";
+  return dir ? ["--ffmpeg-location", dir] : [];
+}
+
 export function isScannerAvailable(): boolean {
   const p = ytDlpPath();
   if (p.includes("/")) return fs.existsSync(p);

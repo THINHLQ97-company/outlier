@@ -81,82 +81,75 @@ export default function Login() {
   }, [login]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-storm-50 px-4">
-      <div className="w-full max-w-sm bg-white rounded-2xl shadow-lg border border-storm-100 p-8">
-        <img src="/mark.svg" alt="" aria-hidden="true" className="w-12 h-12 mb-3" />
-        <h1 className="text-lg font-bold text-storm-900 font-display mb-1">Outlier</h1>
-        <p className="text-sm text-stone-500 mb-6">Tìm content đang bật lên — remake cho brand của bạn</p>
+    <div className="min-h-screen flex items-center justify-center bg-stone-50 px-4">
+      <div className="ds-card w-full max-w-sm">
+        <div className="ds-card-body">
+          <img src="/mark.svg" alt="" aria-hidden="true" className="w-12 h-12 mb-3" />
+          <h1 className="text-lg font-bold text-stone-900 font-display mb-1">Outlier</h1>
+          <p className="text-sm text-stone-500 mb-6">Tìm content đang bật lên — remake cho brand của bạn</p>
 
-        {error && (
-          <div
-            role="alert"
-            className={`text-sm rounded-lg px-3 py-2 mb-4 ${
-              pending ? "text-amber-800 bg-amber-50 border border-amber-200" : "text-red-600 bg-red-50 border border-red-200"
-            }`}
-          >
-            {error}
-          </div>
-        )}
+          {error && (
+            <div role="alert" className={`ds-alert mb-4 ${pending ? "ds-alert-warning" : "ds-alert-danger"}`}>
+              {error}
+            </div>
+          )}
 
-        {/* Đăng nhập Google (khuyến nghị) */}
-        {GOOGLE_CLIENT_ID ? (
-          <div className="flex flex-col items-center gap-2 mb-5">
-            <div ref={googleBtnRef} className="min-h-[40px]" />
-            {loading && (
-              <span className="text-xs text-stone-400 flex items-center gap-1.5">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> Đang đăng nhập...
-              </span>
-            )}
-          </div>
-        ) : (
-          <div className="text-xs text-stone-400 bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 mb-5">
-            Đăng nhập Google chưa cấu hình (thiếu VITE_GOOGLE_CLIENT_ID) — dùng tài khoản nội bộ bên dưới.
-          </div>
-        )}
+          {/* Đăng nhập Google (khuyến nghị) */}
+          {GOOGLE_CLIENT_ID ? (
+            <div className="flex flex-col items-center gap-2 mb-5">
+              <div ref={googleBtnRef} className="min-h-[40px]" />
+              {loading && (
+                <span className="text-xs text-stone-400 flex items-center gap-1.5">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> Đang đăng nhập...
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="ds-alert ds-alert-info mb-5">
+              Đăng nhập Google chưa cấu hình (thiếu VITE_GOOGLE_CLIENT_ID) — dùng tài khoản nội bộ bên dưới.
+            </div>
+          )}
 
-        <div className="flex items-center gap-2 text-[11px] text-stone-400 mb-4">
-          <span className="flex-1 h-px bg-stone-200" /> hoặc tài khoản nội bộ <span className="flex-1 h-px bg-stone-200" />
+          <div className="flex items-center gap-2 text-[11px] text-stone-400 mb-4">
+            <span className="flex-1 h-px bg-stone-200" /> hoặc tài khoản nội bộ <span className="flex-1 h-px bg-stone-200" />
+          </div>
+
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <div>
+              <label htmlFor="username" className="ds-label">
+                Tên đăng nhập
+              </label>
+              <input
+                id="username"
+                type="text"
+                autoComplete="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="ds-input"
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="password" className="ds-label">
+                Mật khẩu
+              </label>
+              <input
+                id="password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="ds-input"
+                required
+              />
+            </div>
+
+            <button type="submit" disabled={loading} className="ds-btn ds-btn-primary ds-btn-lg justify-center mt-2">
+              {loading && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />}
+              Đăng nhập
+            </button>
+          </form>
         </div>
-
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div>
-            <label htmlFor="username" className="block text-xs font-medium text-stone-600 mb-1">
-              Tên đăng nhập
-            </label>
-            <input
-              id="username"
-              type="text"
-              autoComplete="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-storm-500"
-              required
-            />
-          </div>
-          <div>
-            <label htmlFor="password" className="block text-xs font-medium text-stone-600 mb-1">
-              Mật khẩu
-            </label>
-            <input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-storm-500"
-              required
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="mt-2 flex items-center justify-center gap-2 bg-storm-600 hover:bg-storm-700 text-white text-sm font-medium rounded-lg py-2.5 transition-colors disabled:opacity-60"
-          >
-            {loading && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />}
-            Đăng nhập
-          </button>
-        </form>
       </div>
     </div>
   );

@@ -30,10 +30,10 @@ import type { BrandRow, DeconstructionRow, RemakeRow, RemakeFormat, GuardrailRep
 // dùng lại đúng cơ chế poll của Deconstruct (services/remakes.ts::pollRemake,
 // port từ pollDeconstruction).
 const STATUS_META: Record<RemakeRow["status"], { label: string; cls: string }> = {
-  pending: { label: "Đang chờ", cls: "bg-stone-100 text-stone-500" },
-  writing: { label: "Đang viết...", cls: "bg-amber-50 text-amber-700" },
-  ready: { label: "Đã có bản viết", cls: "bg-green-50 text-green-700" },
-  error: { label: "Lỗi", cls: "bg-red-50 text-red-600" },
+  pending: { label: "Đang chờ", cls: "" },
+  writing: { label: "Đang viết...", cls: "ds-badge-warning" },
+  ready: { label: "Đã có bản viết", cls: "ds-badge-success" },
+  error: { label: "Lỗi", cls: "ds-badge-danger" },
 };
 
 const FORMAT_LABEL: Record<RemakeFormat, string> = {
@@ -340,7 +340,7 @@ export default function Remake() {
       />
 
       {listError && (
-        <div role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+        <div role="alert" className="ds-alert ds-alert-danger">
           {listError}
         </div>
       )}
@@ -348,12 +348,20 @@ export default function Remake() {
       <div className="flex flex-col lg:flex-row gap-4 items-start">
         <aside className="w-full lg:w-72 shrink-0 flex flex-col gap-2">
           {loading ? (
-            <div className="flex items-center justify-center py-10 text-stone-400 gap-2">
-              <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+            <div className="ds-card">
+              <div className="flex items-center justify-center py-10 text-stone-400 gap-2">
+                <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+              </div>
             </div>
           ) : items.length === 0 ? (
-            <div className="text-center py-10 text-stone-400 text-sm border border-dashed border-stone-300 rounded-xl">
-              Chưa có bản viết nào. Điền form ở trên để bắt đầu.
+            <div className="ds-card">
+              <div className="ds-empty">
+                <div className="ds-empty-icon">
+                  <PenLine className="w-8 h-8" aria-hidden="true" />
+                </div>
+                <p className="ds-empty-title">Chưa có bản viết nào</p>
+                <p className="ds-empty-desc">Điền form ở trên để viết lại một bài theo hồ sơ thương hiệu.</p>
+              </div>
             </div>
           ) : (
             items.map((it) => (
@@ -366,9 +374,7 @@ export default function Remake() {
               >
                 <span className="text-sm font-semibold text-stone-800 truncate block">{it.sourceTitle || FORMAT_LABEL[it.format]}</span>
                 <div className="flex items-center gap-1.5 flex-wrap mt-1">
-                  <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${STATUS_META[it.status].cls}`}>
-                    {STATUS_META[it.status].label}
-                  </span>
+                  <span className={`ds-badge ${STATUS_META[it.status].cls}`}>{STATUS_META[it.status].label}</span>
                   <span className="text-[10px] text-stone-400">{FORMAT_LABEL[it.format]}</span>
                   {it.status === "ready" && it.guardrailJson && (
                     <span title={it.guardrailJson.passed ? "Qua được kiểm tra" : "Còn vấn đề phải sửa"}>
@@ -387,14 +393,19 @@ export default function Remake() {
 
         <div className="flex-1 min-w-0 w-full">
           {!selectedId ? (
-            <div className="flex flex-col items-center justify-center text-center gap-2 py-20 text-stone-400 border border-dashed border-stone-300 rounded-2xl bg-white/50">
-              <PenLine className="w-8 h-8 text-stone-300" aria-hidden="true" />
-              <p className="text-sm">Chọn một bản viết bên trái để xem kết quả, hoặc điền form ở trên để bắt đầu.</p>
+            <div className="ds-card">
+              <div className="ds-empty">
+                <div className="ds-empty-icon">
+                  <PenLine className="w-8 h-8" aria-hidden="true" />
+                </div>
+                <p className="ds-empty-title">Chưa chọn bản viết</p>
+                <p className="ds-empty-desc">Chọn một bản viết bên trái để xem kết quả, hoặc điền form ở trên để bắt đầu.</p>
+              </div>
             </div>
           ) : detail ? (
             <>
               {detailError && (
-                <div role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+                <div role="alert" className="ds-alert ds-alert-danger mb-3">
                   {detailError}
                 </div>
               )}
@@ -416,11 +427,13 @@ export default function Remake() {
               />
             </>
           ) : detailLoading ? (
-            <div className="flex items-center justify-center py-20 text-stone-400 gap-2">
-              <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+            <div className="ds-card">
+              <div className="flex items-center justify-center py-20 text-stone-400 gap-2">
+                <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+              </div>
             </div>
           ) : detailError ? (
-            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{detailError}</div>
+            <div role="alert" className="ds-alert ds-alert-danger">{detailError}</div>
           ) : null}
         </div>
       </div>
@@ -472,10 +485,11 @@ function NewRemakeForm({
   const noBrand = !brandsLoading && brands.length === 0;
 
   return (
-    <form onSubmit={onSubmit} className="bg-white rounded-xl border border-stone-200 p-4 flex flex-col gap-3">
+    <form onSubmit={onSubmit} className="ds-card">
+      <div className="ds-card-body flex flex-col gap-3">
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex-1 min-w-0">
-          <label htmlFor="rm-brand" className="block text-xs font-medium text-stone-600 mb-1">
+          <label htmlFor="rm-brand" className="ds-label">
             Thương hiệu
           </label>
           {brandsLoading ? (
@@ -491,13 +505,7 @@ function NewRemakeForm({
               trước.
             </p>
           ) : (
-            <select
-              id="rm-brand"
-              value={brandId}
-              onChange={(e) => onBrandIdChange(e.target.value)}
-              disabled={submitting}
-              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm disabled:opacity-60"
-            >
+            <select id="rm-brand" value={brandId} onChange={(e) => onBrandIdChange(e.target.value)} disabled={submitting} className="ds-select">
               <option value="">— Chọn thương hiệu —</option>
               {brands.map((b) => (
                 <option key={b.id} value={b.id}>
@@ -509,7 +517,7 @@ function NewRemakeForm({
         </div>
 
         <div className="flex-1 min-w-0">
-          <label htmlFor="rm-decon" className="block text-xs font-medium text-stone-600 mb-1">
+          <label htmlFor="rm-decon" className="ds-label">
             Bài đã bóc cấu trúc
           </label>
           {deconLoading ? (
@@ -526,13 +534,7 @@ function NewRemakeForm({
               trước.
             </p>
           ) : (
-            <select
-              id="rm-decon"
-              value={deconId}
-              onChange={(e) => onDeconIdChange(e.target.value)}
-              disabled={submitting}
-              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm disabled:opacity-60"
-            >
+            <select id="rm-decon" value={deconId} onChange={(e) => onDeconIdChange(e.target.value)} disabled={submitting} className="ds-select">
               <option value="">— Chọn bài —</option>
               {deconRows.map((d) => (
                 <option key={d.id} value={d.id}>
@@ -544,16 +546,10 @@ function NewRemakeForm({
         </div>
 
         <div className="sm:w-48 shrink-0">
-          <label htmlFor="rm-format" className="block text-xs font-medium text-stone-600 mb-1">
+          <label htmlFor="rm-format" className="ds-label">
             Dạng bài
           </label>
-          <select
-            id="rm-format"
-            value={format}
-            onChange={(e) => onFormatChange(e.target.value as RemakeFormat)}
-            disabled={submitting}
-            className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm disabled:opacity-60"
-          >
+          <select id="rm-format" value={format} onChange={(e) => onFormatChange(e.target.value as RemakeFormat)} disabled={submitting} className="ds-select">
             <option value="video_script">{FORMAT_LABEL.video_script}</option>
             <option value="post">{FORMAT_LABEL.post}</option>
           </select>
@@ -561,27 +557,24 @@ function NewRemakeForm({
       </div>
 
       <div>
-        <button
-          type="submit"
-          disabled={submitting || noBrand || noDecon}
-          className="flex items-center justify-center gap-1.5 text-sm font-medium text-white bg-storm-600 hover:bg-storm-700 px-4 py-2 rounded-lg transition-colors disabled:opacity-60 shrink-0"
-        >
+        <button type="submit" disabled={submitting || noBrand || noDecon} className="ds-btn ds-btn-primary shrink-0">
           {submitting ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <PenLine className="w-4 h-4" aria-hidden="true" />}
           {submitting ? "Đang bắt đầu..." : "Viết bản mới"}
         </button>
       </div>
 
       {error && (
-        <div role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+        <div role="alert" className="ds-alert ds-alert-danger">
           {error}
         </div>
       )}
       {submitting && (
-        <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+        <div className="ds-alert ds-alert-warning">
           <Loader2 className="w-4 h-4 animate-spin shrink-0" aria-hidden="true" />
           Việc viết chạy nền, mất khoảng 10-40 giây — kết quả sẽ tự hiện bên dưới.
         </div>
       )}
+      </div>
     </form>
   );
 }
@@ -589,14 +582,14 @@ function NewRemakeForm({
 function GuardrailBanner({ report }: { report: GuardrailReport | null | undefined }) {
   if (!report) {
     return (
-      <div className="flex items-center gap-2 text-sm font-medium text-stone-500 bg-stone-100 border border-stone-200 rounded-xl px-4 py-3">
+      <div className="ds-alert">
         <HelpCircle className="w-4.5 h-4.5 shrink-0" aria-hidden="true" /> Chưa kiểm tra
       </div>
     );
   }
   if (report.passed) {
     return (
-      <div className="flex items-center gap-2 text-sm font-medium text-green-800 bg-green-50 border-2 border-green-200 rounded-xl px-4 py-3">
+      <div className="ds-alert ds-alert-success font-medium">
         <CheckCircle2 className="w-4.5 h-4.5 shrink-0" aria-hidden="true" />
         Qua được kiểm tra — vẫn nên đọc lại lần cuối trước khi đăng
       </div>
@@ -604,7 +597,7 @@ function GuardrailBanner({ report }: { report: GuardrailReport | null | undefine
   }
   const blockCount = report.issues.filter((i) => i.severity === "block").length;
   return (
-    <div className="flex items-center gap-2 text-sm font-medium text-red-800 bg-red-50 border-2 border-red-200 rounded-xl px-4 py-3">
+    <div className="ds-alert ds-alert-danger font-medium">
       <XCircle className="w-4.5 h-4.5 shrink-0" aria-hidden="true" />
       Còn {blockCount} vấn đề phải sửa trước khi dùng
     </div>
@@ -740,14 +733,13 @@ function RemakeDetailPanel({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="bg-white rounded-xl border border-stone-200 p-4">
+      <div className="ds-card">
+      <div className="ds-card-body">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="flex-1 min-w-0">
             <h2 className="text-lg font-bold text-stone-800 font-display truncate">{row.sourceTitle || FORMAT_LABEL[row.format]}</h2>
             <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-              <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${STATUS_META[row.status].cls}`}>
-                {STATUS_META[row.status].label}
-              </span>
+              <span className={`ds-badge ${STATUS_META[row.status].cls}`}>{STATUS_META[row.status].label}</span>
               <span className="text-[11px] text-stone-400">{FORMAT_LABEL[row.format]}</span>
               <span className="text-[11px] text-stone-400">{formatDate(row.createdAt)}</span>
               {row.sourceUrl && (
@@ -771,26 +763,26 @@ function RemakeDetailPanel({
         </div>
 
         {watchTimedOut ? (
-          <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5 mt-2 flex items-start gap-1.5">
+          <div role="alert" className="ds-alert ds-alert-danger mt-2">
             <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
             Quá lâu không có phản hồi, thử tải lại trang.
           </div>
         ) : watching ? (
-          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 mt-2 flex items-center gap-1.5">
+          <div className="ds-alert ds-alert-warning mt-2">
             <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" aria-hidden="true" />
             Đang viết... ({watchElapsedSec}s)
           </div>
         ) : null}
 
         {row.status === "error" && row.errorMessage && (
-          <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5 mt-2 flex items-start gap-1.5">
+          <div role="alert" className="ds-alert ds-alert-danger mt-2">
             <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
             {row.errorMessage}
           </div>
         )}
 
         {hint && (
-          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 mt-2 flex items-start justify-between gap-2">
+          <div className="ds-alert ds-alert-warning mt-2 justify-between">
             <span className="flex items-start gap-1.5">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
               {hint}
@@ -800,6 +792,7 @@ function RemakeDetailPanel({
             </button>
           </div>
         )}
+      </div>
       </div>
 
       {row.status === "ready" && (
@@ -815,25 +808,16 @@ function RemakeDetailPanel({
 
           {row.guardrailJson && <IssuesList report={row.guardrailJson} />}
 
-          <div className="bg-white rounded-xl border border-stone-200 p-4 flex flex-col gap-2.5">
+          <div className="ds-card">
+          <div className="ds-card-body flex flex-col gap-2.5">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <h3 className="text-sm font-semibold text-stone-700">Nội dung bản viết</h3>
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => onRecheck(draftText)}
-                  disabled={!editable || rechecking}
-                  className="flex items-center gap-1.5 text-xs font-medium text-storm-700 hover:bg-storm-100 bg-storm-50 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40"
-                >
+                <button type="button" onClick={() => onRecheck(draftText)} disabled={!editable || rechecking} className="ds-btn ds-btn-sm">
                   {rechecking ? <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> : <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />}
                   Kiểm tra lại
                 </button>
-                <button
-                  type="button"
-                  onClick={handleCopyClick}
-                  disabled={!draftText}
-                  className="flex items-center gap-1.5 text-xs font-medium text-stone-600 hover:bg-stone-100 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40"
-                >
+                <button type="button" onClick={handleCopyClick} disabled={!draftText} className="ds-btn ds-btn-sm">
                   {copied ? <Check className="w-3.5 h-3.5" aria-hidden="true" /> : <Copy className="w-3.5 h-3.5" aria-hidden="true" />}
                   {copied ? "Đã sao chép" : "Sao chép"}
                 </button>
@@ -848,17 +832,19 @@ function RemakeDetailPanel({
               onChange={(e) => setDraftText(e.target.value)}
               disabled={!editable}
               rows={10}
-              className="w-full rounded-lg border border-stone-300 px-3 py-2.5 text-sm leading-relaxed whitespace-pre-wrap disabled:opacity-70 disabled:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-storm-300"
+              className="ds-textarea leading-relaxed whitespace-pre-wrap disabled:opacity-70 disabled:bg-stone-50"
             />
             {recheckError && (
-              <div role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              <div role="alert" className="ds-alert ds-alert-danger">
                 {recheckError}
               </div>
             )}
             <p className="text-[11px] text-stone-400">Sửa tay trực tiếp rồi bấm "Kiểm tra lại" để cập nhật kết quả kiểm tra ở trên.</p>
           </div>
+          </div>
 
-          <form onSubmit={handleReviseSubmit} className="bg-white rounded-xl border border-stone-200 p-4 flex flex-col gap-2.5">
+          <form onSubmit={handleReviseSubmit} className="ds-card">
+          <div className="ds-card-body flex flex-col gap-2.5">
             <label htmlFor="rm-revise-note" className="text-sm font-semibold text-stone-700">
               Nhờ viết lại
             </label>
@@ -870,26 +856,24 @@ function RemakeDetailPanel({
                 onChange={(e) => setReviseNote(e.target.value)}
                 disabled={revising || watching}
                 placeholder='Ví dụ: "ngắn hơn", "đổi hook", "giọng vui hơn"...'
-                className="flex-1 rounded-lg border border-stone-300 px-3 py-2 text-sm disabled:opacity-60"
+                className="ds-input flex-1"
               />
-              <button
-                type="submit"
-                disabled={revising || watching || !reviseNote.trim()}
-                className="flex items-center justify-center gap-1.5 text-sm font-medium text-white bg-storm-600 hover:bg-storm-700 px-4 py-2 rounded-lg transition-colors disabled:opacity-60 shrink-0"
-              >
+              <button type="submit" disabled={revising || watching || !reviseNote.trim()} className="ds-btn ds-btn-primary shrink-0">
                 {revising ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Send className="w-4 h-4" aria-hidden="true" />}
                 Nhờ viết lại
               </button>
             </div>
             {reviseError && (
-              <div role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              <div role="alert" className="ds-alert ds-alert-danger">
                 {reviseError}
               </div>
             )}
+          </div>
           </form>
 
           {revisions.length > 0 && (
-            <div className="bg-white rounded-xl border border-stone-200 p-4">
+            <div className="ds-card">
+            <div className="ds-card-body">
               <button
                 onClick={() => setRevisionsOpen((o) => !o)}
                 aria-expanded={revisionsOpen}
@@ -907,6 +891,7 @@ function RemakeDetailPanel({
                   ))}
                 </ul>
               )}
+            </div>
             </div>
           )}
         </>

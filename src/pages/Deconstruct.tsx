@@ -38,18 +38,18 @@ import type { DeconstructionRow, DeconstructedStructure, RetentionBeat, Deconstr
 // chế poll của trang Radar (services/deconstruct.ts::pollDeconstruction, port
 // từ pollRadarJob).
 const STATUS_META: Record<DeconstructionRow["status"], { label: string; cls: string }> = {
-  pending: { label: "Đang chờ", cls: "bg-stone-100 text-stone-500" },
-  downloading: { label: "Đang tải video...", cls: "bg-amber-50 text-amber-700" },
-  analyzing: { label: "Đang phân tích...", cls: "bg-amber-50 text-amber-700" },
-  ready: { label: "Đã có kết quả", cls: "bg-green-50 text-green-700" },
-  error: { label: "Lỗi", cls: "bg-red-50 text-red-600" },
+  pending: { label: "Đang chờ", cls: "" },
+  downloading: { label: "Đang tải video...", cls: "ds-badge-warning" },
+  analyzing: { label: "Đang phân tích...", cls: "ds-badge-warning" },
+  ready: { label: "Đã có kết quả", cls: "ds-badge-success" },
+  error: { label: "Lỗi", cls: "ds-badge-danger" },
 };
 
 const ANALYSIS_MODE_META: Record<DeconstructAnalysisMode, { label: string; cls: string; icon: LucideIcon }> = {
-  video: { label: "Đã xem video", cls: "bg-green-50 text-green-700 border border-green-200", icon: Video },
+  video: { label: "Đã xem video", cls: "ds-badge-success", icon: Video },
   transcript: {
     label: "Chỉ đọc lời thoại (không xem được hình)",
-    cls: "bg-amber-50 text-amber-700 border border-amber-200",
+    cls: "ds-badge-warning",
     icon: FileText,
   },
 };
@@ -325,13 +325,13 @@ export default function Deconstruct() {
       />
 
       {startingFromRadar && (
-        <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+        <div className="ds-alert ds-alert-warning">
           <Loader2 className="w-4 h-4 animate-spin shrink-0" aria-hidden="true" /> Đang bắt đầu phân tích bài đã chọn từ Radar...
         </div>
       )}
 
       {listError && (
-        <div role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+        <div role="alert" className="ds-alert ds-alert-danger">
           {listError}
         </div>
       )}
@@ -339,12 +339,20 @@ export default function Deconstruct() {
       <div className="flex flex-col lg:flex-row gap-4 items-start">
         <aside className="w-full lg:w-72 shrink-0 flex flex-col gap-2">
           {loading ? (
-            <div className="flex items-center justify-center py-10 text-stone-400 gap-2">
-              <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+            <div className="ds-card">
+              <div className="flex items-center justify-center py-10 text-stone-400 gap-2">
+                <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+              </div>
             </div>
           ) : jobs.length === 0 ? (
-            <div className="text-center py-10 text-stone-400 text-sm border border-dashed border-stone-300 rounded-xl">
-              Chưa có bản phân tích nào. Dán link ở trên để bắt đầu.
+            <div className="ds-card">
+              <div className="ds-empty">
+                <div className="ds-empty-icon">
+                  <Scissors className="w-8 h-8" aria-hidden="true" />
+                </div>
+                <p className="ds-empty-title">Chưa có bản phân tích nào</p>
+                <p className="ds-empty-desc">Dán link ở trên để bắt đầu bóc cấu trúc một bài.</p>
+              </div>
             </div>
           ) : (
             jobs.map((j) => (
@@ -357,9 +365,7 @@ export default function Deconstruct() {
               >
                 <span className="text-sm font-semibold text-stone-800 truncate block">{j.title || j.sourceUrl}</span>
                 <div className="flex items-center gap-1.5 flex-wrap mt-1">
-                  <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${STATUS_META[j.status].cls}`}>
-                    {STATUS_META[j.status].label}
-                  </span>
+                  <span className={`ds-badge ${STATUS_META[j.status].cls}`}>{STATUS_META[j.status].label}</span>
                   {j.platform && <span className="text-[10px] text-stone-400 capitalize">{j.platform}</span>}
                 </div>
               </button>
@@ -369,16 +375,21 @@ export default function Deconstruct() {
 
         <div className="flex-1 min-w-0 w-full">
           {!selectedId ? (
-            <div className="flex flex-col items-center justify-center text-center gap-2 py-20 text-stone-400 border border-dashed border-stone-300 rounded-2xl bg-white/50">
-              <Scissors className="w-8 h-8 text-stone-300" aria-hidden="true" />
-              <p className="text-sm">Chọn một bản phân tích bên trái để xem kết quả, hoặc dán link ở trên để bắt đầu.</p>
+            <div className="ds-card">
+              <div className="ds-empty">
+                <div className="ds-empty-icon">
+                  <Scissors className="w-8 h-8" aria-hidden="true" />
+                </div>
+                <p className="ds-empty-title">Chưa chọn bản phân tích</p>
+                <p className="ds-empty-desc">Chọn một bản phân tích bên trái để xem kết quả, hoặc dán link ở trên để bắt đầu.</p>
+              </div>
             </div>
           ) : detail ? (
             <>
               {/* Lỗi xảy ra trong lúc đang theo dõi (đã có dữ liệu cũ) — hiện dạng
                   banner, KHÔNG thay hẳn nội dung để không mất kết quả đã có. */}
               {detailError && (
-                <div role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+                <div role="alert" className="ds-alert ds-alert-danger mb-3">
                   {detailError}
                 </div>
               )}
@@ -393,11 +404,13 @@ export default function Deconstruct() {
               />
             </>
           ) : detailLoading ? (
-            <div className="flex items-center justify-center py-20 text-stone-400 gap-2">
-              <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+            <div className="ds-card">
+              <div className="flex items-center justify-center py-20 text-stone-400 gap-2">
+                <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+              </div>
             </div>
           ) : detailError ? (
-            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{detailError}</div>
+            <div role="alert" className="ds-alert ds-alert-danger">{detailError}</div>
           ) : null}
         </div>
       </div>
@@ -442,8 +455,9 @@ function NewLinkForm({ onCreated }: { onCreated: (row: DeconstructionRow) => voi
   }
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-stone-200 p-4 flex flex-col gap-2.5">
-      <label htmlFor="dc-url" className="text-xs font-medium text-stone-600">
+    <form onSubmit={handleSubmit} className="ds-card">
+      <div className="ds-card-body flex flex-col gap-2.5">
+      <label htmlFor="dc-url" className="ds-label">
         Link video (YouTube, TikTok, Douyin, Facebook...) — hoặc bấm "Bóc cấu trúc" từ một bài trong Radar
       </label>
       <div className="flex flex-col sm:flex-row gap-2">
@@ -455,24 +469,21 @@ function NewLinkForm({ onCreated }: { onCreated: (row: DeconstructionRow) => voi
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           placeholder="https://..."
-          className="flex-1 rounded-lg border border-stone-300 px-3 py-2 text-sm disabled:opacity-60"
+          className="ds-input flex-1"
         />
-        <button
-          type="submit"
-          disabled={submitting}
-          className="flex items-center justify-center gap-1.5 text-sm font-medium text-white bg-storm-600 hover:bg-storm-700 px-4 py-2 rounded-lg transition-colors disabled:opacity-60 shrink-0"
-        >
+        <button type="submit" disabled={submitting} className="ds-btn ds-btn-primary shrink-0">
           {submitting ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Scissors className="w-4 h-4" aria-hidden="true" />}
           {submitting ? "Đang bắt đầu..." : "Phân tích"}
         </button>
       </div>
-      {error && <div role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+      {error && <div role="alert" className="ds-alert ds-alert-danger">{error}</div>}
       {submitting && (
-        <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+        <div className="ds-alert ds-alert-warning">
           <Loader2 className="w-4 h-4 animate-spin shrink-0" aria-hidden="true" />
           Việc phân tích chạy nền, mất khoảng 1-3 phút — kết quả sẽ tự hiện bên dưới.
         </div>
       )}
+      </div>
     </form>
   );
 }
@@ -504,14 +515,13 @@ function DeconstructDetailPanel({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="bg-white rounded-xl border border-stone-200 p-4">
+      <div className="ds-card">
+      <div className="ds-card-body">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="flex-1 min-w-0">
             <h2 className="text-lg font-bold text-stone-800 font-display truncate">{row.title || row.sourceUrl}</h2>
             <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-              <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${STATUS_META[row.status].cls}`}>
-                {STATUS_META[row.status].label}
-              </span>
+              <span className={`ds-badge ${STATUS_META[row.status].cls}`}>{STATUS_META[row.status].label}</span>
               {row.platform && <span className="text-[11px] text-stone-400 capitalize">{row.platform}</span>}
               {duration && <span className="text-[11px] text-stone-400">Dài {duration}</span>}
               <span className="text-[11px] text-stone-400">{formatDate(row.createdAt)}</span>
@@ -527,10 +537,7 @@ function DeconstructDetailPanel({
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {row.status === "ready" && (
-              <button
-                onClick={onRemake}
-                className="flex items-center gap-1 text-xs font-medium text-white bg-storm-600 hover:bg-storm-700 px-2.5 py-1.5 rounded-lg transition-colors shrink-0"
-              >
+              <button onClick={onRemake} className="ds-btn ds-btn-primary ds-btn-sm">
                 <PenLine className="w-3.5 h-3.5" aria-hidden="true" /> Viết lại cho thương hiệu
               </button>
             )}
@@ -544,12 +551,12 @@ function DeconstructDetailPanel({
         </div>
 
         {watchTimedOut ? (
-          <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5 mt-2 flex items-start gap-1.5">
+          <div role="alert" className="ds-alert ds-alert-danger mt-2">
             <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
             Quá lâu không có phản hồi, thử tải lại trang.
           </div>
         ) : watching ? (
-          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 mt-2 flex items-center gap-1.5">
+          <div className="ds-alert ds-alert-warning mt-2">
             <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" aria-hidden="true" />
             {row.status === "downloading"
               ? `Đang tải video... (${watchElapsedSec}s)`
@@ -558,14 +565,14 @@ function DeconstructDetailPanel({
         ) : null}
 
         {row.status === "error" && row.errorMessage && (
-          <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5 mt-2 flex items-start gap-1.5">
+          <div role="alert" className="ds-alert ds-alert-danger mt-2">
             <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
             {row.errorMessage}
           </div>
         )}
 
         {warnings.length > 0 && (
-          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 mt-2 flex flex-col gap-1">
+          <div className="ds-alert ds-alert-warning mt-2 flex-col !items-stretch gap-1">
             <span className="font-medium flex items-start gap-1.5">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
               Hệ thống đã tự loại một số thông tin không đối chiếu được với video gốc — không phải lỗi, đây là tính năng minh
@@ -580,9 +587,7 @@ function DeconstructDetailPanel({
         )}
 
         {row.status === "ready" && row.analysisMode && (
-          <div
-            className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-1 rounded-lg mt-2.5 ${ANALYSIS_MODE_META[row.analysisMode].cls}`}
-          >
+          <div className={`ds-badge mt-2.5 ${ANALYSIS_MODE_META[row.analysisMode].cls}`}>
             {(() => {
               const Icon = ANALYSIS_MODE_META[row.analysisMode].icon;
               return <Icon className="w-3.5 h-3.5" aria-hidden="true" />;
@@ -591,11 +596,13 @@ function DeconstructDetailPanel({
           </div>
         )}
       </div>
+      </div>
 
       {row.status === "ready" && (
         <>
           <FormulaBlock formula={row.structure?.formula} />
-          <div className="bg-white rounded-xl border border-stone-200 p-4">
+          <div className="ds-card">
+          <div className="ds-card-body">
             <h3 className="text-sm font-semibold text-stone-700 mb-3">Nhịp của bài (theo thời gian)</h3>
             {timeline.length === 0 ? (
               <p className="text-sm text-stone-400 italic">Không xác định được mốc thời gian nào.</p>
@@ -617,7 +624,7 @@ function DeconstructDetailPanel({
                           target="_blank"
                           rel="noreferrer"
                           title="Mở video tại đúng giây này để kiểm chứng"
-                          className="inline-flex items-center gap-1 text-xs font-medium text-storm-700 bg-storm-50 hover:bg-storm-100 px-1.5 py-0.5 rounded transition-colors"
+                          className="ds-badge-primary ds-badge hover:bg-storm-100 transition-colors"
                         >
                           {formatTimestamp(m.atSec)} <ExternalLink className="w-3 h-3" aria-hidden="true" />
                         </a>
@@ -639,11 +646,14 @@ function DeconstructDetailPanel({
               </p>
             )}
           </div>
+          </div>
 
           {row.structure?.notes && (
-            <div className="bg-white rounded-xl border border-stone-200 p-4">
-              <h3 className="text-sm font-semibold text-stone-700 mb-1.5">Ghi chú thêm</h3>
-              <p className="text-sm text-stone-600 leading-relaxed whitespace-pre-wrap">{row.structure.notes}</p>
+            <div className="ds-card">
+              <div className="ds-card-body">
+                <h3 className="text-sm font-semibold text-stone-700 mb-1.5">Ghi chú thêm</h3>
+                <p className="text-sm text-stone-600 leading-relaxed whitespace-pre-wrap">{row.structure.notes}</p>
+              </div>
             </div>
           )}
 
@@ -669,16 +679,13 @@ function FormulaBlock({ formula }: { formula: string | null | undefined }) {
   }
 
   return (
-    <div className="bg-storm-50 border-2 border-storm-200 rounded-xl p-4 flex flex-col gap-2.5">
+    <div className="ds-card" style={{ borderColor: "var(--ds-primary-mute)", borderWidth: 2 }}>
+      <div className="ds-card-body flex flex-col gap-2.5" style={{ background: "var(--ds-primary-light)" }}>
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <h3 className="flex items-center gap-1.5 text-sm font-bold text-storm-800">
           <Sparkles className="w-4 h-4" aria-hidden="true" /> Công thức để remake
         </h3>
-        <button
-          onClick={handleCopy}
-          disabled={!formula}
-          className="flex items-center gap-1.5 text-xs font-medium text-storm-700 hover:bg-storm-100 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40"
-        >
+        <button onClick={handleCopy} disabled={!formula} className="ds-btn ds-btn-sm">
           {copied ? <Check className="w-3.5 h-3.5" aria-hidden="true" /> : <Copy className="w-3.5 h-3.5" aria-hidden="true" />}
           {copied ? "Đã sao chép" : "Sao chép"}
         </button>
@@ -688,6 +695,7 @@ function FormulaBlock({ formula }: { formula: string | null | undefined }) {
       ) : (
         <p className="text-sm text-stone-400 italic">Không xác định được.</p>
       )}
+      </div>
     </div>
   );
 }
@@ -695,7 +703,8 @@ function FormulaBlock({ formula }: { formula: string | null | undefined }) {
 function TranscriptBlock({ transcript }: { transcript: string }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="bg-white rounded-xl border border-stone-200 p-4">
+    <div className="ds-card">
+      <div className="ds-card-body">
       <button
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
@@ -711,6 +720,7 @@ function TranscriptBlock({ transcript }: { transcript: string }) {
           {transcript}
         </p>
       )}
+      </div>
     </div>
   );
 }

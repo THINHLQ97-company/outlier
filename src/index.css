@@ -1,39 +1,150 @@
-@import url("https://fonts.googleapis.com/css2?family=Comic+Neue:wght@700&family=Inter:wght@400;500;600;700;800&family=Be+Vietnam+Pro:wght@400;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Be+Vietnam+Pro:wght@400;600;700&display=swap");
 @import "tailwindcss";
 
-/* Brand tokens — ĐÃ ĐỔI sang đúng bảng màu/font marcow-crop (quyết định user
-   2026-07-21, xem CLAUDE.md mục 4): primary cam đất #D97757 thay vì
-   storm-indigo trước đây. GIỮ NGUYÊN TÊN BIẾN `--color-storm-*` để không phải
-   sửa class ở mọi file (`bg-storm-600`, `text-storm-700`...) — chỉ đổi giá
-   trị hex sang thang cam đất tương đương. `--font-display` trỏ sang Comic
-   Neue (thay Be Vietnam Pro) vì class `font-display` đã dùng sẵn cho mọi
-   heading/logo trong app — theo yêu cầu "font-comic cho heading/logo, Inter
-   cho phần còn lại"; `--font-comic` cũng được khai báo cho code mới nào cần
-   gọi thẳng. Be Vietnam Pro vẫn giữ làm fallback vẽ chữ overlay lên ảnh
-   (TextOverlayEditor canvas — không đổi, không thuộc phạm vi reskin UI). */
+/* ==========================================================================
+   MẮT BÃO DESIGN SYSTEM — TOKENS
+   Nguồn sự thật: share-projects/matbao-vibe-challenge/docs/reference/
+   design-system.css (đối chiếu lại đây khi hệ gốc cập nhật). Giữ NGUYÊN tên
+   biến `--ds-*` để so khớp được với nguồn. Bê nguyên phần tokens (mục 1) +
+   component dùng cho app này (mục 4-16 của nguồn); bỏ phần dark-mode tự động
+   theo prefers-color-scheme/[data-theme] và bộ widget "DASHBOARD"/"TRUNG TÂM
+   ĐIỀU HÀNH" (mục 17-21 của nguồn) vì Outlier không có các màn báo cáo đó.
+   Palette: Indigo primary (#4f46e5), nền slate (#f8fafc), sidebar tối
+   (#1e1b4b) — theo yêu cầu chuyển hệ 2026-09-22.
+   ========================================================================== */
+:root {
+  /* Brand / Primary */
+  --ds-primary: #4f46e5;
+  --ds-primary-hover: #4338ca;
+  --ds-primary-light: #eef2ff;
+  --ds-primary-mute: #c7d2fe;
+
+  /* Backgrounds */
+  --ds-bg: #f8fafc;
+  --ds-surface: #ffffff;
+  --ds-surface-raised: #ffffff;
+  --ds-surface-overlay: #ffffff;
+
+  /* Borders */
+  --ds-border: #e2e8f0;
+  --ds-border-strong: #cbd5e1;
+
+  /* Foreground / Text */
+  --ds-fg: #0f172a;
+  --ds-fg-mute: #64748b;
+  --ds-fg-subtle: #94a3b8;
+  --ds-fg-inverse: #ffffff;
+
+  /* Semantic */
+  --ds-success: #16a34a;
+  --ds-success-bg: #f0fdf4;
+  --ds-success-border: #bbf7d0;
+  --ds-warning: #d97706;
+  --ds-warning-bg: #fffbeb;
+  --ds-warning-border: #fde68a;
+  --ds-danger: #dc2626;
+  --ds-danger-bg: #fef2f2;
+  --ds-danger-border: #fecaca;
+  --ds-info: #0284c7;
+  --ds-info-bg: #f0f9ff;
+  --ds-info-border: #bae6fd;
+
+  /* Sidebar */
+  --ds-sidebar-bg: #1e1b4b;
+  --ds-sidebar-fg: #c7d2fe;
+  --ds-sidebar-fg-active: #ffffff;
+  --ds-sidebar-accent: #4f46e5;
+  --ds-sidebar-hover: rgba(99, 102, 241, 0.18);
+
+  /* Radius */
+  --ds-radius-xs: 2px;
+  --ds-radius-sm: 4px;
+  --ds-radius: 6px;
+  --ds-radius-md: 8px;
+  --ds-radius-lg: 12px;
+  --ds-radius-xl: 16px;
+  --ds-radius-full: 9999px;
+
+  /* Shadows / Elevation */
+  --ds-shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, .05);
+  --ds-shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, .10), 0 1px 2px -1px rgba(0, 0, 0, .06);
+  --ds-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, .10), 0 2px 4px -2px rgba(0, 0, 0, .06);
+  --ds-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, .10), 0 4px 6px -4px rgba(0, 0, 0, .05);
+  --ds-shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, .10), 0 8px 10px -6px rgba(0, 0, 0, .05);
+
+  /* Typography */
+  --ds-font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --ds-font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
+  --ds-font-size-xs: 11px;
+  --ds-font-size-sm: 13px;
+  --ds-font-size-base: 14px;
+  --ds-font-size-md: 15px;
+  --ds-font-size-lg: 18px;
+  --ds-font-size-xl: 22px;
+  --ds-font-size-2xl: 28px;
+
+  /* Transitions */
+  --ds-transition: 150ms cubic-bezier(.4, 0, .2, 1);
+  --ds-transition-slow: 250ms cubic-bezier(.4, 0, .2, 1);
+}
+
+/* --------------------------------------------------------------------------
+   THANG MÀU CŨ → HỆ MẮT BÃO (quyết định 2026-09-22)
+   `storm-*` (cam đất marcow-crop) và `stone-*` (xám ấm mặc định Tailwind)
+   được dùng ở HÀNG TRĂM chỗ trong 9 trang + components (`bg-storm-600`,
+   `text-storm-800`, `border-stone-200`, `text-stone-500`...). Sửa tay từng
+   class rủi ro bỏ sót rất cao — thay vào đó ÁNH XẠ LẠI GIÁ TRỊ của 2 thang
+   này ngay tại nguồn token qua Tailwind v4 `@theme`, giữ nguyên tên lớp:
+     - `storm-*`  → chính thang Indigo của hệ (storm-600 = --ds-primary,
+       storm-700 = --ds-primary-hover, storm-50 = --ds-primary-light,
+       storm-200 = --ds-primary-mute) — toàn bộ nút/badge/accent cam đổi
+       sang Indigo ngay lập tức, không đụng file .tsx nào.
+     - `stone-*`  → thang Slate (xám lạnh) trùng khớp --ds-border/--ds-bg/
+       --ds-fg-mute, để không bị lệch tông cạnh Indigo (Slate là xám của hệ
+       Mắt Bão, Stone là xám ấm không có trong hệ).
+   `font-display` (dùng cho heading/logo) đổi từ Comic Neue (nhận diện
+   marcow-crop cũ) sang Inter — khớp giọng "clean SaaS admin" của hệ; các
+   trang gọi `font-display font-bold` không cần sửa vì trọng lượng chữ đã có
+   sẵn ở class `font-bold` đi kèm.
+   -------------------------------------------------------------------------- */
 @theme {
   --font-sans: "Inter", "Be Vietnam Pro", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Comic Neue", "Inter", ui-sans-serif, sans-serif;
-  --font-comic: "Comic Neue", cursive, sans-serif;
+  --font-display: "Inter", ui-sans-serif, sans-serif;
+  --font-comic: "Be Vietnam Pro", ui-sans-serif, sans-serif;
 
-  --color-storm-50: #fbf3ee;
-  --color-storm-100: #f6e4da;
-  --color-storm-200: #edc4ae;
-  --color-storm-300: #e2a280;
-  --color-storm-400: #dd8a69;
-  --color-storm-500: #d97757;
-  --color-storm-600: #c66545;
-  --color-storm-700: #a8523a;
-  --color-storm-800: #86412f;
-  --color-storm-900: #5f2e22;
+  --color-storm-50: #eef2ff;
+  --color-storm-100: #e0e7ff;
+  --color-storm-200: #c7d2fe;
+  --color-storm-300: #a5b4fc;
+  --color-storm-400: #818cf8;
+  --color-storm-500: #6366f1;
+  --color-storm-600: #4f46e5;
+  --color-storm-700: #4338ca;
+  --color-storm-800: #3730a3;
+  --color-storm-900: #312e81;
 
-  --color-ember-500: #e08b3d;
-  --color-ember-600: #c66545;
+  --color-ember-500: #6366f1;
+  --color-ember-600: #4f46e5;
+
+  --color-stone-50: #f8fafc;
+  --color-stone-100: #f1f5f9;
+  --color-stone-200: #e2e8f0;
+  --color-stone-300: #cbd5e1;
+  --color-stone-400: #94a3b8;
+  --color-stone-500: #64748b;
+  --color-stone-600: #475569;
+  --color-stone-700: #334155;
+  --color-stone-800: #1e293b;
+  --color-stone-900: #0f172a;
 }
 
 body {
-  background-color: #faf9f6;
-  color: #2d2d2d;
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-font-size-base);
+  background-color: var(--ds-bg);
+  color: var(--ds-fg);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* Custom Scrollbar */
@@ -47,16 +158,368 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d6d3d1;
-  border-radius: 10px;
+  background: var(--ds-border-strong);
+  border-radius: var(--ds-radius-full);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #a8a29e;
+  background: var(--ds-fg-subtle);
 }
 
 /* Firefox */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #d6d3d1 transparent;
+  scrollbar-color: var(--ds-border-strong) transparent;
 }
+
+/* ==========================================================================
+   MẮT BÃO DESIGN SYSTEM — COMPONENTS (.ds-*)
+   Bê nguyên từ design-system.css mục 4-16 (chỉ light mode — app này chưa có
+   yêu cầu dark mode). Dùng các lớp này khi tái dựng khối UI tự chế trong
+   src/pages, thay vì tự phối Tailwind từ đầu.
+   ========================================================================== */
+
+/* 4. BUTTONS — .ds-btn */
+.ds-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: var(--ds-radius);
+  font-size: var(--ds-font-size-sm);
+  font-weight: 500;
+  line-height: 1.4;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background var(--ds-transition), color var(--ds-transition), box-shadow var(--ds-transition), border-color var(--ds-transition);
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+  background: var(--ds-surface-raised);
+  color: var(--ds-fg);
+  border-color: var(--ds-border);
+  box-shadow: var(--ds-shadow-xs);
+}
+.ds-btn:hover { background: var(--ds-bg); border-color: var(--ds-border-strong); }
+.ds-btn:focus-visible { outline: 2px solid var(--ds-primary); outline-offset: 2px; }
+.ds-btn:disabled { opacity: .45; pointer-events: none; }
+
+.ds-btn-primary {
+  background: var(--ds-primary);
+  color: #fff;
+  border-color: var(--ds-primary);
+  box-shadow: var(--ds-shadow-sm);
+}
+.ds-btn-primary:hover { background: var(--ds-primary-hover); border-color: var(--ds-primary-hover); }
+
+.ds-btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--ds-fg-mute);
+}
+.ds-btn-ghost:hover { background: var(--ds-primary-light); color: var(--ds-primary); border-color: transparent; }
+
+.ds-btn-danger {
+  background: var(--ds-danger);
+  color: #fff;
+  border-color: var(--ds-danger);
+}
+.ds-btn-danger:hover { filter: brightness(1.08); }
+
+.ds-btn-sm { padding: 4px 10px; font-size: var(--ds-font-size-xs); }
+.ds-btn-lg { padding: 10px 20px; font-size: var(--ds-font-size-md); }
+.ds-btn-icon { padding: 7px; }
+
+/* 5. FORM CONTROLS — .ds-input / .ds-select */
+.ds-input,
+.ds-select,
+.ds-textarea {
+  display: block;
+  width: 100%;
+  padding: 7px 11px;
+  background: var(--ds-surface);
+  color: var(--ds-fg);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-font-size-sm);
+  line-height: 1.5;
+  transition: border-color var(--ds-transition), box-shadow var(--ds-transition);
+  outline: none;
+}
+.ds-input::placeholder, .ds-textarea::placeholder { color: var(--ds-fg-subtle); }
+.ds-input:focus, .ds-select:focus, .ds-textarea:focus {
+  border-color: var(--ds-primary);
+  box-shadow: 0 0 0 3px var(--ds-primary-light);
+}
+.ds-input.error, .ds-select.error { border-color: var(--ds-danger); }
+.ds-input.error:focus { box-shadow: 0 0 0 3px var(--ds-danger-bg); }
+.ds-select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px; }
+.ds-textarea { resize: vertical; min-height: 80px; }
+.ds-label { display: block; font-size: var(--ds-font-size-sm); font-weight: 500; color: var(--ds-fg); margin-bottom: 5px; }
+.ds-hint { font-size: var(--ds-font-size-xs); color: var(--ds-fg-mute); margin-top: 4px; }
+.ds-field-error { font-size: var(--ds-font-size-xs); color: var(--ds-danger); margin-top: 4px; }
+
+/* 6. CARD — .ds-card */
+.ds-card {
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-lg);
+  box-shadow: var(--ds-shadow-xs);
+  overflow: hidden;
+}
+.ds-card-header {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--ds-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ds-card-title { font-size: var(--ds-font-size-md); font-weight: 600; color: var(--ds-fg); }
+.ds-card-body { padding: 20px; }
+.ds-card-footer { padding: 12px 20px; border-top: 1px solid var(--ds-border); background: var(--ds-bg); }
+
+/* 7. BADGES — .ds-badge */
+.ds-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--ds-radius-full);
+  font-size: var(--ds-font-size-xs);
+  font-weight: 500;
+  line-height: 1.4;
+  background: var(--ds-surface-raised);
+  color: var(--ds-fg-mute);
+  border: 1px solid var(--ds-border);
+}
+.ds-badge-primary { background: var(--ds-primary-light); color: var(--ds-primary); border-color: var(--ds-primary-mute); }
+.ds-badge-success { background: var(--ds-success-bg); color: var(--ds-success); border-color: var(--ds-success-border); }
+.ds-badge-warning { background: var(--ds-warning-bg); color: var(--ds-warning); border-color: var(--ds-warning-border); }
+.ds-badge-danger  { background: var(--ds-danger-bg); color: var(--ds-danger); border-color: var(--ds-danger-border); }
+.ds-badge-info    { background: var(--ds-info-bg); color: var(--ds-info); border-color: var(--ds-info-border); }
+.ds-badge-dot::before { content:''; width:6px; height:6px; border-radius:50%; background:currentColor; display:inline-block; }
+
+/* 8. SIDEBAR NAV — .ds-nav */
+.ds-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+}
+.ds-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--ds-radius-md);
+  font-size: var(--ds-font-size-sm);
+  font-weight: 500;
+  color: var(--ds-sidebar-fg);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background var(--ds-transition), color var(--ds-transition);
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+}
+.ds-nav-item:hover { background: var(--ds-sidebar-hover); color: var(--ds-sidebar-fg-active); }
+.ds-nav-item.active {
+  background: var(--ds-sidebar-hover);
+  color: var(--ds-sidebar-fg-active);
+  position: relative;
+}
+.ds-nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 4px; bottom: 4px;
+  width: 3px;
+  background: var(--ds-sidebar-accent);
+  border-radius: 0 2px 2px 0;
+}
+.ds-nav-icon { width: 16px; height: 16px; opacity: .7; flex-shrink: 0; }
+.ds-nav-item.active .ds-nav-icon, .ds-nav-item:hover .ds-nav-icon { opacity: 1; }
+.ds-nav-section { padding: 16px 10px 4px; font-size: 10px; font-weight: 600; color: var(--ds-sidebar-fg); opacity: .5; text-transform: uppercase; letter-spacing: .08em; }
+.ds-nav-divider { height: 1px; background: rgba(255,255,255,.07); margin: 8px 10px; }
+
+/* 9. TABLE — .ds-table */
+.ds-table-wrap { overflow-x: auto; border-radius: var(--ds-radius-lg); border: 1px solid var(--ds-border); }
+.ds-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ds-font-size-sm);
+}
+.ds-table thead { background: var(--ds-bg); }
+.ds-table th {
+  padding: 10px 14px;
+  text-align: left;
+  font-size: var(--ds-font-size-xs);
+  font-weight: 600;
+  color: var(--ds-fg-mute);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  border-bottom: 1px solid var(--ds-border);
+  white-space: nowrap;
+}
+.ds-table td {
+  padding: 11px 14px;
+  color: var(--ds-fg);
+  border-bottom: 1px solid var(--ds-border);
+  vertical-align: middle;
+}
+.ds-table tbody tr:last-child td { border-bottom: none; }
+.ds-table tbody tr:hover { background: var(--ds-primary-light); }
+
+/* 10. MODAL — .ds-modal-overlay / .ds-modal */
+.ds-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  backdrop-filter: blur(2px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--ds-transition-slow);
+}
+.ds-modal-overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+.ds-modal {
+  background: var(--ds-surface-overlay);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-xl);
+  box-shadow: var(--ds-shadow-xl);
+  width: 100%;
+  max-width: 480px;
+  transform: translateY(8px) scale(.98);
+  transition: transform var(--ds-transition-slow);
+}
+.ds-modal-overlay.open .ds-modal { transform: translateY(0) scale(1); }
+.ds-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--ds-border);
+}
+.ds-modal-title { font-size: var(--ds-font-size-md); font-weight: 600; }
+.ds-modal-close { background: none; border: none; cursor: pointer; color: var(--ds-fg-mute); padding: 4px; border-radius: var(--ds-radius-sm); line-height: 1; font-size: 20px; }
+.ds-modal-close:hover { background: var(--ds-bg); color: var(--ds-fg); }
+.ds-modal-body { padding: 20px; }
+.ds-modal-footer { padding: 12px 20px; border-top: 1px solid var(--ds-border); display: flex; gap: 8px; justify-content: flex-end; }
+
+/* 11. TOAST — .ds-toast-container / .ds-toast */
+.ds-toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.ds-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--ds-surface-overlay);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-lg);
+  box-shadow: var(--ds-shadow-lg);
+  max-width: 340px;
+  pointer-events: auto;
+  animation: ds-toast-in .2s ease forwards;
+  font-size: var(--ds-font-size-sm);
+  color: var(--ds-fg);
+}
+.ds-toast.removing { animation: ds-toast-out .2s ease forwards; }
+.ds-toast-icon { font-size: 16px; line-height: 1.4; flex-shrink: 0; }
+.ds-toast-msg { flex: 1; line-height: 1.4; }
+.ds-toast-success { border-left: 3px solid var(--ds-success); }
+.ds-toast-warning { border-left: 3px solid var(--ds-warning); }
+.ds-toast-danger  { border-left: 3px solid var(--ds-danger); }
+.ds-toast-info    { border-left: 3px solid var(--ds-info); }
+
+@keyframes ds-toast-in  { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+@keyframes ds-toast-out { from { opacity:1; transform:translateY(0); } to { opacity:0; transform:translateY(8px); } }
+
+/* 12. EMPTY STATE — .ds-empty */
+.ds-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 20px;
+  text-align: center;
+  gap: 10px;
+}
+.ds-empty-icon { font-size: 40px; opacity: .35; line-height: 1; display: flex; align-items: center; justify-content: center; }
+.ds-empty-title { font-size: var(--ds-font-size-md); font-weight: 600; color: var(--ds-fg); }
+.ds-empty-desc { font-size: var(--ds-font-size-sm); color: var(--ds-fg-mute); max-width: 320px; }
+
+/* 13. ERROR STATE — .ds-error */
+.ds-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  gap: 10px;
+}
+.ds-error-icon { font-size: 36px; color: var(--ds-danger); line-height: 1; display: flex; align-items: center; justify-content: center; }
+.ds-error-title { font-size: var(--ds-font-size-md); font-weight: 600; color: var(--ds-danger); }
+.ds-error-desc { font-size: var(--ds-font-size-sm); color: var(--ds-fg-mute); max-width: 320px; }
+.ds-error-code { font-family: var(--ds-font-mono); font-size: var(--ds-font-size-xs); background: var(--ds-danger-bg); color: var(--ds-danger); padding: 4px 10px; border-radius: var(--ds-radius-sm); border: 1px solid var(--ds-danger-border); }
+
+/* 14. ALERT BANNERS — .ds-alert */
+.ds-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--ds-radius-md);
+  font-size: var(--ds-font-size-sm);
+  border: 1px solid var(--ds-border);
+  background: var(--ds-surface);
+}
+.ds-alert-success { background: var(--ds-success-bg); border-color: var(--ds-success-border); color: var(--ds-success); }
+.ds-alert-warning { background: var(--ds-warning-bg); border-color: var(--ds-warning-border); color: var(--ds-warning); }
+.ds-alert-danger  { background: var(--ds-danger-bg);  border-color: var(--ds-danger-border);  color: var(--ds-danger); }
+.ds-alert-info    { background: var(--ds-info-bg);    border-color: var(--ds-info-border);    color: var(--ds-info); }
+
+/* 15. STAT CARD — .ds-stat */
+.ds-stat { display: flex; flex-direction: column; gap: 4px; }
+.ds-stat-value { font-size: var(--ds-font-size-2xl); font-weight: 700; color: var(--ds-fg); line-height: 1.1; }
+.ds-stat-label { font-size: var(--ds-font-size-xs); font-weight: 500; color: var(--ds-fg-mute); text-transform: uppercase; letter-spacing: .05em; }
+.ds-stat-delta { font-size: var(--ds-font-size-xs); font-weight: 500; }
+.ds-stat-delta.up   { color: var(--ds-success); }
+.ds-stat-delta.down { color: var(--ds-danger); }
+
+/* 16. AVATAR — .ds-avatar */
+.ds-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--ds-primary-light);
+  color: var(--ds-primary);
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+  border: 2px solid var(--ds-surface);
+}
+.ds-avatar-sm { width: 24px; height: 24px; font-size: 10px; }
+.ds-avatar-lg { width: 40px; height: 40px; font-size: 15px; }

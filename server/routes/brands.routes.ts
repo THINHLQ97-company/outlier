@@ -9,14 +9,27 @@
 import type { Express } from "express";
 import { and, desc, eq, or } from "drizzle-orm";
 import { getDb, isDbConfigured } from "../db/client";
-import { brands, brandSources } from "../db/schema";
+import { brands, brandSources, brandFanpages } from "../db/schema";
 import { requireAuth, getAuthUser } from "../auth-mw";
-import { ingestUrl, ingestRawText, ingestPdfBuffer } from "../services/brand-ingest";
+import { ingestUrl, ingestRawText, ingestPdfBuffer, assertPublicUrl } from "../services/brand-ingest";
 import { extractBrandProfile, type SourceDoc } from "../services/brand-extract";
 import { isActiveAdmin } from "./studio.routes";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_PDF_BYTES = 10 * 1024 * 1024;
+
+/** Đoán nền tảng từ link để người dùng khỏi phải chọn tay. */
+function guessFanpagePlatform(url: string): string | null {
+  const u = url.toLowerCase();
+  if (u.includes("facebook.com") || u.includes("fb.com")) return "facebook";
+  if (u.includes("tiktok.com")) return "tiktok";
+  if (u.includes("youtube.com") || u.includes("youtu.be")) return "youtube";
+  if (u.includes("instagram.com")) return "instagram";
+  if (u.includes("threads.net") || u.includes("threads.com")) return "threads";
+  if (u.includes("zalo.me")) return "zalo";
+  if (u.includes("linkedin.com")) return "linkedin";
+  return null;
+}
 
 function dbDown(res: any): boolean {
   if (!isDbConfigured()) {
@@ -69,7 +82,10 @@ export function registerBrandRoutes(app: Express) {
         .from(brandSources)
         .where(eq(brandSources.brandId, id))
         .orderBy(desc(brandSources.createdAt));
-      res.json({ ...row, sources });
+      const fanpages = await getDb().select().from(brandFanpages)
+        .where(eq(brandFanpages.brandId, id))
+        .orderBy(desc(brandFanpages.isPrimary), desc(brandFanpages.createdAt));
+      res.json({ ...row, sources, fanpages });
     } catch (e: any) {
       console.error("brand get:", e?.message || e);
       res.status(500).json({ error: "Không tải được thương hiệu." });
@@ -230,7 +246,12 @@ export function registerBrandRoutes(app: Express) {
     if (dbDown(res)) return;
     const { id } = req.params;
     if (!UUID_RE.test(id)) return res.status(400).json({ error: "Mã thương hiệu không hợp lệ." });
-    const EDITABLE = ["sells", "audience", "toneOfVoice", "addressing", "bannedTerms", "allowedClaims"] as const;
+    const EDITABLE = [
+      "sells", "audience", "toneOfVoice", "addressing", "bannedTerms", "allowedClaims",
+      // Tính cách thường do người dùng tự quyết chứ không bóc từ tài liệu,
+      // nên hay được nhập tay — vẫn đi qua cùng một đường để nhất quán.
+      "personality", "contentPillars", "trendDos", "trendDonts",
+    ] as const;
     try {
       const [brand] = await getDb().select().from(brands).where(eq(brands.id, id));
       if (!brand) return res.status(404).json({ error: "Không tìm thấy thương hiệu." });
@@ -270,6 +291,95 @@ export function registerBrandRoutes(app: Express) {
     } catch (e: any) {
       console.error("brand source delete:", e?.message || e);
       res.status(500).json({ error: "Không xoá được tài liệu." });
+    }
+  });
+
+  // ===== Trang/kênh CỦA CHÍNH thương hiệu =====
+  // Khác "Kênh theo dõi" (soi đối thủ): đây là nơi thương hiệu đăng bài. Claude
+  // cần biết để gợi ý đu trend cho đúng chỗ, đúng định dạng, đúng người đọc.
+  app.post("/api/brands/:id/fanpages", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const { id } = req.params;
+    if (!UUID_RE.test(id)) return res.status(400).json({ error: "Mã thương hiệu không hợp lệ." });
+    try {
+      const [brand] = await getDb().select().from(brands).where(eq(brands.id, id));
+      if (!brand) return res.status(404).json({ error: "Không tìm thấy thương hiệu." });
+      if (!(await canEdit(req, brand))) return res.status(403).json({ error: "Không có quyền sửa thương hiệu này." });
+
+      const pageUrl = String(req.body?.pageUrl || "").trim();
+      if (!pageUrl) return res.status(400).json({ error: "Dán link trang của bạn." });
+      try { assertPublicUrl(pageUrl); }
+      catch (e: any) { return res.status(400).json({ error: e?.message || "Link không hợp lệ." }); }
+
+      const platform = String(req.body?.platform || "").trim() || guessFanpagePlatform(pageUrl);
+      if (!platform) return res.status(400).json({ error: "Không nhận ra trang thuộc nền tảng nào." });
+
+      const arr = (v: any) => (Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean) : []);
+      const [row] = await getDb().insert(brandFanpages).values({
+        brandId: id, platform, pageUrl,
+        pageName: String(req.body?.pageName || "").trim() || null,
+        handle: String(req.body?.handle || "").trim() || null,
+        followerCount: Number.isFinite(Number(req.body?.followerCount)) ? Number(req.body.followerCount) : null,
+        topics: arr(req.body?.topics), formats: arr(req.body?.formats),
+        postingCadence: String(req.body?.postingCadence || "").trim() || null,
+        audienceNote: String(req.body?.audienceNote || "").trim() || null,
+        note: String(req.body?.note || "").trim() || null,
+        isPrimary: req.body?.isPrimary === true,
+      }).returning();
+      res.status(201).json(row);
+    } catch (e: any) {
+      console.error("fanpage add:", e?.message || e);
+      res.status(500).json({ error: "Không thêm được trang." });
+    }
+  });
+
+  app.patch("/api/brands/:id/fanpages/:fid", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const { id, fid } = req.params;
+    if (!UUID_RE.test(id) || !UUID_RE.test(fid)) return res.status(400).json({ error: "Mã không hợp lệ." });
+    try {
+      const [brand] = await getDb().select().from(brands).where(eq(brands.id, id));
+      if (!brand) return res.status(404).json({ error: "Không tìm thấy thương hiệu." });
+      if (!(await canEdit(req, brand))) return res.status(403).json({ error: "Không có quyền sửa." });
+
+      const patch: Record<string, any> = { updatedAt: new Date() };
+      for (const k of ["pageName", "handle", "postingCadence", "audienceNote", "note", "platform"]) {
+        if (typeof req.body?.[k] === "string") patch[k] = req.body[k].trim() || null;
+      }
+      for (const k of ["topics", "formats"]) {
+        if (Array.isArray(req.body?.[k])) patch[k] = req.body[k].map((x: any) => String(x).trim()).filter(Boolean);
+      }
+      if (req.body?.followerCount !== undefined) {
+        const n = Number(req.body.followerCount);
+        patch.followerCount = Number.isFinite(n) && n >= 0 ? n : null;
+      }
+      if (typeof req.body?.isPrimary === "boolean") patch.isPrimary = req.body.isPrimary;
+
+      const [row] = await getDb().update(brandFanpages)
+        .set(patch)
+        .where(and(eq(brandFanpages.id, fid), eq(brandFanpages.brandId, id)))
+        .returning();
+      if (!row) return res.status(404).json({ error: "Không tìm thấy trang." });
+      res.json(row);
+    } catch (e: any) {
+      console.error("fanpage patch:", e?.message || e);
+      res.status(500).json({ error: "Không lưu được thay đổi." });
+    }
+  });
+
+  app.delete("/api/brands/:id/fanpages/:fid", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const { id, fid } = req.params;
+    if (!UUID_RE.test(id) || !UUID_RE.test(fid)) return res.status(400).json({ error: "Mã không hợp lệ." });
+    try {
+      const [brand] = await getDb().select().from(brands).where(eq(brands.id, id));
+      if (!brand) return res.status(404).json({ error: "Không tìm thấy thương hiệu." });
+      if (!(await canEdit(req, brand))) return res.status(403).json({ error: "Không có quyền xoá." });
+      await getDb().delete(brandFanpages).where(and(eq(brandFanpages.id, fid), eq(brandFanpages.brandId, id)));
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("fanpage delete:", e?.message || e);
+      res.status(500).json({ error: "Không xoá được trang." });
     }
   });
 

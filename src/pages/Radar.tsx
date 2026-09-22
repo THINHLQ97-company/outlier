@@ -45,22 +45,22 @@ const PLATFORM_DEFS: { key: string; label: string; note?: string }[] = [
 const PLATFORM_LABEL: Record<string, string> = Object.fromEntries(PLATFORM_DEFS.map((p) => [p.key, p.label]));
 
 const STATUS_META: Record<RadarJob["status"], { label: string; cls: string }> = {
-  pending: { label: "Đang chờ", cls: "bg-stone-100 text-stone-500" },
-  scanning: { label: "Đang quét...", cls: "bg-amber-50 text-amber-700" },
-  enriching: { label: "Đang bổ sung số liệu...", cls: "bg-amber-50 text-amber-700" },
-  ready: { label: "Đã có kết quả", cls: "bg-green-50 text-green-700" },
-  error: { label: "Lỗi", cls: "bg-red-50 text-red-600" },
+  pending: { label: "Đang chờ", cls: "" },
+  scanning: { label: "Đang quét...", cls: "ds-badge-warning" },
+  enriching: { label: "Đang bổ sung số liệu...", cls: "ds-badge-warning" },
+  ready: { label: "Đã có kết quả", cls: "ds-badge-success" },
+  error: { label: "Lỗi", cls: "ds-badge-danger" },
 };
 
 const CONFIDENCE_META: Record<RadarConfidence, { label: string; cls: string }> = {
-  low: { label: "Tham khảo", cls: "bg-amber-50 text-amber-700 border border-amber-200" },
-  medium: { label: "Khá chắc", cls: "bg-blue-50 text-blue-700 border border-blue-200" },
-  high: { label: "Đáng tin", cls: "bg-green-50 text-green-700 border border-green-200" },
+  low: { label: "Tham khảo", cls: "ds-badge-warning" },
+  medium: { label: "Khá chắc", cls: "ds-badge-info" },
+  high: { label: "Đáng tin", cls: "ds-badge-success" },
 };
 
 const SOURCE_META: Record<RadarMetricsSource, { label: string; cls: string }> = {
-  scan: { label: "Số liệu sơ bộ", cls: "bg-stone-100 text-stone-500" },
-  apify: { label: "Số liệu đầy đủ", cls: "bg-storm-50 text-storm-700" },
+  scan: { label: "Số liệu sơ bộ", cls: "" },
+  apify: { label: "Số liệu đầy đủ", cls: "ds-badge-primary" },
 };
 
 const numberFmt = new Intl.NumberFormat("vi-VN", { notation: "compact", maximumFractionDigits: 1 });
@@ -217,16 +217,13 @@ export default function Radar() {
             lượt thích tuyệt đối.
           </p>
         </div>
-        <button
-          onClick={() => setShowNewForm(true)}
-          className="flex items-center gap-1.5 text-sm font-medium text-white bg-storm-600 hover:bg-storm-700 px-3 py-2 rounded-lg transition-colors shrink-0"
-        >
+        <button onClick={() => setShowNewForm(true)} className="ds-btn ds-btn-primary shrink-0">
           <Plus className="w-4 h-4" aria-hidden="true" /> Quét ngách mới
         </button>
       </div>
 
       {listError && (
-        <div role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+        <div role="alert" className="ds-alert ds-alert-danger">
           {listError}
         </div>
       )}
@@ -234,12 +231,23 @@ export default function Radar() {
       <div className="flex flex-col lg:flex-row gap-4 items-start">
         <aside className="w-full lg:w-72 shrink-0 flex flex-col gap-2">
           {loading ? (
-            <div className="flex items-center justify-center py-10 text-stone-400 gap-2">
-              <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+            <div className="ds-card">
+              <div className="flex items-center justify-center py-10 text-stone-400 gap-2">
+                <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+              </div>
             </div>
           ) : jobs.length === 0 ? (
-            <div className="text-center py-10 text-stone-400 text-sm border border-dashed border-stone-300 rounded-xl">
-              Chưa có phiên quét nào. Bấm "Quét ngách mới" để bắt đầu.
+            <div className="ds-card">
+              <div className="ds-empty">
+                <div className="ds-empty-icon">
+                  <Telescope className="w-8 h-8" aria-hidden="true" />
+                </div>
+                <p className="ds-empty-title">Chưa có phiên quét nào</p>
+                <p className="ds-empty-desc">Quét một ngách hoặc link đối thủ để tìm content đang bật lên.</p>
+                <button onClick={() => setShowNewForm(true)} className="ds-btn ds-btn-primary ds-btn-sm mt-1">
+                  <Plus className="w-3.5 h-3.5" aria-hidden="true" /> Quét ngách mới
+                </button>
+              </div>
             </div>
           ) : (
             jobs.map((j) => (
@@ -252,9 +260,7 @@ export default function Radar() {
               >
                 <span className="text-sm font-semibold text-stone-800 truncate block">{j.query}</span>
                 <div className="flex items-center gap-1.5 flex-wrap mt-1">
-                  <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${STATUS_META[j.status].cls}`}>
-                    {STATUS_META[j.status].label}
-                  </span>
+                  <span className={`ds-badge ${STATUS_META[j.status].cls}`}>{STATUS_META[j.status].label}</span>
                   <span className="text-[10px] text-stone-400">{j.platforms.map((p) => PLATFORM_LABEL[p] || p).join(", ")}</span>
                 </div>
               </button>
@@ -264,16 +270,21 @@ export default function Radar() {
 
         <div className="flex-1 min-w-0 w-full">
           {!selectedId ? (
-            <div className="flex flex-col items-center justify-center text-center gap-2 py-20 text-stone-400 border border-dashed border-stone-300 rounded-2xl bg-white/50">
-              <Telescope className="w-8 h-8 text-stone-300" aria-hidden="true" />
-              <p className="text-sm">Chọn một phiên quét bên trái để xem kết quả, hoặc quét ngách mới.</p>
+            <div className="ds-card">
+              <div className="ds-empty">
+                <div className="ds-empty-icon">
+                  <Telescope className="w-8 h-8" aria-hidden="true" />
+                </div>
+                <p className="ds-empty-title">Chưa chọn phiên quét</p>
+                <p className="ds-empty-desc">Chọn một phiên quét bên trái để xem kết quả, hoặc quét ngách mới.</p>
+              </div>
             </div>
           ) : detail ? (
             <>
               {/* Lỗi xảy ra trong lúc đang theo dõi (đã có dữ liệu cũ) — hiện dạng
                   banner, KHÔNG thay hẳn nội dung để không mất kết quả đã có. */}
               {detailError && (
-                <div role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+                <div role="alert" className="ds-alert ds-alert-danger mb-3">
                   {detailError}
                 </div>
               )}
@@ -288,11 +299,13 @@ export default function Radar() {
               />
             </>
           ) : detailLoading ? (
-            <div className="flex items-center justify-center py-20 text-stone-400 gap-2">
-              <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+            <div className="ds-card">
+              <div className="flex items-center justify-center py-20 text-stone-400 gap-2">
+                <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+              </div>
             </div>
           ) : detailError ? (
-            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{detailError}</div>
+            <div role="alert" className="ds-alert ds-alert-danger">{detailError}</div>
           ) : null}
         </div>
       </div>
@@ -352,20 +365,17 @@ function NewRadarForm({ onClose, onCreated }: { onClose: () => void; onCreated: 
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-stone-100">
-          <h3 className="font-semibold text-stone-800 font-display">Quét ngách mới</h3>
-          <button
-            onClick={onClose}
-            disabled={submitting}
-            className="p-1.5 text-stone-400 hover:bg-stone-100 rounded-full disabled:opacity-40"
-            aria-label="Đóng"
-          >
+    <div className="ds-modal-overlay open" style={{ zIndex: 100 }}>
+      <div className="ds-modal max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="new-radar-title">
+        <div className="ds-modal-header">
+          <h3 id="new-radar-title" className="ds-modal-title font-display">
+            Quét ngách mới
+          </h3>
+          <button onClick={onClose} disabled={submitting} className="ds-modal-close disabled:opacity-40" aria-label="Đóng">
             <X className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
-        <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
+        <form onSubmit={handleSubmit} className="ds-modal-body flex flex-col gap-3">
           <div>
             <span className="block text-xs font-medium text-stone-600 mb-1">Bạn muốn soi gì?</span>
             <div className="flex gap-3">
@@ -406,7 +416,7 @@ function NewRadarForm({ onClose, onCreated }: { onClose: () => void; onCreated: 
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={queryKind === "keyword" ? "Ví dụ: mẹo tiết kiệm điện" : "https://..."}
-              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm disabled:opacity-60"
+              className="ds-input"
             />
           </div>
 
@@ -438,22 +448,18 @@ function NewRadarForm({ onClose, onCreated }: { onClose: () => void; onCreated: 
               disabled={submitting}
               value={limit}
               onChange={(e) => setLimit(Math.min(100, Math.max(1, Number(e.target.value) || 1)))}
-              className="w-28 rounded-lg border border-stone-300 px-3 py-2 text-sm disabled:opacity-60"
+              className="ds-input w-28"
             />
           </div>
 
-          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+          {error && <div className="ds-alert ds-alert-danger">{error}</div>}
           {submitting && (
-            <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+            <div className="ds-alert ds-alert-warning">
               <Loader2 className="w-4 h-4 animate-spin shrink-0" aria-hidden="true" />
               Đang bắt đầu quét...
             </div>
           )}
-          <button
-            type="submit"
-            disabled={submitting}
-            className="mt-1 flex items-center justify-center gap-2 bg-storm-600 hover:bg-storm-700 text-white text-sm font-medium rounded-lg py-2.5 disabled:opacity-60"
-          >
+          <button type="submit" disabled={submitting} className="ds-btn ds-btn-primary justify-center mt-1">
             {submitting && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />} {submitting ? "Đang bắt đầu..." : "Bắt đầu quét"}
           </button>
         </form>
@@ -485,14 +491,13 @@ function RadarDetailPanel({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="bg-white rounded-xl border border-stone-200 p-4">
+      <div className="ds-card">
+      <div className="ds-card-body">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="flex-1 min-w-0">
             <h2 className="text-lg font-bold text-stone-800 font-display truncate">{detail.query}</h2>
             <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-              <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${STATUS_META[detail.status].cls}`}>
-                {STATUS_META[detail.status].label}
-              </span>
+              <span className={`ds-badge ${STATUS_META[detail.status].cls}`}>{STATUS_META[detail.status].label}</span>
               <span className="text-[11px] text-stone-400">
                 {detail.queryKind === "keyword" ? "Từ khoá ngách" : "Link đối thủ"} ·{" "}
                 {detail.platforms.map((p) => PLATFORM_LABEL[p] || p).join(", ")}
@@ -512,12 +517,12 @@ function RadarDetailPanel({
         </div>
 
         {watchTimedOut ? (
-          <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5 mt-2 flex items-start gap-1.5">
+          <div role="alert" className="ds-alert ds-alert-danger mt-2">
             <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
             Quá lâu không có phản hồi, thử tải lại trang.
           </div>
         ) : watching ? (
-          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 mt-2 flex items-center gap-1.5">
+          <div className="ds-alert ds-alert-warning mt-2">
             <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" aria-hidden="true" />
             {detail.status === "scanning"
               ? `Đang quét... đã tìm được ${detail.scannedCount} bài (${watchElapsedSec}s)`
@@ -526,13 +531,13 @@ function RadarDetailPanel({
         ) : null}
 
         {detail.status === "error" && detail.errorMessage && (
-          <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5 mt-2 flex items-start gap-1.5">
+          <div role="alert" className="ds-alert ds-alert-danger mt-2">
             <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
             {detail.errorMessage}
           </div>
         )}
         {warnings.length > 0 && (
-          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 mt-2 flex flex-col gap-1">
+          <div className="ds-alert ds-alert-warning mt-2 flex-col !items-stretch gap-1">
             {warnings.map((w, i) => (
               <span key={i} className="flex items-start gap-1.5">
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
@@ -542,13 +547,19 @@ function RadarDetailPanel({
           </div>
         )}
       </div>
+      </div>
 
       <EnrichSection detail={detail} onChanged={onChanged} />
 
       <div className="flex flex-col gap-3">
         {detail.items.length === 0 ? (
-          <div className="text-center py-14 text-stone-400 text-sm border border-dashed border-stone-300 rounded-xl bg-white/50">
-            {detail.status === "scanning" || detail.status === "pending" ? "Đang quét..." : "Chưa tìm thấy bài nào phù hợp."}
+          <div className="ds-card">
+            <div className="ds-empty">
+              <div className="ds-empty-icon">
+                <ImageIcon className="w-8 h-8" aria-hidden="true" />
+              </div>
+              <p className="ds-empty-title">{detail.status === "scanning" || detail.status === "pending" ? "Đang quét..." : "Chưa tìm thấy bài nào phù hợp"}</p>
+            </div>
           </div>
         ) : (
           detail.items.map((item) => (
@@ -656,7 +667,8 @@ function EnrichSection({ detail, onChanged }: { detail: RadarJobDetail; onChange
   const disabled = enriching || detail.status !== "ready" || scanOnlyCount === 0 || apifyOff;
 
   return (
-    <div className="bg-white rounded-xl border border-stone-200 p-4 flex flex-col gap-2.5">
+    <div className="ds-card">
+      <div className="ds-card-body flex flex-col gap-2.5">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h3 className="text-sm font-semibold text-stone-700 flex items-center gap-1.5">
@@ -685,7 +697,7 @@ function EnrichSection({ detail, onChanged }: { detail: RadarJobDetail; onChange
             onClick={openConfirm}
             disabled={disabled || quoting}
             title={apifyOff ? "Chưa cấu hình dịch vụ bổ sung số liệu (Apify)." : scanOnlyCount === 0 ? "Không còn bài nào cần bổ sung số liệu." : undefined}
-            className="flex items-center gap-1.5 text-sm font-medium text-white bg-storm-600 hover:bg-storm-700 px-3 py-2 rounded-lg transition-colors disabled:opacity-50 shrink-0"
+            className="ds-btn ds-btn-primary shrink-0"
           >
             {enriching || quoting ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Sparkles className="w-4 h-4" aria-hidden="true" />}
             {enriching ? "Đang bổ sung..." : "Bổ sung số liệu"}
@@ -694,21 +706,19 @@ function EnrichSection({ detail, onChanged }: { detail: RadarJobDetail; onChange
       </div>
 
       {apifyOff && (
-        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+        <div className="ds-alert ds-alert-warning">
           Chưa cấu hình dịch vụ bổ sung số liệu (Apify) nên không thể bổ sung lúc này.
-        </p>
+        </div>
       )}
-      {scanOnlyCount === 0 && !apifyOff && (
-        <p className="text-xs text-stone-400">Tất cả bài đã có số liệu đầy đủ, không còn bài nào cần bổ sung.</p>
-      )}
+      {scanOnlyCount === 0 && !apifyOff && <p className="text-xs text-stone-400">Tất cả bài đã có số liệu đầy đủ, không còn bài nào cần bổ sung.</p>}
       {quote && !apifyOff && scanOnlyCount > 0 && (
         <p className="text-xs text-stone-400">
           Ước tính: bổ sung {quote.count} bài, khoảng {quote.estimatedCostUsd.toLocaleString("vi-VN")} USD · đã dùng{" "}
           {quote.resultsUsedToday} lượt hôm nay.
         </p>
       )}
-      {error && <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5">{error}</div>}
-      {resultInfo && <div className="text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-2.5 py-1.5">{resultInfo}</div>}
+      {error && <div className="ds-alert ds-alert-danger">{error}</div>}
+      {resultInfo && <div className="ds-alert ds-alert-success">{resultInfo}</div>}
 
       <ConfirmDialog
         isOpen={confirmOpen}
@@ -723,6 +733,7 @@ function EnrichSection({ detail, onChanged }: { detail: RadarJobDetail; onChange
         onConfirm={handleEnrich}
         onCancel={() => setConfirmOpen(false)}
       />
+      </div>
     </div>
   );
 }
@@ -736,7 +747,8 @@ function RadarItemCard({ item, minSampleForBaseline }: { item: RadarItem; minSam
   const reasons = item.scoreBreakdown?.reasons || [];
 
   return (
-    <div className="bg-white rounded-xl border border-stone-200 p-4 flex flex-col sm:flex-row gap-4">
+    <div className="ds-card">
+      <div className="ds-card-body flex flex-col sm:flex-row gap-4">
       <div className="w-full sm:w-40 shrink-0">
         <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-stone-100 flex items-center justify-center">
           {item.coverUrl ? (
@@ -776,8 +788,8 @@ function RadarItemCard({ item, minSampleForBaseline }: { item: RadarItem; minSam
         </div>
 
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${conf.cls}`}>{conf.label}</span>
-          <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${src.cls}`}>{src.label}</span>
+          <span className={`ds-badge ${conf.cls}`}>{conf.label}</span>
+          <span className={`ds-badge ${src.cls}`}>{src.label}</span>
         </div>
 
         <div className="flex items-center gap-3 flex-wrap text-xs text-stone-600">
@@ -820,6 +832,7 @@ function RadarItemCard({ item, minSampleForBaseline }: { item: RadarItem; minSam
             Kênh này chưa đủ {minSampleForBaseline} bài để có mốc riêng nên điểm chỉ mang tính tham khảo.
           </p>
         )}
+      </div>
       </div>
     </div>
   );

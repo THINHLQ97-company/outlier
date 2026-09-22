@@ -310,6 +310,17 @@ export const brands = pgTable("brands", {
   // Công dụng sản phẩm được phép nói — dùng cho guardrail P3 (chống chế công dụng).
   allowedClaims: jsonb("allowed_claims").$type<BrandField<string[]> | null>(),
 
+  // --- Tính cách thương hiệu ---
+  // Khác "giọng điệu": giọng điệu là CÁCH NÓI, tính cách là CON NGƯỜI đứng sau.
+  // Cùng một giọng thân thiện, nhưng "người anh đi trước chỉ đường" khác hẳn
+  // "đứa bạn hay đùa" — và đó là thứ quyết định trend nào hợp để đu.
+  personality: jsonb("personality").$type<BrandField<string[]> | null>(),
+  /** Các mảng nội dung thương hiệu theo đuổi — dùng để lọc trend nào đáng đu. */
+  contentPillars: jsonb("content_pillars").$type<BrandField<string[]> | null>(),
+  /** Nên làm gì / tránh làm gì khi bắt trend. */
+  trendDos: jsonb("trend_dos").$type<BrandField<string[]> | null>(),
+  trendDonts: jsonb("trend_donts").$type<BrandField<string[]> | null>(),
+
   ingestStatus: text("ingest_status").notNull().default("empty"), // empty | running | ready | error
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -611,3 +622,33 @@ export const channelSeenItems = pgTable("channel_seen_items", {
 }, (t) => ({
   chanIdx: index("channel_seen_chan_idx").on(t.channelId, t.itemKey),
 }));
+
+// ===== brand_fanpages — trang/kênh CỦA CHÍNH thương hiệu =====
+// Khác `watched_channels` (kênh đối thủ để soi): đây là nơi thương hiệu đăng bài.
+// Dùng để Claude biết nội dung sẽ đăng ở đâu, định dạng nào, cho ai — từ đó gợi
+// ý đu trend cho đúng chỗ thay vì gợi ý chung chung.
+export const brandFanpages = pgTable("brand_fanpages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  brandId: uuid("brand_id").notNull(),
+  platform: text("platform").notNull(),      // facebook|tiktok|youtube|instagram|threads|zalo
+  pageUrl: text("page_url").notNull(),
+  pageName: text("page_name"),
+  handle: text("handle"),                     // @tên
+
+  followerCount: integer("follower_count"),
+  /** Chủ đề trang này tập trung — có thể khác mảng nội dung chung của thương hiệu. */
+  topics: jsonb("topics").$type<string[]>().default([]),
+  /** Định dạng hay dùng: video ngắn, bài dài, carousel ảnh… */
+  formats: jsonb("formats").$type<string[]>().default([]),
+  postingCadence: text("posting_cadence"),    // vd "3 bài/tuần"
+  audienceNote: text("audience_note"),        // đặc thù người theo dõi của riêng trang này
+  note: text("note"),
+
+  isPrimary: boolean("is_primary").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  brandIdx: index("brand_fanpages_brand_idx").on(t.brandId),
+}));
+
+export type BrandFanpageRow = typeof brandFanpages.$inferSelect;

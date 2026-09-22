@@ -14,7 +14,7 @@ import { spawn } from "child_process";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { ytDlpPath } from "./radar-scan";
+import { ytDlpPath, ffmpegLocationArgs } from "./radar-scan";
 import { generateTextGemini } from "./gemini-direct";
 import type { DeconstructedStructure, RetentionBeat } from "../db/schema";
 
@@ -245,6 +245,7 @@ export async function downloadSmallVideo(url: string, dir: string): Promise<stri
   // thấp có chủ ý: phân tích cấu trúc chỉ cần thấy chuyện gì diễn ra.
   const { code, err } = await run(ytDlpPath(), [
     "-f", "bv*[height<=480]+ba/b[height<=480]/bv*+ba/b/worst",
+    ...ffmpegLocationArgs(),
     "--merge-output-format", "mp4",
     "--max-filesize", `${MAX_INLINE_VIDEO_BYTES}`,
     "--no-warnings", "--no-playlist", "--socket-timeout", "30",

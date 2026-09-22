@@ -1,74 +1,188 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { NavLink } from "react-router-dom";
-import { LogOut, Radar, Images, Wand2, ShieldCheck, Fingerprint, Telescope, Scissors, PenLine, Eye } from "lucide-react";
+import {
+  LogOut,
+  Radar,
+  Images,
+  Wand2,
+  ShieldCheck,
+  Fingerprint,
+  Telescope,
+  Scissors,
+  PenLine,
+  Eye,
+  Menu,
+  X,
+  ChevronsLeft,
+  ChevronsRight,
+} from "lucide-react";
 import { useAppContext } from "../AppContext";
 
-// Nav gọn theo bản tinh giản: Sáng tạo (Studio) · Thư viện (Ảnh/Nhân vật/Phong
-// cách) · Thương hiệu (hồ sơ brand có trích dẫn nguồn) · Radar (content bật lên
-// trong ngách) · Kênh theo dõi (theo dõi kênh đối thủ, đánh dấu bài mới) ·
-// Bóc cấu trúc (vì sao bài giữ được người xem) · Viết lại (viết cho thương
-// hiệu + kiểm tra, khép kín vòng Radar→Bóc cấu trúc→Viết lại) · Tín hiệu ·
-// (Quản trị, chỉ admin). Bỏ hẳn Kịch bản/Ảnh pipeline/Duyệt/Sẵn sàng đăng/Lịch
-// — xem CLAUDE.md mục "tinh giản nav" + docs/PRD.md bản mới.
-// Icon `Radar` đã dùng cho "Tín hiệu" nên mục Radar dùng `Telescope` để không
-// trùng; Bóc cấu trúc dùng `Scissors`; Viết lại dùng `PenLine`; Kênh theo dõi
-// dùng `Eye` (tránh trùng Wand2/Images/Radar/Fingerprint/Telescope/
-// ShieldCheck/Scissors/PenLine).
-const NAV_ITEMS = [
-  { to: "/studio", label: "Sáng tạo", icon: Wand2 },
-  { to: "/library", label: "Thư viện", icon: Images },
-  { to: "/brands", label: "Thương hiệu", icon: Fingerprint },
-  { to: "/radar", label: "Radar", icon: Telescope },
-  { to: "/channels", label: "Kênh theo dõi", icon: Eye },
-  { to: "/deconstruct", label: "Bóc cấu trúc", icon: Scissors },
-  { to: "/remakes", label: "Viết lại", icon: PenLine },
-  { to: "/signals", label: "Tín hiệu", icon: Radar },
+type NavItem = { to: string; label: string; icon: typeof Wand2 };
+type NavGroup = { label: string; items: NavItem[] };
+
+// Sidebar dọc, nhóm theo luồng công việc (yêu cầu chuyển đổi 2026-09-22 —
+// 9 mục phẳng trước đây rối, xem thảo luận trong lịch sử chat). Icon giữ
+// nguyên bộ đã chọn từ bản nav ngang để không trùng (Radar đã dùng cho "Tín
+// hiệu" nên Radar/ngách dùng Telescope; Bóc cấu trúc dùng Scissors; Viết lại
+// dùng PenLine; Kênh theo dõi dùng Eye).
+const NAV_GROUPS: NavGroup[] = [
+  {
+    label: "Chuẩn bị",
+    items: [{ to: "/brands", label: "Thương hiệu", icon: Fingerprint }],
+  },
+  {
+    label: "Tìm nội dung",
+    items: [
+      { to: "/channels", label: "Kênh theo dõi", icon: Eye },
+      { to: "/radar", label: "Radar", icon: Telescope },
+      { to: "/signals", label: "Tín hiệu", icon: Radar },
+    ],
+  },
+  {
+    label: "Sản xuất",
+    items: [
+      { to: "/deconstruct", label: "Bóc cấu trúc", icon: Scissors },
+      { to: "/remakes", label: "Viết lại", icon: PenLine },
+      { to: "/studio", label: "Sáng tạo", icon: Wand2 },
+      { to: "/library", label: "Thư viện", icon: Images },
+    ],
+  },
 ];
+
+const ADMIN_GROUP: NavGroup = {
+  label: "Hệ thống",
+  items: [{ to: "/admin/users", label: "Quản trị", icon: ShieldCheck }],
+};
+
+const SIDEBAR_COLLAPSED_KEY = "outlier:sidebarCollapsed";
 
 export default function Layout({ children }: { children: ReactNode }) {
   const { username, isAdmin, logout } = useAppContext();
-  const navItems = isAdmin ? [...NAV_ITEMS, { to: "/admin/users", label: "Quản trị", icon: ShieldCheck }] : NAV_ITEMS;
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1");
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  function toggleCollapsed() {
+    setCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
+      return next;
+    });
+  }
+
+  // Mobile luôn mở drawer đầy đủ nhãn — "collapsed" chỉ là trạng thái desktop.
+  const showLabels = !collapsed || mobileOpen;
+  const groups = isAdmin ? [...NAV_GROUPS, ADMIN_GROUP] : NAV_GROUPS;
+  const initials = (username || "?").slice(0, 2).toUpperCase();
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <header className="border-b border-stone-200 bg-white sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-6">
-            <span className="flex items-center gap-2 shrink-0">
-              <img src="/mark.svg" alt="" aria-hidden="true" className="w-7 h-7" />
-              <span className="font-display font-bold text-storm-800 text-sm">Outlier</span>
-            </span>
-            <nav className="flex items-center gap-1" aria-label="Điều hướng chính">
-              {navItems.map(({ to, label, icon: Icon }) => (
+    <div className="min-h-screen flex bg-stone-50">
+      {mobileOpen && (
+        <button
+          type="button"
+          aria-label="Đóng menu điều hướng"
+          onClick={() => setMobileOpen(false)}
+          className="fixed inset-0 z-40 bg-black/50 md:hidden"
+        />
+      )}
+
+      <aside
+        className={`fixed md:sticky top-0 h-screen z-50 flex flex-col shrink-0 w-64 transition-transform duration-200 ease-in-out ${
+          collapsed ? "md:w-[72px]" : "md:w-64"
+        } ${mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}
+        style={{ background: "var(--ds-sidebar-bg)" }}
+        aria-label="Điều hướng chính"
+      >
+        <div className="flex items-center gap-2 h-14 px-4 shrink-0 border-b border-white/10">
+          {showLabels ? (
+            <img src="/logo-dark.svg" alt="Outlier" className="h-7 w-auto" />
+          ) : (
+            <img src="/mark.svg" alt="Outlier" className="w-7 h-7 mx-auto" />
+          )}
+          <button
+            type="button"
+            onClick={() => setMobileOpen(false)}
+            aria-label="Đóng menu"
+            className="ml-auto md:hidden text-indigo-200 hover:text-white p-1 rounded-md hover:bg-white/10"
+          >
+            <X className="w-5 h-5" aria-hidden="true" />
+          </button>
+        </div>
+
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden">
+          {groups.map((group) => (
+            <div key={group.label} className="ds-nav">
+              {showLabels && <div className="ds-nav-section">{group.label}</div>}
+              {group.items.map(({ to, label, icon: Icon }) => (
                 <NavLink
                   key={to}
                   to={to}
+                  onClick={() => setMobileOpen(false)}
+                  title={showLabels ? undefined : label}
                   className={({ isActive }) =>
-                    `flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                      isActive ? "bg-storm-100 text-storm-800" : "text-stone-500 hover:bg-stone-100"
-                    }`
+                    `ds-nav-item${isActive ? " active" : ""}${showLabels ? "" : " justify-center px-0"}`
                   }
                 >
-                  <Icon className="w-4 h-4" aria-hidden="true" />
-                  {label}
+                  <Icon className="ds-nav-icon" aria-hidden="true" />
+                  {showLabels && <span className="truncate">{label}</span>}
                 </NavLink>
               ))}
-            </nav>
-          </div>
-          <div className="flex items-center gap-3 text-sm text-stone-500">
-            <span>{username}</span>
-            <button
-              onClick={logout}
-              className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-stone-100 text-stone-500"
-              aria-label="Đăng xuất"
-              title="Đăng xuất"
-            >
-              <LogOut className="w-4 h-4" aria-hidden="true" />
-            </button>
-          </div>
+            </div>
+          ))}
+        </nav>
+
+        <button
+          type="button"
+          onClick={toggleCollapsed}
+          aria-label={collapsed ? "Mở rộng sidebar" : "Thu gọn sidebar"}
+          className="hidden md:flex items-center gap-2 mx-2 mb-2 px-2.5 py-2 rounded-md text-xs font-medium text-indigo-200 hover:bg-white/10 hover:text-white transition-colors"
+        >
+          {collapsed ? (
+            <ChevronsRight className="w-4 h-4 shrink-0" aria-hidden="true" />
+          ) : (
+            <>
+              <ChevronsLeft className="w-4 h-4 shrink-0" aria-hidden="true" />
+              Thu gọn
+            </>
+          )}
+        </button>
+
+        <div className="border-t border-white/10 p-3 flex items-center gap-2">
+          <span
+            className="ds-avatar ds-avatar-sm shrink-0"
+            style={{ background: "rgba(199,210,254,.18)", color: "#ffffff" }}
+            aria-hidden="true"
+          >
+            {initials}
+          </span>
+          {showLabels && <span className="flex-1 min-w-0 truncate text-sm text-indigo-100">{username}</span>}
+          <button
+            onClick={logout}
+            aria-label="Đăng xuất"
+            title="Đăng xuất"
+            className="shrink-0 p-1.5 rounded-md text-indigo-200 hover:bg-white/10 hover:text-white transition-colors"
+          >
+            <LogOut className="w-4 h-4" aria-hidden="true" />
+          </button>
         </div>
-      </header>
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6">{children}</main>
+      </aside>
+
+      <div className="flex-1 min-w-0 flex flex-col">
+        <header className="md:hidden sticky top-0 z-30 h-14 flex items-center gap-3 px-4 bg-white border-b border-stone-200">
+          <button
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            aria-label="Mở menu điều hướng"
+            className="p-1.5 -ml-1.5 rounded-md text-stone-500 hover:bg-stone-100"
+          >
+            <Menu className="w-5 h-5" aria-hidden="true" />
+          </button>
+          <img src="/mark.svg" alt="" aria-hidden="true" className="w-6 h-6" />
+          <span className="font-display font-bold text-storm-800 text-sm">Outlier</span>
+        </header>
+
+        <main className="flex-1 w-full max-w-7xl mx-auto px-4 py-6">{children}</main>
+      </div>
     </div>
   );
 }

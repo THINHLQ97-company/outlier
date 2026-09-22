@@ -57,10 +57,10 @@ const SOURCE_KIND_LABEL: Record<string, string> = {
 };
 
 const INGEST_META: Record<BrandRow["ingestStatus"], { label: string; cls: string }> = {
-  empty: { label: "Chưa bóc", cls: "bg-stone-100 text-stone-500" },
-  running: { label: "Đang bóc...", cls: "bg-amber-50 text-amber-700" },
-  ready: { label: "Đã bóc", cls: "bg-green-50 text-green-700" },
-  error: { label: "Lỗi khi bóc", cls: "bg-red-50 text-red-600" },
+  empty: { label: "Chưa bóc", cls: "" },
+  running: { label: "Đang bóc...", cls: "ds-badge-warning" },
+  ready: { label: "Đã bóc", cls: "ds-badge-success" },
+  error: { label: "Lỗi khi bóc", cls: "ds-badge-danger" },
 };
 
 export default function Brands() {
@@ -136,14 +136,14 @@ export default function Brands() {
         </div>
         <button
           onClick={() => setShowNewForm(true)}
-          className="flex items-center gap-1.5 text-sm font-medium text-white bg-storm-600 hover:bg-storm-700 px-3 py-2 rounded-lg transition-colors shrink-0"
+          className="ds-btn ds-btn-primary shrink-0"
         >
           <Plus className="w-4 h-4" aria-hidden="true" /> Thêm thương hiệu mới
         </button>
       </div>
 
       {listError && (
-        <div role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+        <div role="alert" className="ds-alert ds-alert-danger">
           {listError}
         </div>
       )}
@@ -151,12 +151,23 @@ export default function Brands() {
       <div className="flex flex-col lg:flex-row gap-4 items-start">
         <aside className="w-full lg:w-72 shrink-0 flex flex-col gap-2">
           {loading ? (
-            <div className="flex items-center justify-center py-10 text-stone-400 gap-2">
-              <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+            <div className="ds-card">
+              <div className="flex items-center justify-center py-10 text-stone-400 gap-2">
+                <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+              </div>
             </div>
           ) : brands.length === 0 ? (
-            <div className="text-center py-10 text-stone-400 text-sm border border-dashed border-stone-300 rounded-xl">
-              Chưa có thương hiệu nào. Bấm "Thêm thương hiệu mới" để bắt đầu.
+            <div className="ds-card">
+              <div className="ds-empty">
+                <div className="ds-empty-icon">
+                  <Fingerprint className="w-8 h-8" aria-hidden="true" />
+                </div>
+                <p className="ds-empty-title">Chưa có thương hiệu nào</p>
+                <p className="ds-empty-desc">Thêm thương hiệu để bắt đầu nạp tài liệu và bóc hồ sơ có trích dẫn nguồn.</p>
+                <button onClick={() => setShowNewForm(true)} className="ds-btn ds-btn-primary ds-btn-sm mt-1">
+                  <Plus className="w-3.5 h-3.5" aria-hidden="true" /> Thêm thương hiệu mới
+                </button>
+              </div>
             </div>
           ) : (
             brands.map((b) => (
@@ -171,9 +182,7 @@ export default function Brands() {
                   <span className="text-sm font-semibold text-stone-800 truncate">{b.name}</span>
                 </div>
                 <div className="flex items-center gap-1.5 flex-wrap mt-1">
-                  <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${INGEST_META[b.ingestStatus].cls}`}>
-                    {INGEST_META[b.ingestStatus].label}
-                  </span>
+                  <span className={`ds-badge ${INGEST_META[b.ingestStatus].cls}`}>{INGEST_META[b.ingestStatus].label}</span>
                   <span className="text-[10px] text-stone-400">{b.isShared ? "Chia sẻ nhóm" : "Chỉ mình tôi"}</span>
                 </div>
               </button>
@@ -183,16 +192,23 @@ export default function Brands() {
 
         <div className="flex-1 min-w-0 w-full">
           {!selectedId ? (
-            <div className="flex flex-col items-center justify-center text-center gap-2 py-20 text-stone-400 border border-dashed border-stone-300 rounded-2xl bg-white/50">
-              <Fingerprint className="w-8 h-8 text-stone-300" aria-hidden="true" />
-              <p className="text-sm">Chọn một thương hiệu bên trái để xem hồ sơ, hoặc thêm thương hiệu mới.</p>
+            <div className="ds-card">
+              <div className="ds-empty">
+                <div className="ds-empty-icon">
+                  <Fingerprint className="w-8 h-8" aria-hidden="true" />
+                </div>
+                <p className="ds-empty-title">Chưa chọn thương hiệu</p>
+                <p className="ds-empty-desc">Chọn một thương hiệu bên trái để xem hồ sơ, hoặc thêm thương hiệu mới.</p>
+              </div>
             </div>
           ) : detailLoading ? (
-            <div className="flex items-center justify-center py-20 text-stone-400 gap-2">
-              <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+            <div className="ds-card">
+              <div className="flex items-center justify-center py-20 text-stone-400 gap-2">
+                <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+              </div>
             </div>
           ) : detailError ? (
-            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{detailError}</div>
+            <div role="alert" className="ds-alert ds-alert-danger">{detailError}</div>
           ) : detail ? (
             <BrandDetailPanel
               key={detail.id}
@@ -256,37 +272,29 @@ function NewBrandForm({ onClose, onCreated }: { onClose: () => void; onCreated: 
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-stone-100">
-          <h3 className="font-semibold text-stone-800 font-display">Thêm thương hiệu mới</h3>
-          <button onClick={onClose} className="p-1.5 text-stone-400 hover:bg-stone-100 rounded-full" aria-label="Đóng">
+    <div className="ds-modal-overlay open" style={{ zIndex: 100 }}>
+      <div className="ds-modal max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="new-brand-title">
+        <div className="ds-modal-header">
+          <h3 id="new-brand-title" className="ds-modal-title font-display">
+            Thêm thương hiệu mới
+          </h3>
+          <button onClick={onClose} className="ds-modal-close" aria-label="Đóng">
             <X className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
-        <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
+        <form onSubmit={handleSubmit} className="ds-modal-body flex flex-col gap-3">
           <div>
-            <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="br-name">
+            <label className="ds-label" htmlFor="br-name">
               Tên thương hiệu
             </label>
-            <input
-              id="br-name"
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
-            />
+            <input id="br-name" required value={name} onChange={(e) => setName(e.target.value)} className="ds-input" />
           </div>
           <label className="flex items-center gap-1.5 text-sm text-stone-600">
             <input type="checkbox" checked={isShared} onChange={(e) => setIsShared(e.target.checked)} className="accent-storm-600" />
             Chia sẻ cả nhóm
           </label>
-          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
-          <button
-            type="submit"
-            disabled={saving}
-            className="mt-2 flex items-center justify-center gap-2 bg-storm-600 hover:bg-storm-700 text-white text-sm font-medium rounded-lg py-2.5 disabled:opacity-60"
-          >
+          {error && <div className="ds-alert ds-alert-danger">{error}</div>}
+          <button type="submit" disabled={saving} className="ds-btn ds-btn-primary justify-center mt-2">
             {saving && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />} Tạo thương hiệu
           </button>
         </form>
@@ -351,8 +359,8 @@ function BrandDetailPanel({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="bg-white rounded-xl border border-stone-200 p-4">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
+      <div className="ds-card">
+        <div className="ds-card-body flex items-start justify-between gap-3 flex-wrap">
           <div className="flex-1 min-w-0">
             {editingName ? (
               <form onSubmit={handleSaveName} className="flex items-center gap-1.5">
@@ -360,7 +368,7 @@ function BrandDetailPanel({
                   autoFocus
                   value={nameDraft}
                   onChange={(e) => setNameDraft(e.target.value)}
-                  className="rounded-lg border border-stone-300 px-2 py-1 text-lg font-bold text-stone-800 font-display"
+                  className="ds-input text-lg font-bold text-stone-800 font-display w-auto"
                   aria-label="Tên thương hiệu"
                 />
                 <button type="submit" disabled={savingName} className="p-1.5 text-storm-600 hover:bg-storm-50 rounded-lg" aria-label="Lưu tên">
@@ -389,13 +397,11 @@ function BrandDetailPanel({
               </button>
             )}
             <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-              <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${INGEST_META[brand.ingestStatus].cls}`}>
-                {INGEST_META[brand.ingestStatus].label}
-              </span>
+              <span className={`ds-badge ${INGEST_META[brand.ingestStatus].cls}`}>{INGEST_META[brand.ingestStatus].label}</span>
               <button
                 onClick={toggleShared}
                 disabled={sharedBusy}
-                className="text-[11px] font-medium px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 hover:bg-stone-200 transition-colors disabled:opacity-60"
+                className="ds-badge hover:bg-stone-100 transition-colors disabled:opacity-60 cursor-pointer"
                 title="Bấm để đổi phạm vi chia sẻ"
               >
                 {sharedBusy ? "Đang đổi..." : brand.isShared ? "Chia sẻ nhóm" : "Chỉ mình tôi"}
@@ -409,9 +415,7 @@ function BrandDetailPanel({
             <Trash2 className="w-3.5 h-3.5" aria-hidden="true" /> Xoá thương hiệu
           </button>
         </div>
-        {headerError && (
-          <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5 mt-2">{headerError}</div>
-        )}
+        {headerError && <div className="ds-alert ds-alert-danger mx-4 mb-4">{headerError}</div>}
       </div>
 
       <SourcesSection brandId={brand.id} sources={brand.sources} onChanged={onSourcesChanged} />
@@ -509,7 +513,8 @@ function SourcesSection({
   }
 
   return (
-    <div className="bg-white rounded-xl border border-stone-200 p-4 flex flex-col gap-3">
+    <div className="ds-card">
+      <div className="ds-card-body flex flex-col gap-3">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h3 className="text-sm font-semibold text-stone-700">Tài liệu nguồn</h3>
@@ -562,13 +567,9 @@ function SourcesSection({
             placeholder="https://..."
             value={urlVal}
             onChange={(e) => setUrlVal(e.target.value)}
-            className="flex-1 min-w-[200px] rounded-lg border border-stone-300 px-3 py-2 text-sm"
+            className="ds-input flex-1 min-w-[200px]"
           />
-          <button
-            type="submit"
-            disabled={saving}
-            className="flex items-center gap-1.5 text-sm font-medium text-white bg-storm-600 hover:bg-storm-700 px-3 py-2 rounded-lg disabled:opacity-60"
-          >
+          <button type="submit" disabled={saving} className="ds-btn ds-btn-primary">
             {saving && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />} Thêm
           </button>
         </form>
@@ -585,18 +586,14 @@ function SourcesSection({
             placeholder="Dán nội dung giới thiệu, mô tả sản phẩm, quy định thương hiệu..."
             value={textVal}
             onChange={(e) => setTextVal(e.target.value)}
-            className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
+            className="ds-textarea"
           />
-          <button
-            type="submit"
-            disabled={saving}
-            className="self-start flex items-center gap-1.5 text-sm font-medium text-white bg-storm-600 hover:bg-storm-700 px-3 py-2 rounded-lg disabled:opacity-60"
-          >
+          <button type="submit" disabled={saving} className="ds-btn ds-btn-primary self-start">
             {saving && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />} Thêm
           </button>
         </form>
       )}
-      {error && <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5">{error}</div>}
+      {error && <div className="ds-alert ds-alert-danger">{error}</div>}
       {saving && !mode && (
         <div className="flex items-center gap-1.5 text-xs text-stone-400">
           <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> Đang tải PDF lên...
@@ -604,7 +601,9 @@ function SourcesSection({
       )}
 
       {sources.length === 0 ? (
-        <p className="text-xs text-stone-400 italic">Chưa có tài liệu nào — thêm ít nhất 1 tài liệu để bóc hồ sơ.</p>
+        <div className="ds-empty py-6">
+          <p className="ds-empty-desc">Chưa có tài liệu nào — thêm ít nhất 1 tài liệu để bóc hồ sơ.</p>
+        </div>
       ) : (
         <ul className="flex flex-col gap-1.5">
           {sources.map((s) => (
@@ -644,6 +643,7 @@ function SourcesSection({
           ))}
         </ul>
       )}
+      </div>
 
       <ConfirmDialog
         isOpen={!!deleteTarget}
@@ -687,7 +687,7 @@ function ExtractBar({ brand, onExtracted }: { brand: BrandDetail; onExtracted: (
           onClick={handleExtract}
           disabled={running || noSources}
           title={noSources ? "Thêm ít nhất 1 tài liệu nguồn trước" : undefined}
-          className="flex items-center gap-1.5 text-sm font-semibold text-white bg-storm-600 hover:bg-storm-700 px-4 py-2.5 rounded-lg transition-colors disabled:opacity-50"
+          className="ds-btn ds-btn-primary ds-btn-lg"
         >
           {running ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Sparkles className="w-4 h-4" aria-hidden="true" />}
           {running ? "Đang bóc hồ sơ..." : "Bóc hồ sơ từ tài liệu"}
@@ -696,9 +696,9 @@ function ExtractBar({ brand, onExtracted }: { brand: BrandDetail; onExtracted: (
           Chỉ ghi vào hồ sơ những gì trích được nguyên văn từ tài liệu; các mục đã sửa tay sẽ được giữ nguyên.
         </span>
       </div>
-      {error && <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5">{error}</div>}
+      {error && <div className="ds-alert ds-alert-danger">{error}</div>}
       {rejected.length > 0 && (
-        <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 flex flex-col gap-2">
+        <div className="ds-alert ds-alert-warning flex-col !items-stretch gap-2">
           <p className="flex items-center gap-1.5 font-medium">
             <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
             Hệ thống đã chặn {rejected.length} thông tin không kiểm chứng được — không ghi vào hồ sơ
@@ -782,10 +782,9 @@ function FieldCard({
 
   return (
     <div
-      className={`rounded-xl border p-4 flex flex-col gap-2 ${
-        hasValue ? "border-stone-200 bg-white" : "border-dashed border-stone-300 bg-stone-50/70"
-      }`}
+      className={`ds-card ${hasValue ? "" : "border-dashed"}`}
     >
+      <div className="ds-card-body flex flex-col gap-2">
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-1.5 flex-wrap">
           <h3 className="text-sm font-semibold text-stone-800">{def.label}</h3>
@@ -816,15 +815,11 @@ function FieldCard({
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             placeholder={def.placeholder}
-            className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
+            className="ds-textarea"
           />
-          {error && <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5">{error}</div>}
+          {error && <div className="ds-field-error">{error}</div>}
           <div className="flex items-center gap-2">
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="flex items-center gap-1.5 text-xs font-medium text-white bg-storm-600 hover:bg-storm-700 px-2.5 py-1.5 rounded-lg disabled:opacity-60"
-            >
+            <button onClick={handleSave} disabled={saving} className="ds-btn ds-btn-primary ds-btn-sm">
               {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />} Lưu
             </button>
             <button
@@ -846,7 +841,7 @@ function FieldCard({
           {def.kind === "list" ? (
             <div className="flex flex-wrap gap-1.5">
               {(field!.value as string[]).map((v, i) => (
-                <span key={i} className="text-xs px-2 py-1 rounded-full bg-storm-50 text-storm-700 border border-storm-100">
+                <span key={i} className="ds-badge-primary ds-badge">
                   {v}
                 </span>
               ))}
@@ -884,8 +879,11 @@ function FieldCard({
           )}
         </>
       ) : (
-        <p className="text-xs text-stone-400 italic">Chưa có dữ liệu — bấm "Bóc hồ sơ từ tài liệu" hoặc bấm sửa để nhập tay.</p>
+        <div className="ds-empty py-4">
+          <p className="ds-empty-desc">Chưa có dữ liệu — bấm "Bóc hồ sơ từ tài liệu" hoặc bấm sửa để nhập tay.</p>
+        </div>
       )}
+      </div>
     </div>
   );
 }

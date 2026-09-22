@@ -1,6 +1,6 @@
 // Modal xác nhận dùng chung — port từ share-projects/marcow-crop
-// (src/components/ConfirmDialog.tsx), style theo token storm-* (đã đổi sang
-// bảng màu cam đất marcow-crop, xem src/index.css + CLAUDE.md mục 4).
+// (src/components/ConfirmDialog.tsx). Style theo pattern .ds-modal của hệ
+// design Mắt Bão (src/index.css) — reskin 2026-09-22, giữ nguyên logic/API.
 interface Props {
   isOpen: boolean;
   title: string;
@@ -22,21 +22,21 @@ export default function ConfirmDialog({
 }: Props) {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm flex flex-col gap-4">
-        <h3 className="text-xl font-semibold text-stone-800 font-display">{title}</h3>
-        <p className="text-sm text-stone-600 leading-relaxed">{message}</p>
-        <div className="flex gap-3 justify-end mt-2">
-          <button
-            onClick={onCancel}
-            className="px-4 py-2 text-sm font-medium text-stone-600 hover:bg-stone-100 rounded-xl transition-colors"
-          >
+    <div className="ds-modal-overlay open" style={{ zIndex: 200 }}>
+      <div className="ds-modal" role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
+        <div className="ds-modal-header">
+          <h3 id="confirm-dialog-title" className="ds-modal-title font-display">
+            {title}
+          </h3>
+        </div>
+        <div className="ds-modal-body">
+          <p className="text-sm text-stone-600 leading-relaxed">{message}</p>
+        </div>
+        <div className="ds-modal-footer">
+          <button onClick={onCancel} className="ds-btn">
             {cancelText}
           </button>
-          <button
-            onClick={onConfirm}
-            className="px-4 py-2 text-sm font-medium text-white bg-storm-600 hover:bg-storm-700 rounded-xl transition-colors shadow-sm"
-          >
+          <button onClick={onConfirm} className="ds-btn ds-btn-primary">
             {confirmText}
           </button>
         </div>

@@ -9,7 +9,7 @@ import type { Express } from "express";
 import crypto from "crypto";
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import { getDb, isDbConfigured } from "../db/client";
-import { signals, rubricVersions, characters as charactersTable, brands, brandSources, radarJobs, radarItems, deconstructions, remakes, watchedChannels } from "../db/schema";
+import { signals, rubricVersions, characters as charactersTable, brands, brandSources, radarJobs, radarItems, deconstructions, remakes, watchedChannels, brandFanpages } from "../db/schema";
 import { ingestUrl, ingestRawText } from "../services/brand-ingest";
 import { extractBrandProfile, type SourceDoc } from "../services/brand-extract";
 import { computeSignalStatus } from "../services/rubric-scoring";
@@ -28,7 +28,7 @@ const SERVER_INSTRUCTIONS = `Bạn là AI Analyst cho fanpage giải trí "Ăn N
 4. GÓC HÀI: với tin queued, signals_suggest_angle đề xuất 1 góc lên nội dung hài (scene cụ thể + chọn characters từ characters_list + dialogue ngắn). Người vận hành sẽ review rồi "Đưa sang Sáng tạo".
 Luôn dùng characters_list để chọn đúng nhân vật fanpage. Tổng điểm rubric chỉ cộng 4 tiêu chí (do_nong+do_cham+do_hop_truc+tuoi_tho), do_an_toan là cổng an toàn.`;
 
-const READONLY_TOOLS = new Set(["signals_list", "signals_get", "rubric_get", "characters_list", "brands_list", "brand_profile_get", "radar_jobs_list", "radar_results", "deconstruct_get", "remake_get", "channels_list", "channel_items"]);
+const READONLY_TOOLS = new Set(["signals_list", "signals_get", "rubric_get", "characters_list", "brands_list", "brand_profile_get", "radar_jobs_list", "radar_results", "deconstruct_get", "remake_get", "channels_list", "channel_items", "video_frames"]);
 
 const TOOLS = [
   {
@@ -276,6 +276,21 @@ const TOOLS = [
     },
   },
   {
+    name: "video_frames",
+    description: "Lấy các KHUNG HÌNH của một video để BẠN TỰ NHÌN và tự phân tích (kèm lời thoại nếu có). Dùng khi cần đánh giá phần hình — cảnh quay, chữ trên màn hình, biểu cảm — rồi đối chiếu với tính cách thương hiệu. Khác deconstruct_* ở chỗ: deconstruct để model khác xem hộ rồi trả mô tả bằng chữ, còn tool này đưa ảnh thật cho bạn.",
+    annotations: { title: "Xem khung hình video", readOnlyHint: true },
+    inputSchema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "Link video" },
+        radar_item_id: { type: "string", description: "Hoặc mã bài từ radar_results / channel_items" },
+        count: { type: "number", description: "Số khung, mặc định 6, tối đa 12" },
+        include_transcript: { type: "boolean", description: "Kèm lời thoại có mốc giây (mặc định có)" },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: "signals_suggest_angle",
     description: "Gợi ý 1 góc lên nội dung hài cho 1 tín hiệu: scene cụ thể + nhân vật (tên từ characters_list) + lời thoại ngắn. Người vận hành sẽ đưa sang Sáng tạo.",
     annotations: { title: "Gợi ý góc hài", readOnlyHint: false },
@@ -301,6 +316,16 @@ const TOOLS = [
 const rpcResult = (id: any, result: any) => ({ jsonrpc: "2.0", id, result });
 const rpcError = (id: any, code: number, message: string) => ({ jsonrpc: "2.0", id, error: { code, message } });
 const textContent = (obj: any) => ({ content: [{ type: "text", text: typeof obj === "string" ? obj : JSON.stringify(obj, null, 2) }] });
+
+/**
+ * Tool thường trả dữ liệu dạng chữ. Nhưng MCP cho phép trả cả ẢNH — và đó là
+ * cách duy nhất để Claude TỰ NHÌN khung hình video thay vì đọc mô tả do một
+ * model khác viết hộ. Tool nào cần vậy thì đặt `__mcpContent` trong kết quả.
+ */
+function toolContent(payload: any) {
+  if (payload && Array.isArray(payload.__mcpContent)) return { content: payload.__mcpContent };
+  return textContent(payload);
+}
 
 function canView(p: McpPrincipal | null): boolean {
   return !!p && (p.role === "admin" || p.perms.includes("signals") || p.perms.includes("signals-edit"));
@@ -447,15 +472,36 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
       .select({ id: brandSources.id, kind: brandSources.kind, sourceUrl: brandSources.sourceUrl, title: brandSources.title, charCount: brandSources.charCount })
       .from(brandSources)
       .where(eq(brandSources.brandId, args.brand_id));
+
+    // Trang/kênh của chính thương hiệu — Claude cần biết nội dung sẽ đăng ở đâu
+    // để gợi ý đu trend cho đúng chỗ, đúng định dạng.
+    const pages = await db.select().from(brandFanpages).where(eq(brandFanpages.brandId, args.brand_id));
+
+    const FIELDS = [
+      "sells", "audience", "toneOfVoice", "addressing", "bannedTerms", "allowedClaims",
+      "personality", "contentPillars", "trendDos", "trendDonts",
+    ] as const;
     // Nói rõ mục nào còn thiếu để Claude không tự điền vào chỗ trống.
-    const missing = (["sells", "audience", "toneOfVoice", "addressing", "bannedTerms", "allowedClaims"] as const).filter((k) => !row[k]);
+    const missing = FIELDS.filter((k) => !(row as any)[k]);
+
     return {
       ...row,
       sources: srcs,
+      fanpages: pages.map((f: any) => ({
+        platform: f.platform, pageName: f.pageName, pageUrl: f.pageUrl, handle: f.handle,
+        followerCount: f.followerCount, topics: f.topics, formats: f.formats,
+        postingCadence: f.postingCadence, audienceNote: f.audienceNote,
+        isPrimary: f.isPrimary,
+      })),
       missing_fields: missing,
-      note: missing.length
-        ? "Các mục trong missing_fields CHƯA CÓ DỮ LIỆU trong tài liệu. Không được tự suy đoán hay điền thay."
-        : undefined,
+      note:
+        "personality = TÍNH CÁCH thương hiệu (con người đứng sau), khác toneOfVoice (cách nói). " +
+        "contentPillars = mảng nội dung theo đuổi, dùng để lọc trend nào đáng đu. " +
+        "trendDos/trendDonts = nguyên tắc khi bắt trend. " +
+        "fanpages = nơi thương hiệu đăng bài, dùng để gợi ý đúng định dạng và đúng người đọc." +
+        (missing.length
+          ? " CÁC MỤC TRONG missing_fields CHƯA CÓ DỮ LIỆU — không được tự suy đoán hay điền thay."
+          : ""),
     };
   }
 
@@ -714,6 +760,58 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
     };
   }
 
+  if (name === "video_frames") {
+    let url = typeof args.url === "string" ? args.url.trim() : "";
+    if (!url && UUID_RE.test(args.radar_item_id || "")) {
+      const [item] = await db.select().from(radarItems).where(eq(radarItems.id, args.radar_item_id));
+      if (!item) throw new Error("Không tìm thấy bài trong kết quả quét");
+      url = item.url;
+    }
+    if (!url) throw new Error("Cần url hoặc radar_item_id");
+
+    const { assertPublicUrl } = await import("../services/brand-ingest");
+    assertPublicUrl(url);
+
+    const { extractFrames, DEFAULT_FRAME_COUNT } = await import("../services/video-frames");
+    const count = Math.min(Math.max(2, Number(args.count) || DEFAULT_FRAME_COUNT), 12);
+    const out = await extractFrames(url, count);
+
+    if (out.frames.length === 0) {
+      return { error: out.warning || "Không lấy được khung hình nào.", url };
+    }
+
+    let transcript: string | undefined;
+    if (args.include_transcript !== false) {
+      const { fetchTranscript } = await import("../services/deconstruct");
+      transcript = await fetchTranscript(url).catch(() => undefined);
+    }
+
+    // Trộn chữ và ảnh: mỗi ảnh có một dòng chữ nói rõ nó ở giây thứ mấy, để
+    // Claude gắn được điều nhìn thấy với mốc thời gian trong bài.
+    const content: any[] = [{
+      type: "text",
+      text:
+        `Khung hình từ video: ${url}\n` +
+        `Độ dài: ${out.durationSec ? Math.round(out.durationSec) + " giây" : "không rõ"} · ${out.frames.length} khung\n` +
+        `Các khung dồn về đoạn mở đầu vì đó là chỗ quyết định người xem ở lại.\n` +
+        (transcript ? `\nLỜI THOẠI (kèm mốc giây):\n${transcript.slice(0, 6000)}\n` : "\n(Video này không có lời thoại lấy được.)\n"),
+    }];
+    for (const f of out.frames) {
+      content.push({ type: "text", text: `— giây ${f.atSec} —` });
+      content.push({ type: "image", data: f.base64, mimeType: f.mimeType });
+    }
+    content.push({
+      type: "text",
+      text:
+        "Hãy tự xem các khung trên rồi rút ra CÁCH TRIỂN KHAI: 3 giây đầu làm gì, " +
+        "mở vấn đề kiểu nào, giữ chân bằng gì, chốt ra sao. Đối chiếu với tính cách " +
+        "thương hiệu (brand_profile_get) để nói rõ trend/cách làm này có hợp không và " +
+        "nên chỉnh gì. Chỉ mô tả những gì THỰC SỰ thấy trong ảnh, đừng suy diễn.",
+    });
+
+    return { __mcpContent: content };
+  }
+
   if (name === "signals_suggest_angle") {
     if (!UUID_RE.test(args.id || "")) throw new Error("id không hợp lệ");
     const scene = String(args.scene || "").trim();
@@ -818,7 +916,7 @@ export function registerMcpSignalsRoutes(app: Express) {
       }
       try {
         const payload = await callTool(toolName, args, principal);
-        return res.json(rpcResult(id, textContent(payload)));
+        return res.json(rpcResult(id, toolContent(payload)));
       } catch (e: any) {
         return res.json(rpcResult(id, { ...textContent({ error: e?.message || String(e) }), isError: true }));
       }

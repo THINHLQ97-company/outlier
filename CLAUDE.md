@@ -74,15 +74,25 @@ thái hợp lệ (server-side re-check, không tin tưởng client).
 
 ## 4. Quy chuẩn giao diện (UI/UX)
 
-- **Phong cách**: đã chuyển sang dùng đúng bảng màu + font của
-  `share-projects/marcow-crop` (quyết định user ngày 2026-07-21, "tái sử dụng lại
-  toàn bộ UX của marcow-crop") — lý do: đồng bộ UX với hệ sinh thái nội bộ Mắt Bão.
-  Primary cam đất `#D97757` (hover `#C66545`), background `#FAF9F6`, text
-  `#2D2D2D`. Token CSS **giữ nguyên tên biến** `--color-storm-*` trong
-  `src/index.css` (chỉ đổi giá trị hex) để không phải sửa class ở mọi file.
-  Font `Comic Neue` (heading/logo, qua class `font-display`) + `Inter` (còn lại,
-  `font-sans`); `Be Vietnam Pro` vẫn giữ làm fallback cho canvas text-overlay
-  (không thuộc phạm vi reskin UI — xem `TextOverlayEditor.tsx`).
+- **Phong cách**: đổi sang **hệ design Mắt Bão** (quyết định user ngày
+  2026-09-22, THAY THẾ quyết định cam đất/marcow-crop ngày 2026-07-21 ở trên —
+  giữ đoạn cũ trong git history, không xoá để biết lý do đổi). Nguồn tokens +
+  component: `share-projects/matbao-vibe-challenge/docs/reference/design-system.css`
+  (đối chiếu lại đây khi cần cập nhật, biến `--ds-*` trong `src/index.css` giữ
+  đúng tên để so khớp). Primary Indigo `#4f46e5` (hover `#4338ca`), nền
+  `#f8fafc`, sidebar tối `#1e1b4b`. Token CSS **giữ nguyên tên biến**
+  `--color-storm-*`/`--color-stone-*` trong `src/index.css` (chỉ đổi giá trị
+  hex sang thang Indigo/Slate tương ứng) để không phải sửa class ở mọi file —
+  `storm-*` = thang Indigo (storm-600 = primary), `stone-*` = thang Slate
+  (khớp `--ds-border`/`--ds-fg-mute`/`--ds-bg`). `font-display` đổi từ Comic
+  Neue sang Inter (khớp giọng "clean SaaS admin" của hệ); `Be Vietnam Pro` vẫn
+  giữ làm fallback cho canvas text-overlay (không thuộc phạm vi reskin UI —
+  xem `TextOverlayEditor.tsx`). Nav ngang cũ đổi thành **sidebar dọc**
+  (`src/components/Layout.tsx`), nhóm mục theo luồng công việc (Chuẩn bị / Tìm
+  nội dung / Sản xuất / Hệ thống), thu gọn được (nhớ qua localStorage), mobile
+  dùng drawer + overlay. Ưu tiên dùng class `.ds-btn`/`.ds-card`/`.ds-badge`/
+  `.ds-input`/`.ds-alert`/`.ds-empty`/`.ds-modal`... (định nghĩa trong
+  `src/index.css`) khi dựng UI mới thay vì tự phối Tailwind từ đầu.
 - **Text-overlay editor** (`src/components/TextOverlayEditor.tsx`) — HTML5 Canvas
   thuần, không thư viện ngoài. Toạ độ text box lưu dạng phân số (0-1) của canvas
   gốc 1024×1024 để export luôn đúng tỉ lệ.

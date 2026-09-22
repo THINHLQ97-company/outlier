@@ -14,9 +14,14 @@ export default function AdminUsers() {
 
   if (!isAdmin) {
     return (
-      <div className="flex flex-col items-center gap-2 py-16 text-center text-stone-500">
-        <ShieldAlert className="w-8 h-8 text-stone-300" aria-hidden="true" />
-        <p className="text-sm">Chỉ quản trị viên mới xem được trang này.</p>
+      <div className="ds-card">
+        <div className="ds-empty">
+          <div className="ds-empty-icon">
+            <ShieldAlert className="w-8 h-8" aria-hidden="true" />
+          </div>
+          <p className="ds-empty-title">Không có quyền truy cập</p>
+          <p className="ds-empty-desc">Chỉ quản trị viên mới xem được trang này.</p>
+        </div>
       </div>
     );
   }
@@ -83,17 +88,10 @@ function AdminUsersInner() {
           <p className="text-sm text-stone-500">Cấp quyền đăng nhập Google, duyệt tài khoản chờ, đổi quyền/khoá.</p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowInvite(true)}
-            className="flex items-center gap-1.5 text-sm font-medium text-white bg-storm-600 hover:bg-storm-700 px-3 py-2 rounded-lg"
-          >
+          <button onClick={() => setShowInvite(true)} className="ds-btn ds-btn-primary">
             <Mail className="w-4 h-4" aria-hidden="true" /> Cấp quyền email (Google)
           </button>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="flex items-center gap-1.5 text-sm font-medium text-storm-700 bg-storm-50 hover:bg-storm-100 px-3 py-2 rounded-lg"
-            title="Tạo tài khoản nội bộ (username/mật khẩu)"
-          >
+          <button onClick={() => setShowCreate(true)} className="ds-btn" title="Tạo tài khoản nội bộ (username/mật khẩu)">
             <Plus className="w-4 h-4" aria-hidden="true" /> Tài khoản nội bộ
           </button>
         </div>
@@ -101,36 +99,48 @@ function AdminUsersInner() {
 
       {/* Nhắc admin nếu có tài khoản Google đang chờ duyệt */}
       {items.some((u) => !u.isActive && u.authProvider === "google") && (
-        <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+        <div className="ds-alert ds-alert-warning">
           Có {items.filter((u) => !u.isActive && u.authProvider === "google").length} tài khoản Google đang <b>chờ duyệt</b> — bấm "Duyệt" ở cột Hành động để cho phép đăng nhập.
         </div>
       )}
 
-      {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+      {error && <div role="alert" className="ds-alert ds-alert-danger">{error}</div>}
 
       {loading ? (
-        <div className="flex items-center justify-center py-16 text-stone-400 gap-2">
-          <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+        <div className="ds-card">
+          <div className="flex items-center justify-center py-16 text-stone-400 gap-2">
+            <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+          </div>
+        </div>
+      ) : items.length === 0 ? (
+        <div className="ds-card">
+          <div className="ds-empty">
+            <div className="ds-empty-icon">
+              <Mail className="w-8 h-8" aria-hidden="true" />
+            </div>
+            <p className="ds-empty-title">Chưa có tài khoản nào</p>
+            <p className="ds-empty-desc">Cấp quyền email Google hoặc tạo tài khoản nội bộ để bắt đầu.</p>
+          </div>
         </div>
       ) : (
-        <div className="bg-white border border-stone-200 rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="ds-table-wrap">
+          <table className="ds-table">
             <thead>
-              <tr className="bg-stone-50 text-left text-xs font-medium text-stone-500 border-b border-stone-200">
-                <th className="px-4 py-2.5">Tài khoản</th>
-                <th className="px-4 py-2.5">Đăng nhập</th>
-                <th className="px-4 py-2.5">Quyền</th>
-                <th className="px-4 py-2.5">Trạng thái</th>
-                <th className="px-4 py-2.5">Ngày tạo</th>
-                <th className="px-4 py-2.5 text-right">Hành động</th>
+              <tr>
+                <th>Tài khoản</th>
+                <th>Đăng nhập</th>
+                <th>Quyền</th>
+                <th>Trạng thái</th>
+                <th>Ngày tạo</th>
+                <th className="text-right">Hành động</th>
               </tr>
             </thead>
             <tbody>
               {items.map((u) => {
                 const busy = busyId === u.id;
                 return (
-                  <tr key={u.id} className="border-b border-stone-100 last:border-0">
-                    <td className="px-4 py-2.5">
+                  <tr key={u.id}>
+                    <td>
                       <div className="flex items-center gap-2">
                         {u.avatarUrl ? (
                           <img src={u.avatarUrl} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
@@ -142,58 +152,34 @@ function AdminUsersInner() {
                         <span className="font-medium text-stone-800 truncate">{u.email || u.username}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-2.5">
-                      <span
-                        className={`text-xs font-medium px-1.5 py-0.5 rounded ${
-                          u.authProvider === "google" ? "bg-blue-50 text-blue-700" : "bg-stone-100 text-stone-600"
-                        }`}
-                      >
+                    <td>
+                      <span className={`ds-badge ${u.authProvider === "google" ? "ds-badge-info" : ""}`}>
                         {u.authProvider === "google" ? "Google" : "Nội bộ"}
                       </span>
                     </td>
-                    <td className="px-4 py-2.5">
-                      <span
-                        className={`text-xs font-medium px-1.5 py-0.5 rounded ${
-                          u.role === "admin" ? "bg-storm-50 text-storm-700" : "bg-stone-100 text-stone-600"
-                        }`}
-                      >
-                        {ROLE_LABEL[u.role]}
-                      </span>
+                    <td>
+                      <span className={`ds-badge ${u.role === "admin" ? "ds-badge-primary" : ""}`}>{ROLE_LABEL[u.role]}</span>
                     </td>
-                    <td className="px-4 py-2.5">
-                      <span
-                        className={`text-xs font-medium px-1.5 py-0.5 rounded ${
-                          u.isActive ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"
-                        }`}
-                      >
+                    <td>
+                      <span className={`ds-badge ${u.isActive ? "ds-badge-success" : "ds-badge-danger"}`}>
                         {u.isActive ? "Active" : "Khoá"}
                       </span>
                     </td>
-                    <td className="px-4 py-2.5 text-stone-500">{new Date(u.createdAt).toLocaleDateString("vi-VN")}</td>
-                    <td className="px-4 py-2.5">
+                    <td className="text-stone-500">{new Date(u.createdAt).toLocaleDateString("vi-VN")}</td>
+                    <td>
                       <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                        <button
-                          onClick={() => handleRoleToggle(u)}
-                          disabled={busy}
-                          className="text-xs font-medium text-stone-600 hover:bg-stone-100 px-2 py-1 rounded-lg disabled:opacity-50"
-                        >
+                        <button onClick={() => handleRoleToggle(u)} disabled={busy} className="ds-btn ds-btn-sm">
                           {u.role === "admin" ? "Hạ thành viên" : "Nâng quản trị"}
                         </button>
                         <button
                           onClick={() => handleActiveToggle(u)}
                           disabled={busy}
-                          className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg disabled:opacity-50 ${
-                            u.isActive ? "text-red-600 hover:bg-red-50" : "text-green-700 hover:bg-green-50"
-                          }`}
+                          className={`ds-btn ds-btn-sm ${u.isActive ? "" : "ds-btn-primary"}`}
                         >
                           {u.isActive ? "Khoá" : (<><Check className="w-3.5 h-3.5" aria-hidden="true" /> Duyệt</>)}
                         </button>
                         {u.authProvider !== "google" && (
-                          <button
-                            onClick={() => setResetTarget(u)}
-                            disabled={busy}
-                            className="flex items-center gap-1 text-xs font-medium text-stone-600 hover:bg-stone-100 px-2 py-1 rounded-lg disabled:opacity-50"
-                          >
+                          <button onClick={() => setResetTarget(u)} disabled={busy} className="ds-btn ds-btn-sm">
                             <KeyRound className="w-3.5 h-3.5" aria-hidden="true" /> Đặt lại mật khẩu
                           </button>
                         )}
@@ -265,20 +251,22 @@ function InviteUserModal({ onClose, onDone }: { onClose: () => void; onDone: (ro
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
-        <div className="flex items-center justify-between p-5 border-b border-stone-100">
-          <h3 className="font-semibold text-stone-800 font-display">Cấp quyền đăng nhập Google</h3>
-          <button onClick={onClose} className="p-1.5 text-stone-400 hover:bg-stone-100 rounded-full" aria-label="Đóng">
+    <div className="ds-modal-overlay open" style={{ zIndex: 100 }}>
+      <div className="ds-modal max-w-sm" role="dialog" aria-modal="true" aria-labelledby="invite-title">
+        <div className="ds-modal-header">
+          <h3 id="invite-title" className="ds-modal-title font-display">
+            Cấp quyền đăng nhập Google
+          </h3>
+          <button onClick={onClose} className="ds-modal-close" aria-label="Đóng">
             <X className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
-        <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
+        <form onSubmit={handleSubmit} className="ds-modal-body flex flex-col gap-3">
           <p className="text-xs text-stone-500">
             Nhập email Google của người bạn muốn cho đăng nhập. Họ vào trang đăng nhập → bấm "Đăng nhập bằng Google" bằng đúng email này là vào được (không cần mật khẩu).
           </p>
           <div>
-            <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="iv-email">Email Google</label>
+            <label className="ds-label" htmlFor="iv-email">Email Google</label>
             <input
               id="iv-email"
               type="email"
@@ -286,27 +274,18 @@ function InviteUserModal({ onClose, onDone }: { onClose: () => void; onDone: (ro
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="ten@gmail.com"
-              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
+              className="ds-input"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="iv-role">Quyền</label>
-            <select
-              id="iv-role"
-              value={role}
-              onChange={(e) => setRole(e.target.value as Role)}
-              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
-            >
+            <label className="ds-label" htmlFor="iv-role">Quyền</label>
+            <select id="iv-role" value={role} onChange={(e) => setRole(e.target.value as Role)} className="ds-select">
               <option value="member">Thành viên</option>
               <option value="admin">Quản trị viên</option>
             </select>
           </div>
-          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
-          <button
-            type="submit"
-            disabled={saving}
-            className="mt-2 flex items-center justify-center gap-2 bg-storm-600 hover:bg-storm-700 text-white text-sm font-medium rounded-lg py-2.5 disabled:opacity-60"
-          >
+          {error && <div role="alert" className="ds-alert ds-alert-danger">{error}</div>}
+          <button type="submit" disabled={saving} className="ds-btn ds-btn-primary justify-center mt-2">
             {saving && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />} Cấp quyền
           </button>
         </form>
@@ -342,27 +321,23 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
-        <div className="flex items-center justify-between p-5 border-b border-stone-100">
-          <h3 className="font-semibold text-stone-800 font-display">Thêm user</h3>
-          <button onClick={onClose} className="p-1.5 text-stone-400 hover:bg-stone-100 rounded-full" aria-label="Đóng">
+    <div className="ds-modal-overlay open" style={{ zIndex: 100 }}>
+      <div className="ds-modal max-w-sm" role="dialog" aria-modal="true" aria-labelledby="create-user-title">
+        <div className="ds-modal-header">
+          <h3 id="create-user-title" className="ds-modal-title font-display">
+            Thêm user
+          </h3>
+          <button onClick={onClose} className="ds-modal-close" aria-label="Đóng">
             <X className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
-        <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
+        <form onSubmit={handleSubmit} className="ds-modal-body flex flex-col gap-3">
           <div>
-            <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="nu-username">Tên đăng nhập</label>
-            <input
-              id="nu-username"
-              required
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
-            />
+            <label className="ds-label" htmlFor="nu-username">Tên đăng nhập</label>
+            <input id="nu-username" required value={username} onChange={(e) => setUsername(e.target.value)} className="ds-input" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="nu-password">Mật khẩu (≥ 6 ký tự)</label>
+            <label className="ds-label" htmlFor="nu-password">Mật khẩu (≥ 6 ký tự)</label>
             <input
               id="nu-password"
               type="password"
@@ -370,27 +345,18 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
               minLength={6}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
+              className="ds-input"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="nu-role">Quyền</label>
-            <select
-              id="nu-role"
-              value={role}
-              onChange={(e) => setRole(e.target.value as Role)}
-              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
-            >
+            <label className="ds-label" htmlFor="nu-role">Quyền</label>
+            <select id="nu-role" value={role} onChange={(e) => setRole(e.target.value as Role)} className="ds-select">
               <option value="member">Thành viên</option>
               <option value="admin">Quản trị viên</option>
             </select>
           </div>
-          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
-          <button
-            type="submit"
-            disabled={saving}
-            className="mt-2 flex items-center justify-center gap-2 bg-storm-600 hover:bg-storm-700 text-white text-sm font-medium rounded-lg py-2.5 disabled:opacity-60"
-          >
+          {error && <div role="alert" className="ds-alert ds-alert-danger">{error}</div>}
+          <button type="submit" disabled={saving} className="ds-btn ds-btn-primary justify-center mt-2">
             {saving && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />} Tạo tài khoản
           </button>
         </form>
@@ -431,17 +397,19 @@ function ResetPasswordModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
-        <div className="flex items-center justify-between p-5 border-b border-stone-100">
-          <h3 className="font-semibold text-stone-800 font-display">Đặt lại mật khẩu — {user.username}</h3>
-          <button onClick={onClose} className="p-1.5 text-stone-400 hover:bg-stone-100 rounded-full" aria-label="Đóng">
+    <div className="ds-modal-overlay open" style={{ zIndex: 100 }}>
+      <div className="ds-modal max-w-sm" role="dialog" aria-modal="true" aria-labelledby="reset-pw-title">
+        <div className="ds-modal-header">
+          <h3 id="reset-pw-title" className="ds-modal-title font-display">
+            Đặt lại mật khẩu — {user.username}
+          </h3>
+          <button onClick={onClose} className="ds-modal-close" aria-label="Đóng">
             <X className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
-        <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
+        <form onSubmit={handleSubmit} className="ds-modal-body flex flex-col gap-3">
           <div>
-            <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="rp-password">Mật khẩu mới (≥ 6 ký tự)</label>
+            <label className="ds-label" htmlFor="rp-password">Mật khẩu mới (≥ 6 ký tự)</label>
             <input
               id="rp-password"
               type="password"
@@ -449,15 +417,11 @@ function ResetPasswordModal({
               minLength={6}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
+              className="ds-input"
             />
           </div>
-          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
-          <button
-            type="submit"
-            disabled={saving}
-            className="mt-2 flex items-center justify-center gap-2 bg-storm-600 hover:bg-storm-700 text-white text-sm font-medium rounded-lg py-2.5 disabled:opacity-60"
-          >
+          {error && <div role="alert" className="ds-alert ds-alert-danger">{error}</div>}
+          <button type="submit" disabled={saving} className="ds-btn ds-btn-primary justify-center mt-2">
             {saving && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />} Cập nhật mật khẩu
           </button>
         </form>

@@ -48,14 +48,14 @@ const PLATFORM_LABEL: Record<string, string> = {
 };
 
 const CONFIDENCE_META: Record<RadarConfidence, { label: string; cls: string }> = {
-  low: { label: "Tham khảo", cls: "bg-amber-50 text-amber-700 border border-amber-200" },
-  medium: { label: "Khá chắc", cls: "bg-blue-50 text-blue-700 border border-blue-200" },
-  high: { label: "Đáng tin", cls: "bg-green-50 text-green-700 border border-green-200" },
+  low: { label: "Tham khảo", cls: "ds-badge-warning" },
+  medium: { label: "Khá chắc", cls: "ds-badge-info" },
+  high: { label: "Đáng tin", cls: "ds-badge-success" },
 };
 
 const SOURCE_META: Record<RadarMetricsSource, { label: string; cls: string }> = {
-  scan: { label: "Số liệu sơ bộ", cls: "bg-stone-100 text-stone-500" },
-  apify: { label: "Số liệu đầy đủ", cls: "bg-storm-50 text-storm-700" },
+  scan: { label: "Số liệu sơ bộ", cls: "" },
+  apify: { label: "Số liệu đầy đủ", cls: "ds-badge-primary" },
 };
 
 const numberFmt = new Intl.NumberFormat("vi-VN", { notation: "compact", maximumFractionDigits: 1 });
@@ -235,16 +235,13 @@ export default function Channels() {
             Thêm kênh đối thủ vào danh sách, rồi bấm "Làm mới" mỗi ngày để xem họ vừa đăng gì — bài mới sẽ được đánh dấu rõ.
           </p>
         </div>
-        <button
-          onClick={() => setShowAddForm(true)}
-          className="flex items-center gap-1.5 text-sm font-medium text-white bg-storm-600 hover:bg-storm-700 px-3 py-2 rounded-lg transition-colors shrink-0"
-        >
+        <button onClick={() => setShowAddForm(true)} className="ds-btn ds-btn-primary shrink-0">
           <Plus className="w-4 h-4" aria-hidden="true" /> Thêm kênh
         </button>
       </div>
 
       {listError && (
-        <div role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+        <div role="alert" className="ds-alert ds-alert-danger">
           {listError}
         </div>
       )}
@@ -252,12 +249,23 @@ export default function Channels() {
       <div className="flex flex-col lg:flex-row gap-4 items-start">
         <aside className="w-full lg:w-72 shrink-0 flex flex-col gap-2">
           {loading ? (
-            <div className="flex items-center justify-center py-10 text-stone-400 gap-2">
-              <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+            <div className="ds-card">
+              <div className="flex items-center justify-center py-10 text-stone-400 gap-2">
+                <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+              </div>
             </div>
           ) : channels.length === 0 ? (
-            <div className="text-center py-10 text-stone-400 text-sm border border-dashed border-stone-300 rounded-xl">
-              Chưa theo dõi kênh nào. Bấm "Thêm kênh" để bắt đầu.
+            <div className="ds-card">
+              <div className="ds-empty">
+                <div className="ds-empty-icon">
+                  <Eye className="w-8 h-8" aria-hidden="true" />
+                </div>
+                <p className="ds-empty-title">Chưa theo dõi kênh nào</p>
+                <p className="ds-empty-desc">Thêm kênh đối thủ để mỗi ngày xem họ vừa đăng gì.</p>
+                <button onClick={() => setShowAddForm(true)} className="ds-btn ds-btn-primary ds-btn-sm mt-1">
+                  <Plus className="w-3.5 h-3.5" aria-hidden="true" /> Thêm kênh
+                </button>
+              </div>
             </div>
           ) : (
             channels.map((c) => (
@@ -286,13 +294,11 @@ export default function Channels() {
                     </span>
                   )}
                   {c.scanStatus === "scanning" && (
-                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 flex items-center gap-1">
+                    <span className="ds-badge ds-badge-warning">
                       <Loader2 className="w-2.5 h-2.5 animate-spin" aria-hidden="true" /> Đang quét
                     </span>
                   )}
-                  {c.scanStatus === "error" && (
-                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-red-50 text-red-600">Lỗi</span>
-                  )}
+                  {c.scanStatus === "error" && <span className="ds-badge ds-badge-danger">Lỗi</span>}
                 </div>
                 <div className="text-[10px] text-stone-400 mt-1 flex items-center gap-1">
                   <Clock className="w-2.5 h-2.5" aria-hidden="true" /> {formatRelative(c.lastScanAt)}
@@ -304,14 +310,19 @@ export default function Channels() {
 
         <div className="flex-1 min-w-0 w-full">
           {!selectedId ? (
-            <div className="flex flex-col items-center justify-center text-center gap-2 py-20 text-stone-400 border border-dashed border-stone-300 rounded-2xl bg-white/50">
-              <Eye className="w-8 h-8 text-stone-300" aria-hidden="true" />
-              <p className="text-sm">Chọn một kênh bên trái để xem bài vừa đăng, hoặc thêm kênh mới.</p>
+            <div className="ds-card">
+              <div className="ds-empty">
+                <div className="ds-empty-icon">
+                  <Eye className="w-8 h-8" aria-hidden="true" />
+                </div>
+                <p className="ds-empty-title">Chưa chọn kênh</p>
+                <p className="ds-empty-desc">Chọn một kênh bên trái để xem bài vừa đăng, hoặc thêm kênh mới.</p>
+              </div>
             </div>
           ) : detail ? (
             <>
               {detailError && (
-                <div role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+                <div role="alert" className="ds-alert ds-alert-danger mb-3">
                   {detailError}
                 </div>
               )}
@@ -326,11 +337,13 @@ export default function Channels() {
               />
             </>
           ) : detailLoading ? (
-            <div className="flex items-center justify-center py-20 text-stone-400 gap-2">
-              <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+            <div className="ds-card">
+              <div className="flex items-center justify-center py-20 text-stone-400 gap-2">
+                <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...
+              </div>
             </div>
           ) : detailError ? (
-            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{detailError}</div>
+            <div role="alert" className="ds-alert ds-alert-danger">{detailError}</div>
           ) : null}
         </div>
       </div>
@@ -413,22 +426,19 @@ function AddChannelForm({
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-stone-100">
-          <h3 className="font-semibold text-stone-800 font-display">Thêm kênh theo dõi</h3>
-          <button
-            onClick={onClose}
-            disabled={submitting}
-            className="p-1.5 text-stone-400 hover:bg-stone-100 rounded-full disabled:opacity-40"
-            aria-label="Đóng"
-          >
+    <div className="ds-modal-overlay open" style={{ zIndex: 100 }}>
+      <div className="ds-modal max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="add-channel-title">
+        <div className="ds-modal-header">
+          <h3 id="add-channel-title" className="ds-modal-title font-display">
+            Thêm kênh theo dõi
+          </h3>
+          <button onClick={onClose} disabled={submitting} className="ds-modal-close disabled:opacity-40" aria-label="Đóng">
             <X className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
-        <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
+        <form onSubmit={handleSubmit} className="ds-modal-body flex flex-col gap-3">
           <div>
-            <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="ch-url">
+            <label className="ds-label" htmlFor="ch-url">
               Link kênh đối thủ
             </label>
             <input
@@ -439,15 +449,13 @@ function AddChannelForm({
               value={channelUrl}
               onChange={(e) => setChannelUrl(e.target.value)}
               placeholder="https://youtube.com/@... hoặc tiktok.com/@..."
-              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm disabled:opacity-60"
+              className="ds-input"
             />
-            <p className="text-[11px] text-stone-400 mt-1">
-              Hỗ trợ YouTube, TikTok, Instagram — hệ thống tự nhận nền tảng từ link, không cần chọn tay.
-            </p>
+            <p className="ds-hint">Hỗ trợ YouTube, TikTok, Instagram — hệ thống tự nhận nền tảng từ link, không cần chọn tay.</p>
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="ch-note">
+            <label className="ds-label" htmlFor="ch-note">
               Ghi chú (không bắt buộc)
             </label>
             <input
@@ -457,36 +465,28 @@ function AddChannelForm({
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="Vì sao bạn theo dõi kênh này?"
-              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm disabled:opacity-60"
+              className="ds-input"
             />
           </div>
 
-          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+          {error && <div className="ds-alert ds-alert-danger">{error}</div>}
 
           {duplicate && (
-            <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 flex flex-col gap-2">
+            <div className="ds-alert ds-alert-warning flex-col !items-stretch gap-2">
               <span>{duplicate.message}</span>
-              <button
-                type="button"
-                onClick={() => onSelectExisting(duplicate.id)}
-                className="self-start text-xs font-medium text-storm-700 hover:bg-storm-50 px-2 py-1 rounded-lg transition-colors"
-              >
+              <button type="button" onClick={() => onSelectExisting(duplicate.id)} className="ds-btn ds-btn-sm self-start">
                 Xem kênh đã theo dõi
               </button>
             </div>
           )}
 
           {submitting && (
-            <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+            <div className="ds-alert ds-alert-warning">
               <Loader2 className="w-4 h-4 animate-spin shrink-0" aria-hidden="true" />
               Đang thêm kênh...
             </div>
           )}
-          <button
-            type="submit"
-            disabled={submitting}
-            className="mt-1 flex items-center justify-center gap-2 bg-storm-600 hover:bg-storm-700 text-white text-sm font-medium rounded-lg py-2.5 disabled:opacity-60"
-          >
+          <button type="submit" disabled={submitting} className="ds-btn ds-btn-primary justify-center mt-1">
             {submitting && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />} {submitting ? "Đang thêm..." : "Thêm kênh"}
           </button>
         </form>
@@ -541,7 +541,8 @@ function ChannelDetailPanel({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="bg-white rounded-xl border border-stone-200 p-4">
+      <div className="ds-card">
+      <div className="ds-card-body">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="flex-1 min-w-0">
             <h2 className="text-lg font-bold text-stone-800 font-display truncate">
@@ -558,7 +559,7 @@ function ChannelDetailPanel({
                 <Clock className="w-3 h-3" aria-hidden="true" /> {formatRelative(detail.lastScanAt)}
               </span>
               {detail.useApify && (
-                <span className="text-[11px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 flex items-center gap-1">
+                <span className="ds-badge ds-badge-warning">
                   <DollarSign className="w-3 h-3" aria-hidden="true" /> Mỗi lần làm mới tốn phí
                 </span>
               )}
@@ -574,11 +575,7 @@ function ChannelDetailPanel({
             {detail.note && <p className="text-xs text-stone-500 mt-1.5 italic">"{detail.note}"</p>}
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={onRefresh}
-              disabled={watching}
-              className="flex items-center gap-1.5 text-sm font-medium text-white bg-storm-600 hover:bg-storm-700 px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
-            >
+            <button onClick={onRefresh} disabled={watching} className="ds-btn ds-btn-primary">
               {watching ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="w-4 h-4" aria-hidden="true" />}
               {watching ? "Đang làm mới..." : "Làm mới"}
             </button>
@@ -592,19 +589,19 @@ function ChannelDetailPanel({
         </div>
 
         {watchTimedOut ? (
-          <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5 mt-2 flex items-start gap-1.5">
+          <div role="alert" className="ds-alert ds-alert-danger mt-2">
             <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
             Quá lâu không có phản hồi, thử tải lại trang.
           </div>
         ) : watching ? (
-          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 mt-2 flex items-center gap-1.5">
+          <div className="ds-alert ds-alert-warning mt-2">
             <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" aria-hidden="true" />
             Đang lấy bài mới của kênh... ({watchElapsedSec}s)
           </div>
         ) : null}
 
         {detail.scanStatus === "error" && detail.errorMessage && (
-          <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5 mt-2 flex items-start gap-1.5">
+          <div role="alert" className="ds-alert ds-alert-danger mt-2">
             <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
             <span className="flex-1">{detail.errorMessage}</span>
             <button onClick={onRefresh} className="font-medium underline shrink-0">
@@ -614,23 +611,30 @@ function ChannelDetailPanel({
         )}
 
         {detail.lastNewCount > 0 && !watching && (
-          <div className="text-xs text-storm-700 bg-storm-50 border border-storm-200 rounded-lg px-2.5 py-1.5 mt-2 flex items-center gap-1.5">
+          <div className="ds-alert mt-2" style={{ background: "var(--ds-primary-light)", borderColor: "var(--ds-primary-mute)", color: "var(--ds-primary)" }}>
             <Flame className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
             Có {detail.lastNewCount} bài mới kể từ lần làm mới trước.
           </div>
         )}
         {isFirstScan && (
-          <div className="text-xs text-stone-400 bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-1.5 mt-2 flex items-start gap-1.5">
+          <div className="ds-alert mt-2">
             <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
             Đây là lần lấy dữ liệu đầu tiên nên chưa có gì để so sánh. Lần làm mới sau sẽ đánh dấu bài mới cho bạn.
           </div>
         )}
       </div>
+      </div>
 
       <div className="flex flex-col gap-3">
         {detail.items.length === 0 ? (
-          <div className="text-center py-14 text-stone-400 text-sm border border-dashed border-stone-300 rounded-xl bg-white/50">
-            {detail.scanStatus === "scanning" ? "Đang lấy bài..." : "Chưa có bài nào. Bấm \"Làm mới\" để lấy dữ liệu."}
+          <div className="ds-card">
+            <div className="ds-empty">
+              <div className="ds-empty-icon">
+                <ImageIcon className="w-8 h-8" aria-hidden="true" />
+              </div>
+              <p className="ds-empty-title">{detail.scanStatus === "scanning" ? "Đang lấy bài..." : "Chưa có bài nào"}</p>
+              {detail.scanStatus !== "scanning" && <p className="ds-empty-desc">Bấm "Làm mới" ở trên để lấy dữ liệu bài đăng của kênh này.</p>}
+            </div>
           </div>
         ) : (
           detail.items.map((item) => <ChannelItemCard key={item.id} item={item} />)
@@ -700,8 +704,8 @@ function ChannelItemCard({ item }: { item: RadarItem }) {
               <Flame className="w-3 h-3" aria-hidden="true" /> MỚI
             </span>
           )}
-          <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${conf.cls}`}>{conf.label}</span>
-          <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${src.cls}`}>{src.label}</span>
+          <span className={`ds-badge ${conf.cls}`}>{conf.label}</span>
+          <span className={`ds-badge ${src.cls}`}>{src.label}</span>
         </div>
 
         <div className="flex items-center gap-3 flex-wrap text-xs text-stone-600">
