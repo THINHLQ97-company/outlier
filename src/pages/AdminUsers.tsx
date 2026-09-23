@@ -3,6 +3,7 @@ import { Loader2, ShieldAlert, Plus, X, KeyRound, Mail, Check } from "lucide-rea
 import { listUsers, createUser, updateUser, inviteUser } from "../services/users";
 import { useAppContext } from "../AppContext";
 import type { UserRow, Role } from "../types";
+import DataTransfer from "../components/DataTransfer";
 
 const ROLE_LABEL: Record<Role, string> = { admin: "Quản trị viên", member: "Thành viên" };
 
@@ -105,6 +106,8 @@ function AdminUsersInner() {
       )}
 
       {error && <div role="alert" className="ds-alert ds-alert-danger">{error}</div>}
+
+      <DataTransfer />
 
       {loading ? (
         <div className="ds-card">
