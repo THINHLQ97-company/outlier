@@ -143,9 +143,11 @@ async function scanChannelViaApify(platform: string, channelUrl: string, limit: 
   const out = await enrichMetrics(platform, [channelUrl], { asProfile: true, limit });
   const candidates = out.metrics.map((m) => ({
     platform, itemKey: m.itemKey, url: m.url,
-    title: m.title, coverUrl: undefined, durationSec: undefined,
-    // Apify chỉ dùng cho TikTok/Instagram ở đây, đều là video.
-    contentKind: "video" as const,
+    // Ảnh bài lấy thẳng từ dữ liệu actor trả về — trước đây bỏ trống nên danh
+    // sách toàn ô ảnh rỗng, dù actor có gửi ảnh kèm.
+    title: m.title, coverUrl: m.coverUrl, durationSec: undefined,
+    // Facebook là bài viết (chữ + ảnh); TikTok/Instagram là video.
+    contentKind: (platform === "facebook" ? "post" : "video") as any,
     publishedAt: m.publishedAt,
     channelKey: m.channelKey, channelName: m.channelName,
     followerCount: m.followerCount,

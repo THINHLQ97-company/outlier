@@ -19,6 +19,11 @@ import {
   Heart,
   Brain,
   RefreshCw,
+  FileText,
+  Image as ImageIcon,
+  Film,
+  Users,
+  Palette,
 } from "lucide-react";
 import { getGallery, savePostAsAsset, deleteGalleryPost, getPost } from "../services/posts";
 import {
@@ -51,16 +56,17 @@ import { PostsTab, ImagesTab, VideosTab } from "../components/LibraryContentTabs
 // nhóm sau là NGUYÊN LIỆU (dùng để làm ra thành phẩm). Trộn chung một hàng thì
 // người dùng phải tự đoán cái nào là cái nào.
 const CONTENT_TABS = [
-  { key: "posts", label: "Bài viết" },
-  { key: "images", label: "Hình ảnh" },
-  { key: "videos", label: "Video" },
+  { key: "posts", label: "Bài viết", icon: FileText },
+  { key: "images", label: "Hình ảnh", icon: ImageIcon },
+  { key: "videos", label: "Video", icon: Film },
 ] as const;
 
+// "Ảnh meme cũ" đã gộp vào tab Hình ảnh — một tab riêng cho thứ gần như luôn
+// rỗng chỉ làm rối hàng tab.
 const RESOURCE_TABS = [
-  { key: "gallery", label: "Ảnh meme cũ" },
-  { key: "characters", label: "Nhân vật" },
-  { key: "styles", label: "Phong cách" },
-  { key: "rag", label: "RAG (ảnh đã thích)" },
+  { key: "characters", label: "Nhân vật", icon: Users },
+  { key: "styles", label: "Phong cách", icon: Palette },
+  { key: "rag", label: "RAG (ảnh đã thích)", icon: Heart },
 ] as const;
 
 const TABS = [...CONTENT_TABS, ...RESOURCE_TABS];
@@ -87,19 +93,24 @@ export default function Library() {
             <button
               type="button"
               onClick={() => setTab(t.key)}
-              className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap ${
+              className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap inline-flex items-center gap-1.5 ${
                 tab === t.key ? "border-storm-600 text-storm-700" : "border-transparent text-stone-500 hover:text-stone-700"
               }`}
             >
+              <t.icon className="w-4 h-4" aria-hidden="true" />
               {t.label}
             </button>
           </Fragment>
         ))}
       </div>
       {tab === "posts" && <PostsTab />}
-      {tab === "images" && <ImagesTab />}
+      {tab === "images" && (
+        <>
+          <ImagesTab />
+          <GalleryTab />
+        </>
+      )}
       {tab === "videos" && <VideosTab />}
-      {tab === "gallery" && <GalleryTab />}
       {tab === "characters" && <CharactersTab />}
       {tab === "styles" && <StylesTab />}
       {tab === "rag" && <RagTab />}

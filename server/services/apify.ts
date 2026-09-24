@@ -25,6 +25,10 @@ export interface ApifyMetrics {
   channelKey?: string;
   channelName?: string;
   publishedAt?: string;
+  /** Ảnh đại diện của bài — thiếu thì danh sách chỉ toàn ô trống. */
+  coverUrl?: string;
+  /** Ảnh đại diện của kênh/trang. */
+  channelAvatarUrl?: string;
 }
 
 export interface EnrichOutcome {
@@ -182,18 +186,46 @@ function pick(o: any, names: string[]): number | undefined {
 //                         authorMeta.fans, createTimeISO
 //   YouTube (streamers):  viewCount, likes, commentsCount, numberOfSubscribers,
 //                         channelId, channelName, date
-export function normalize(raw: any, _platform: string): ApifyMetrics | null {
-  const url = raw?.webVideoUrl || raw?.url || raw?.postUrl || raw?.videoUrl;
+/** Lấy ảnh đầu tiên tìm được trong đống media mà actor trả về. */
+function firstImage(raw: any): string | undefined {
+  const direct =
+    raw?.thumbnailUrl ?? raw?.thumbnail ?? raw?.imageUrl ?? raw?.image ?? raw?.displayUrl ??
+    raw?.coverUrl ?? raw?.cover ?? raw?.previewImage;
+  if (typeof direct === "string" && direct.startsWith("http")) return direct;
+
+  // Facebook nhét ảnh vào mảng media với vài kiểu lồng nhau khác nhau.
+  const media = Array.isArray(raw?.media) ? raw.media : Array.isArray(raw?.images) ? raw.images : [];
+  for (const m of media) {
+    const u =
+      (typeof m === "string" ? m : null) ??
+      m?.thumbnail ?? m?.image?.uri ?? m?.photo_image?.uri ?? m?.url ?? m?.src;
+    if (typeof u === "string" && u.startsWith("http")) return u;
+  }
+  return undefined;
+}
+
+/**
+ * Đưa dữ liệu thô của từng actor về một hình dạng chung.
+ *
+ * Mỗi actor đặt tên trường một kiểu, và Facebook khác xa TikTok/YouTube: ngày
+ * đăng nằm ở `time`, tên trang ở `user.name` hoặc `pageName`, ảnh nằm trong
+ * mảng `media`. Trước đây hàm này bỏ qua hẳn nền tảng nên dữ liệu Facebook rơi
+ * hết — ngày về 0 nên hiện thành năm 1970, comment và ảnh thì trống.
+ */
+export function normalize(raw: any, platform: string): ApifyMetrics | null {
+  const url = raw?.webVideoUrl || raw?.url || raw?.postUrl || raw?.topLevelUrl || raw?.videoUrl || raw?.facebookUrl;
   if (!url) return null;
-  const author = raw?.authorMeta || raw?.author || raw?.channel || {};
+  const author = raw?.authorMeta || raw?.author || raw?.channel || raw?.user || {};
   return {
     itemKey: String(raw?.id ?? raw?.videoId ?? raw?.shortCode ?? url),
     url: String(url),
     title: raw?.title ?? raw?.text ?? raw?.caption ?? undefined,
     views: pick(raw, ["playCount", "viewCount", "views", "videoPlayCount"]),
     likes: pick(raw, ["diggCount", "likesCount", "likeCount", "likes"]),
-    comments: pick(raw, ["commentCount", "commentsCount", "comments"]),
-    shares: pick(raw, ["shareCount", "sharesCount", "shares"]),
+    // Facebook trả `comments`/`shares` là SỐ, nhưng vài actor khác trả MẢNG —
+    // pick() chỉ nhận số nên mảng bị bỏ qua, đúng ý.
+    comments: pick(raw, ["commentCount", "commentsCount", "comments", "commentsCount"]),
+    shares: pick(raw, ["shareCount", "sharesCount", "shares", "sharesCount"]),
     followerCount:
       pick(author, ["fans", "followers", "followersCount", "subscriberCount"]) ??
       pick(raw, ["numberOfSubscribers", "followersCount", "subscriberCount", "channelTotalSubscribers"]),
@@ -205,8 +237,15 @@ export function normalize(raw: any, _platform: string): ApifyMetrics | null {
       undefined,
     channelName:
       author?.nickName ?? author?.nickname ?? author?.name ?? author?.fullName ??
-      raw?.channelName ?? undefined,
-    publishedAt: raw?.createTimeISO ?? raw?.date ?? raw?.timestamp ?? raw?.uploadDate ?? undefined,
+      raw?.channelName ?? raw?.pageName ?? raw?.user?.name ?? undefined,
+    // `time` là tên Facebook dùng — thiếu nó thì ngày về 0 và hiện thành 1970.
+    publishedAt:
+      raw?.createTimeISO ?? raw?.date ?? raw?.time ?? raw?.timestamp ?? raw?.uploadDate ??
+      raw?.publishedAt ?? undefined,
+    coverUrl: firstImage(raw),
+    channelAvatarUrl:
+      author?.avatar ?? author?.profilePicUrl ?? author?.profilePic ?? raw?.user?.profilePic ??
+      raw?.pageProfilePicture ?? undefined,
   };
 }
 
