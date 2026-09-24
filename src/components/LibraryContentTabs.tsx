@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { Loader2, ExternalLink, Download, FileText, Image as ImageIcon, Film } from "lucide-react";
+import { Loader2, ExternalLink, Download, FileText, Image as ImageIcon, Film, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { listRemakes } from "../services/remakes";
 import { listVideos } from "../services/videos";
 import type { RemakeRow, VideoProject } from "../types";
 import { imageDisplayUrl } from "../services/http";
+import PostPreviewModal from "./PostPreviewModal";
 
 // Ba thể loại nội dung đã làm ra, tách riêng vì mỗi thứ dùng vào việc khác nhau:
 // bài viết đem đăng, hình ảnh đem ghép, video đem tải lên.
@@ -21,6 +22,7 @@ function formatDate(iso: string): string {
 /** Bài viết: bản remake đã xong, có chữ để đăng. */
 export function PostsTab() {
   const [rows, setRows] = useState<RemakeRow[]>([]);
+  const [preview, setPreview] = useState<RemakeRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,17 +48,20 @@ export function PostsTab() {
   }
 
   return (
+    <>
     <ul className="flex flex-col gap-2">
       {rows.map((r) => {
         const hasImage = !!r.selectedImageUrl;
         return (
-          <li key={r.id} className="ds-card">
+          <li key={r.id} className="ds-card cursor-pointer hover:border-stone-300 transition-colors" onClick={() => setPreview(r)}>
             <div className="ds-card-body flex gap-3">
+              {/* Ảnh to hơn hẳn: 64px không đọc được chữ nằm trong ảnh, mà với
+                  nhiều bài thì chữ trong ảnh mới là nội dung chính. */}
               {hasImage ? (
-                <img src={imageDisplayUrl(r.selectedImageUrl) || undefined} alt="" className="w-16 h-16 rounded-lg object-cover bg-stone-100 shrink-0" loading="lazy" />
+                <img src={imageDisplayUrl(r.selectedImageUrl) || undefined} alt="" className="w-32 h-32 rounded-lg object-cover bg-stone-100 shrink-0" loading="lazy" />
               ) : (
-                <div className="w-16 h-16 rounded-lg bg-stone-100 shrink-0 flex items-center justify-center">
-                  <FileText className="w-5 h-5 text-stone-300" aria-hidden="true" />
+                <div className="w-32 h-32 rounded-lg bg-stone-100 shrink-0 flex items-center justify-center">
+                  <FileText className="w-6 h-6 text-stone-300" aria-hidden="true" />
                 </div>
               )}
               <div className="min-w-0 flex-1">
@@ -68,7 +73,9 @@ export function PostsTab() {
                   </span>
                   <span className="text-[11px] text-stone-400">{formatDate(r.createdAt)}</span>
                 </div>
-                <p className="text-sm text-stone-700 mt-1 line-clamp-2">{r.draft}</p>
+                {/* Tách rõ caption khỏi phần còn lại — đăng lên nó là một phần riêng. */}
+                <p className="text-[10px] uppercase tracking-wide text-stone-400 mt-1.5">Caption</p>
+                <p className="text-sm text-stone-700 line-clamp-4 whitespace-pre-wrap">{r.draft}</p>
                 {r.sourceUrl && (
                   <a
                     href={r.sourceUrl}
@@ -80,20 +87,21 @@ export function PostsTab() {
                   </a>
                 )}
               </div>
-              <Link to={`/remakes?id=${r.id}`} className="ds-btn ds-btn-ghost ds-btn-sm shrink-0 self-start">
-                Mở
-              </Link>
+              <span className="ds-btn ds-btn-ghost ds-btn-sm shrink-0 self-start">Xem</span>
             </div>
           </li>
         );
       })}
     </ul>
+    {preview && <PostPreviewModal row={preview} onClose={() => setPreview(null)} />}
+    </>
   );
 }
 
 /** Hình ảnh: mọi ảnh đã vẽ cho các bản remake. */
 export function ImagesTab() {
   const [items, setItems] = useState<{ url: string; prompt: string; remakeId: string; createdAt: string }[]>([]);
+  const [zoom, setZoom] = useState<{ url: string; prompt: string; remakeId: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -130,10 +138,13 @@ export function ImagesTab() {
   }
 
   return (
+    <>
     <ul className="grid grid-cols-2 md:grid-cols-4 gap-3">
       {items.map((img) => (
         <li key={img.url} className="border border-stone-200 rounded-xl overflow-hidden">
-          <img src={imageDisplayUrl(img.url) || undefined} alt={img.prompt.slice(0, 60)} className="w-full aspect-square object-cover bg-stone-100" loading="lazy" />
+          <button type="button" onClick={() => setZoom(img)} className="block w-full" title="Bấm để xem lớn">
+            <img src={imageDisplayUrl(img.url) || undefined} alt={img.prompt.slice(0, 60)} className="w-full aspect-square object-cover bg-stone-100" loading="lazy" />
+          </button>
           <div className="p-2">
             <p className="text-[11px] text-stone-500 line-clamp-2">{img.prompt}</p>
             <div className="flex items-center justify-between gap-2 mt-1.5">
@@ -148,6 +159,38 @@ export function ImagesTab() {
         </li>
       ))}
     </ul>
+
+    {/* Xem lớn: ảnh 1/4 màn hình không đọc được chữ nằm trong ảnh. */}
+    {zoom && (
+      <div
+        className="ds-modal-overlay open"
+        onClick={() => setZoom(null)}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Xem ảnh"
+      >
+        <div className="ds-modal !max-w-3xl" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-stone-200">
+            <p className="text-xs text-stone-500 line-clamp-2 min-w-0">{zoom.prompt}</p>
+            <button type="button" onClick={() => setZoom(null)} className="ds-btn ds-btn-ghost ds-btn-sm shrink-0" aria-label="Đóng">
+              <X className="w-4 h-4" aria-hidden="true" />
+            </button>
+          </div>
+          <div className="ds-modal-body max-h-[75vh] overflow-y-auto">
+            <img src={imageDisplayUrl(zoom.url) || undefined} alt="" className="w-full rounded-xl bg-stone-50" />
+            <div className="flex items-center gap-2 mt-3">
+              <Link to={`/remakes?id=${zoom.remakeId}`} className="ds-btn ds-btn-primary ds-btn-sm">
+                Mở bài dùng ảnh này
+              </Link>
+              <a href={imageDisplayUrl(zoom.url) || zoom.url} download className="ds-btn ds-btn-ghost ds-btn-sm">
+                <Download className="w-3.5 h-3.5" aria-hidden="true" /> Tải về
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 
