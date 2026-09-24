@@ -546,6 +546,15 @@ export interface DeconstructedStructure {
 export type DeconstructionStatus = "pending" | "downloading" | "analyzing" | "ready" | "error";
 export type DeconstructAnalysisMode = "video" | "transcript";
 
+/** Mirror server/db/schema.ts (ImageReadingRecord). */
+export interface ImageReadingRecord {
+  textInImage: string;
+  description: string;
+  technique: string;
+  imageKind: string;
+  carriesMainContent: boolean;
+}
+
 /** Mirror server/db/schema.ts (AudienceInsight). */
 export interface AudienceInsight {
   sampleSize: number;
@@ -573,6 +582,8 @@ export interface DeconstructionRow {
   contentKind?: string | null;
   /** Người đọc bài gốc quan tâm gì — rút từ bình luận. */
   audienceInsight?: AudienceInsight | null;
+  /** Nội dung đọc được từ ảnh của bài. */
+  imageReading?: ImageReadingRecord | null;
   commentsFetchedAt?: string | null;
   thumbnailUrl?: string | null;
   status: DeconstructionStatus;

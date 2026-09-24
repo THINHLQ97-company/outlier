@@ -582,6 +582,15 @@ export interface AudienceInsight {
   warning?: string;
 }
 
+/** Mirror server/services/image-read.ts (ImageReading). */
+export interface ImageReadingRecord {
+  textInImage: string;
+  description: string;
+  technique: string;
+  imageKind: string;
+  carriesMainContent: boolean;
+}
+
 export const deconstructions = pgTable("deconstructions", {
   id: uuid("id").primaryKey().defaultRandom(),
   owner: text("owner").notNull(),
@@ -615,6 +624,15 @@ export const deconstructions = pgTable("deconstructions", {
 
   transcript: text("transcript"),                       // lời thoại (nếu lấy được)
   structure: jsonb("structure").$type<DeconstructedStructure | null>(),
+
+  /**
+   * Nội dung đọc được TỪ ẢNH của bài.
+   *
+   * Với fanpage giải trí, phần lớn nội dung nằm ở ảnh chứ không ở caption —
+   * meme, ảnh chat, infographic. Bóc cấu trúc mà bỏ qua ảnh là bỏ sót đúng
+   * phần hay nhất.
+   */
+  imageReading: jsonb("image_reading").$type<ImageReadingRecord | null>(),
 
   /** Bình luận đã lấy về, giữ nguyên văn để đối chiếu với kết luận. */
   commentsJson: jsonb("comments_json").$type<{ text: string; likes?: number; author?: string }[] | null>(),

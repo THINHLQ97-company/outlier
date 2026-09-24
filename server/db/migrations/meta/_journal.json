@@ -211,6 +211,13 @@
       "when": 1790232078995,
       "tag": "0029_mean_stryfe",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1790233412291,
+      "tag": "0030_hot_black_crow",
+      "breakpoints": true
     }
   ]
 }

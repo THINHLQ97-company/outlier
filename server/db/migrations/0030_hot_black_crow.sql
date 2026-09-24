@@ -1,0 +1,1 @@
+ALTER TABLE "deconstructions" ADD COLUMN "image_reading" jsonb;

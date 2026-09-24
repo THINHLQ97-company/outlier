@@ -184,9 +184,15 @@ export function registerRemakeRoutes(app: Express) {
       const { insightToText } = await import("../services/audience-insight");
       const audienceText = decon.audienceInsight ? insightToText(decon.audienceInsight as any) : undefined;
 
+      // Chữ trong ảnh đi kèm cấu trúc: bài caption một dòng mà ảnh đầy chữ thì
+      // phần đáng học nằm hết ở ảnh.
+      const { imageReadingToText } = await import("../services/image-read");
+      const imageText = decon.imageReading ? imageReadingToText(decon.imageReading as any) : undefined;
+
       void runRemakeInBackground(
         row.id, toBrandContext(brand), decon.structure as DeconstructedStructure,
-        format, decon.transcript, undefined, undefined, audienceText || undefined,
+        format, decon.transcript, undefined, undefined,
+        [audienceText, imageText].filter(Boolean).join("\n\n") || undefined,
       );
     } catch (e: any) {
       console.error("remake create:", e?.message || e);

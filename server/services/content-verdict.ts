@@ -12,12 +12,16 @@
 //  2. Người đọc phản ứng thật — bình luận và chia sẻ, không chỉ thả tim. Thả tim
 //     gần như miễn phí; gõ một câu bình luận thì tốn công.
 //  3. Còn mới. Công thức của bài ba tháng trước có thể đã hết thời.
-//  4. Có đủ chữ để học. Bài chỉ có một tấm ảnh thì không bóc ra được cách triển
-//     khai nào.
+//  4. Có đủ nội dung để học — tính CẢ CHỮ TRONG ẢNH. Với fanpage giải trí, phần
+//     lớn nội dung nằm ở ảnh (meme, ảnh chat, infographic) còn caption chỉ là
+//     một dòng dẫn. Đo bằng độ dài caption là đo nhầm chỗ.
 import type { ItemMetrics } from "./outperform";
 import { engagementDepthScore, MIN_SAMPLE_FOR_BASELINE } from "./outperform";
 
-export type VerdictLevel = "nen_lam" | "can_nhac" | "bo_qua";
+// Cố ý KHÔNG có mức "bỏ qua": máy chấm sai thì một cái nhãn phủ định sẽ khiến
+// người dùng lướt qua bài đáng làm. Bài chưa đủ dấu hiệu thì chỉ là "chưa nổi
+// bật" — vẫn nằm nguyên trong danh sách, chỉ không được đẩy lên đầu.
+export type VerdictLevel = "nen_lam" | "can_nhac" | "chua_noi_bat";
 
 export interface ContentVerdict {
   level: VerdictLevel;
@@ -32,17 +36,26 @@ export interface ContentVerdict {
 
 const LABEL: Record<VerdictLevel, string> = {
   nen_lam: "Nên remake",
-  can_nhac: "Cân nhắc",
-  bo_qua: "Bỏ qua",
+  can_nhac: "Cân nhắc remake",
+  chua_noi_bat: "Chưa nổi bật",
 };
+
+/** Bài nào đáng đẩy lên đầu trang. */
+export function isRecommended(level: VerdictLevel): boolean {
+  return level === "nen_lam" || level === "can_nhac";
+}
 
 export interface VerdictInput extends ItemMetrics {
   /** Điểm vượt trội đã tính (0..1). */
   outperformScore?: number | null;
   /** Số bài dùng làm mốc cho kênh này. */
   baselineSample?: number | null;
-  /** Độ dài phần chữ của bài. */
+  /** Độ dài caption. */
   textLength?: number | null;
+  /** Độ dài chữ ĐỌC ĐƯỢC TỪ ẢNH — với nhiều bài, đây mới là phần chính. */
+  imageTextLength?: number | null;
+  /** Ảnh có phải nơi chứa nội dung chính không (từ image-read). */
+  imageCarriesContent?: boolean;
   confidence?: "low" | "medium" | "high";
 }
 
@@ -98,18 +111,26 @@ export function judgeContent(input: VerdictInput): ContentVerdict {
         : `Đăng ${Math.round(age)} ngày trước — công thức có thể đã hết thời`,
   });
 
-  // --- 4. Có đủ chữ để học ---
-  const len = input.textLength ?? null;
-  const enoughText = len === null ? true : len >= 80;
+  // --- 4. Có đủ nội dung để học (chữ + chữ trong ảnh) ---
+  const capLen = input.textLength ?? null;
+  const imgLen = input.imageTextLength ?? null;
+  const known = capLen !== null || imgLen !== null;
+  const total = (capLen || 0) + (imgLen || 0);
+  // Ảnh chứa nội dung chính thì coi như đủ, kể cả khi chưa đọc được chữ: bóc
+  // cấu trúc sẽ đọc ảnh, lúc đó mới biết.
+  const enough = !known ? true : total >= 80 || !!input.imageCarriesContent;
   signals.push({
-    name: "Có đủ chữ để bóc cấu trúc",
-    passed: enoughText,
-    detail:
-      len === null
-        ? "Chưa biết độ dài — sẽ rõ sau khi bóc"
-        : enoughText
-        ? `${len} ký tự`
-        : `Chỉ ${len} ký tự — quá ngắn, khó rút ra cách triển khai`,
+    name: "Có đủ nội dung để bóc cấu trúc",
+    passed: enough,
+    detail: !known
+      ? "Chưa biết — sẽ rõ sau khi bóc (bóc cấu trúc có đọc cả chữ trong ảnh)"
+      : imgLen
+      ? `${capLen || 0} ký tự caption + ${imgLen} ký tự trong ảnh`
+      : input.imageCarriesContent
+      ? `Caption ngắn (${capLen || 0} ký tự) nhưng nội dung chính nằm trong ảnh`
+      : enough
+      ? `${total} ký tự`
+      : `Chỉ ${total} ký tự và ảnh không mang nội dung — khó rút ra cách triển khai`,
   });
 
   const passed = signals.filter((s) => s.passed).length;
@@ -127,11 +148,13 @@ export function judgeContent(input: VerdictInput): ContentVerdict {
       ? "Bài bật hơn mặt bằng nhưng người đọc chủ yếu chỉ thả tim — có thể chỉ thắng nhờ hình ảnh hoặc thời điểm."
       : "Người đọc phản ứng tốt nhưng bài không vượt hẳn mặt bằng của kênh — xem kỹ trước khi làm theo.";
   } else {
-    level = "bo_qua";
+    level = "chua_noi_bat";
+    // Nói theo hướng "chưa thấy", không phải "không có": số liệu có thể thiếu,
+    // và bài vẫn nằm đó để người dùng tự xem nếu muốn.
     reason =
       passed === 0
-        ? "Chưa có dấu hiệu nào cho thấy bài này hiệu quả."
-        : "Chưa đủ dấu hiệu cho thấy bài này đáng học — có bài khác xứng đáng hơn.";
+        ? "Chưa thấy dấu hiệu nổi bật — có thể do thiếu số liệu, xem trực tiếp nếu bạn thấy đáng."
+        : "Chưa đủ dấu hiệu để đẩy lên đầu, nhưng vẫn xem được như mọi bài khác.";
   }
 
   // Mốc kênh chưa đủ tin thì hạ kết luận xuống, không khẳng định chắc nịch dựa
@@ -142,7 +165,7 @@ export function judgeContent(input: VerdictInput): ContentVerdict {
   }
 
   const whatToLearn =
-    level === "bo_qua"
+    level === "chua_noi_bat"
       ? undefined
       : reacts
       ? "Đọc bình luận để biết người ta bàn gì — đó mới là thứ nên bám khi viết lại."

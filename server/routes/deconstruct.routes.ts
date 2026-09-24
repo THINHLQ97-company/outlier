@@ -68,8 +68,25 @@ export async function runDeconstructInBackground(id: string, url: string, allowP
       let structure: any = null;
       let dropped: string[] = [];
       let warn = out.warning;
-      if (post.text && post.text.trim().length > 40) {
-        const viaText = await deconstructFromTranscript(post.text, {
+
+      // Đọc ảnh TRƯỚC khi bóc cấu trúc: với nhiều bài, chữ nằm trong ảnh mới là
+      // nội dung chính còn caption chỉ là một dòng dẫn. Bóc mà bỏ qua ảnh là bỏ
+      // sót đúng phần hay nhất. Miễn phí (Gemini), nên luôn làm khi có ảnh.
+      let imageReading = null;
+      if (post.thumbnailUrl) {
+        const { readImage } = await import("../services/image-read");
+        imageReading = await readImage(post.thumbnailUrl);
+      }
+
+      // Gộp caption với chữ trong ảnh rồi mới bóc — nhờ vậy bài caption một dòng
+      // mà ảnh đầy chữ vẫn ra được cách triển khai.
+      const { imageReadingToText } = await import("../services/image-read");
+      const combined = [post.text || "", imageReading ? imageReadingToText(imageReading) : ""]
+        .filter((x) => x.trim())
+        .join("\n\n");
+
+      if (combined.trim().length > 40) {
+        const viaText = await deconstructFromTranscript(combined, {
           title: post.title, durationSec: post.durationSec,
         });
         structure = viaText.structure;
@@ -79,12 +96,18 @@ export async function runDeconstructInBackground(id: string, url: string, allowP
       const hasContent = !!(structure && (structure.hook3s || structure.formula || (structure.retentionBeats || []).length));
 
       await getDb().update(deconstructions).set({
-        status: hasContent || post.text ? "ready" : "error",
+        status: hasContent || post.text || imageReading ? "ready" : "error",
         needsPaid: false,
-        title: post.text ? post.text.slice(0, 120) : null,
+        title:
+          post.text?.trim()
+            ? post.text.slice(0, 120)
+            : imageReading?.textInImage
+            ? imageReading.textInImage.slice(0, 120)
+            : null,
         platform: platform,
         contentKind: post.kind,
         thumbnailUrl: post.thumbnailUrl ?? null,
+        imageReading,
         bodyText: post.text ?? null,
         views: post.views ?? null, likes: post.likes ?? null,
         comments: post.comments ?? null, shares: post.shares ?? null,

@@ -32,6 +32,7 @@ import {
 import ConfirmDialog from "../components/ConfirmDialog";
 import type { DeconstructionRow, DeconstructedStructure, RetentionBeat, DeconstructAnalysisMode } from "../types";
 import AudienceInsightPanel from "../components/AudienceInsightPanel";
+import ImageReadingPanel from "../components/ImageReadingPanel";
 
 // Trang "Bóc cấu trúc" — vì sao một bài giữ được người xem (docs/PRD.md §4
 // J3). LINH HỒN màn này: trình bày theo NHỊP THỜI GIAN (không phải bảng phẳng)
@@ -745,6 +746,11 @@ function DeconstructDetailPanel({
                 <p className="text-sm text-stone-600 leading-relaxed whitespace-pre-wrap">{row.structure.notes}</p>
               </div>
             </div>
+          )}
+
+          {/* Ảnh đứng trước bình luận: với nhiều bài, đây là nội dung chính. */}
+          {row.imageReading && (
+            <ImageReadingPanel reading={row.imageReading} thumbnailUrl={row.thumbnailUrl} />
           )}
 
           <AudienceInsightPanel
