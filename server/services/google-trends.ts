@@ -10,9 +10,15 @@
 // bản thân nó không cho biết người ta đang nói gì về chuyện đó — muốn biết thì
 // phải đọc tin bên dưới, hoặc hỏi Claude.
 const RSS_URL = "https://trends.google.com/trending/rss";
-// Đường cũ, giữ làm dự phòng: Google đã đổi sang đường trên nhưng đường này vẫn
-// sống, và khi một bên hỏng thì bên kia thường vẫn chạy.
-const RSS_URL_FALLBACK = "https://trends.google.com/trends/trendingsearches/daily/rss";
+
+// GIỚI HẠN CỦA NGUỒN NÀY, đã đo ngày 2026-09-24:
+//   - Chỉ trả về 10 từ khoá, không hơn. Xin 20 hay 50 cũng vẫn 10.
+//   - Lượng tìm kiếm là ước lượng thận trọng của Google cho từ khoá ĐANG nổi
+//     lên trong ngày, không phải tổng lượt tìm. Với Việt Nam thường 200+ đến
+//     vài nghìn, hiếm khi lên chục nghìn.
+//   - Hai đường cũ của Google đều đã chết: /trends/trendingsearches/daily/rss
+//     và /trends/api/dailytrends đều trả 404. Không còn đường dự phòng nào.
+const MAX_ITEMS_FROM_GOOGLE = 10;
 
 const TIMEOUT_MS = 15_000;
 
@@ -94,22 +100,44 @@ async function fetchRss(url: string, geo: string): Promise<string> {
 }
 
 /**
+ * Đổi lượt tìm kiếm dạng chữ của Google thành số để so sánh.
+ * Google trả "200+", "1N+", "20K+", "1M+" — và bản tiếng Việt dùng "N" cho nghìn.
+ */
+export function parseTraffic(s: string | undefined): number {
+  if (!s) return 0;
+  const m = /([\d.,]+)\s*([KMBN])?/i.exec(s.replace(/\s/g, ""));
+  if (!m) return 0;
+
+  const suffix = (m[2] || "").toUpperCase();
+  // Dấu phẩy đổi nghĩa theo ngữ cảnh: "1,5K" là một phẩy năm nghìn (phẩy thập
+  // phân, kiểu Việt Nam), còn "1,500" là một nghìn năm trăm (phẩy ngăn nghìn).
+  // Có hậu tố nhân thì phẩy chắc chắn là thập phân.
+  const numText = suffix ? m[1].replace(/,/g, ".") : m[1].replace(/[,.]/g, "");
+  const n = Number(numText);
+  if (!Number.isFinite(n)) return 0;
+
+  const mult: Record<string, number> = { K: 1e3, N: 1e3, M: 1e6, B: 1e9 };
+  return n * (mult[suffix] || 1);
+}
+
+/**
  * Lấy xu hướng tìm kiếm trong ngày.
  * `geo` theo mã quốc gia hai chữ, mặc định VN.
+ *
+ * Sắp theo LƯỢNG TÌM KIẾM giảm dần trước khi cắt: Google trả danh sách theo thời
+ * điểm từ khoá nổi lên, không theo độ lớn — lấy thẳng 20 mục đầu thì toàn từ
+ * khoá nhỏ, còn trend thật sự lớn nằm phía dưới bị cắt mất.
  */
 export async function fetchGoogleTrends(geo = "VN", limit = 20): Promise<GoogleTrendItem[]> {
   let xml: string;
   try {
     xml = await fetchRss(RSS_URL, geo);
   } catch (e: any) {
-    // Thử đường cũ trước khi chịu thua — hai đường hiếm khi hỏng cùng lúc.
-    try {
-      xml = await fetchRss(RSS_URL_FALLBACK, geo);
-    } catch {
-      throw new Error(`Không đọc được Google Trends: ${e?.message || e}`);
-    }
+    throw new Error(`Không đọc được Google Trends: ${e?.message || e}`);
   }
-  return parseTrendsRss(xml).slice(0, Math.max(1, limit));
+  const items = parseTrendsRss(xml);
+  items.sort((a, b) => parseTraffic(b.approxTraffic) - parseTraffic(a.approxTraffic));
+  return items.slice(0, Math.max(1, limit));
 }
 
 /**

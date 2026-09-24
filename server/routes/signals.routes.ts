@@ -225,7 +225,7 @@ export function registerSignalRoutes(app: Express) {
         inserted,
         upgraded,
         skipped,
-        note: "Đây là thứ người ta đang TÌM KIẾM, chưa phải thứ đang lan trên mạng xã hội. Đọc tin kèm theo để biết chuyện gì đang xảy ra rồi mới quyết có đu hay không.",
+        note: "Google chỉ công bố 10 từ khoá đang nổi mỗi lần, kèm ước lượng thận trọng (thường vài trăm đến vài nghìn) — con số nhỏ là bình thường, không phải lỗi. Đây là thứ người ta đang TÌM KIẾM, chưa phải thứ đang lan trên mạng xã hội: đọc tin kèm theo rồi mới quyết có đu hay không.",
       });
     } catch (e: any) {
       console.warn("google trends:", e?.message || e);

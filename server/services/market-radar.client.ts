@@ -47,7 +47,13 @@ export async function fetchMarketRadarSignals(): Promise<{ signals: RawSignal[];
     const warning =
       "[market-radar] MARKET_RADAR_MCP_URL/MARKET_RADAR_MCP_TOKEN chưa cấu hình — dùng demo data.";
     console.warn(warning);
-    return { signals: demoArticles(), warning };
+    // KHÔNG trả dữ liệu giả khi chưa cấu hình.
+    //
+    // Trước đây chỗ này trả về mấy bài demo cho "có gì đó mà xem". Nhưng chúng
+    // lẫn vào danh sách thật, người dùng xoá đi rồi bấm quét lại là chúng quay
+    // lại — và tệ hơn, chúng khiến công cụ trông như đang quét được thứ gì đó
+    // trong khi không. Trả rỗng kèm lời giải thích thì trung thực hơn.
+    return { signals: [], warning };
   }
 
   try {

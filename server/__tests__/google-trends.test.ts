@@ -1,6 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { parseTrendsRss, trendToSummary, trendToMeta } from "../services/google-trends";
+import { parseTrendsRss, trendToSummary, trendToMeta, parseTraffic } from "../services/google-trends";
 
 // Mẫu rút gọn từ phản hồi thật của trends.google.com/trending/rss?geo=VN
 const SAMPLE = `<?xml version="1.0" encoding="UTF-8"?>
@@ -74,6 +74,25 @@ describe("google-trends", () => {
     assert.equal(meta.news.length, 2);
     assert.equal(meta.news[0].url, "https://bao.vn/bai-1");
     assert.ok(meta.news.length <= 5);
+  });
+
+  test("đọc được lượt tìm kiếm để sắp thứ tự", () => {
+    // Google trả dạng chữ, và bản tiếng Việt dùng "N" cho nghìn.
+    assert.equal(parseTraffic("200+"), 200);
+    assert.equal(parseTraffic("2000+"), 2000);
+    assert.equal(parseTraffic("20K+"), 20000);
+    assert.equal(parseTraffic("1N+"), 1000);
+    assert.equal(parseTraffic("1M+"), 1000000);
+    // Dấu phẩy đổi nghĩa theo ngữ cảnh: có hậu tố nhân thì là thập phân,
+    // không có thì là dấu ngăn nghìn.
+    assert.equal(parseTraffic("1,5K+"), 1500);
+    assert.equal(parseTraffic("1,500+"), 1500);
+  });
+
+  test("thiếu hoặc không đọc được lượt tìm thì coi như 0, không ném lỗi", () => {
+    assert.equal(parseTraffic(undefined), 0);
+    assert.equal(parseTraffic(""), 0);
+    assert.equal(parseTraffic("không rõ"), 0);
   });
 
   test("XML rỗng hoặc hỏng trả về mảng rỗng, không ném lỗi", () => {

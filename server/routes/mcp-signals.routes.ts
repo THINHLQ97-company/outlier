@@ -1431,7 +1431,7 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
       upgraded,
       skipped,
       trends: items.map((t) => ({ title: t.title, traffic: t.approxTraffic, news: t.news.slice(0, 2) })),
-      note: "Đây là thứ người ta đang TÌM KIẾM, chưa phải thứ đang lan trên mạng xã hội. Muốn bắt trend thì đọc tin kèm theo để biết chuyện gì đang xảy ra, rồi dùng trend_draft.",
+      note: "Google chỉ công bố 10 từ khoá đang nổi mỗi lần, kèm ước lượng thận trọng — con số nhỏ là bình thường. Đây là thứ người ta đang TÌM KIẾM, chưa phải thứ đang lan trên mạng xã hội: đọc tin kèm theo rồi dùng trend_draft.",
     };
   }
 
