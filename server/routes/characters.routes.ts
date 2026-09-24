@@ -157,6 +157,21 @@ export function registerCharacterRoutes(app: Express) {
       if (!existing) return res.status(404).json({ error: "Không tìm thấy nhân vật." });
       await db.delete(characters).where(eq(characters.id, id));
       await deleteInternalImageIfAny(existing.referenceImageUrl);
+
+      // Gỡ khỏi mọi trang đã gán. Không làm thì id mồ côi nằm lại trong
+      // brand_fanpages.characterIds, khiến số đếm luôn cao hơn số nhân vật
+      // thật sự hiện ra.
+      const { brandFanpages } = await import("../db/schema");
+      const pages = await db.select().from(brandFanpages);
+      for (const p of pages) {
+        const ids = (p.characterIds || []) as string[];
+        if (!ids.includes(id)) continue;
+        await db
+          .update(brandFanpages)
+          .set({ characterIds: ids.filter((x) => x !== id), updatedAt: new Date() })
+          .where(eq(brandFanpages.id, p.id));
+      }
+
       res.json({ ok: true });
     } catch (e: any) {
       console.error("delete character:", e?.message || e);

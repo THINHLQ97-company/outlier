@@ -5,7 +5,7 @@ import { listSignals, syncSignals, createManualSignal, scanGoogleTrends, deleteS
 import type { Signal } from "../types";
 import { AXES, type AxisKey } from "../../shared/engine-data";
 import GoogleTrendsMark from "../components/GoogleTrendsMark";
-import TrendNewsList from "../components/TrendNewsList";
+import TrendNewsList, { parseLegacySummary } from "../components/TrendNewsList";
 
 const SOURCE_LABEL: Record<Signal["source"], string> = {
   market_radar: "Market Radar",
@@ -233,11 +233,16 @@ export default function SignalsQueue() {
               <h3 className="text-sm font-semibold text-stone-800">{s.title}</h3>
               {/* Nguồn có dữ liệu cấu trúc thì dựng riêng; còn lại vẫn là một
                   đoạn chữ như cũ. */}
-              {s.sourceMetaJson ? (
-                <TrendNewsList meta={s.sourceMetaJson} />
-              ) : (
-                <p className="text-sm text-stone-500 mt-0.5">{s.rawSummary}</p>
-              )}
+              {(() => {
+                // Mục cũ chưa có dữ liệu cấu trúc thì đọc ngược từ phần tóm tắt,
+                // để không phải chờ quét lại mới thấy giao diện mới.
+                const meta = s.sourceMetaJson || (s.source === "google_trends" ? parseLegacySummary(s.rawSummary) : null);
+                return meta ? (
+                  <TrendNewsList meta={meta} />
+                ) : (
+                  <p className="text-sm text-stone-500 mt-0.5">{s.rawSummary}</p>
+                );
+              })()}
 
               {/* Lý do chấm điểm (Claude) */}
               {s.scoreJson?.reasoning && (

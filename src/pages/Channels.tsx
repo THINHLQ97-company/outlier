@@ -465,10 +465,13 @@ function AddChannelForm({
               type="url"
               value={channelUrl}
               onChange={(e) => setChannelUrl(e.target.value)}
-              placeholder="https://youtube.com/@... hoặc tiktok.com/@..."
+              placeholder="https://facebook.com/tenpage, youtube.com/@..., tiktok.com/@..."
               className="ds-input"
             />
-            <p className="ds-hint">Hỗ trợ YouTube, TikTok, Instagram — hệ thống tự nhận nền tảng từ link, không cần chọn tay.</p>
+            <p className="ds-hint">
+              Hỗ trợ Facebook, YouTube, TikTok, Instagram — hệ thống tự nhận nền tảng từ link, không cần chọn tay.
+              Quét Facebook, TikTok và Instagram đều <strong>tốn tiền</strong>; công cụ sẽ báo giá trước khi chạy.
+            </p>
           </div>
 
           <div>

@@ -70,6 +70,14 @@ export default function BrandFanpages({
       .catch(() => setAllCharacters([]));
   }, []);
 
+  /** Số nhân vật đã gán mà vẫn còn trong thư viện. */
+  function liveCount(fp: BrandFanpage): number {
+    const ids = fp.characterIds || [];
+    if (allCharacters.length === 0) return ids.length;
+    const live = new Set(allCharacters.map((c) => c.id));
+    return ids.filter((id) => live.has(id)).length;
+  }
+
   async function toggleCharacter(fp: BrandFanpage, characterId: string) {
     const current = fp.characterIds || [];
     const next = current.includes(characterId)
@@ -296,7 +304,9 @@ export default function BrandFanpages({
                           title="Gán nhân vật đại diện cho trang này"
                         >
                           <Users className="w-3.5 h-3.5" aria-hidden="true" />
-                          Nhân vật{(fp.characterIds?.length || 0) > 0 ? ` (${fp.characterIds!.length})` : ""}
+                          {/* Đếm theo nhân vật CÒN TỒN TẠI, không theo độ dài mảng id:
+                              nhân vật đã xoá để lại id mồ côi làm số đếm sai. */}
+                          Nhân vật{liveCount(fp) > 0 ? ` (${liveCount(fp)})` : ""}
                         </button>
                         <button type="button"
                           onClick={() => handleDelete(fp)}

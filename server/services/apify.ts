@@ -92,6 +92,8 @@ export function actorFor(platform: string): string | null {
     tiktok: process.env.APIFY_ACTOR_TIKTOK || "clockworks~tiktok-scraper",
     instagram: process.env.APIFY_ACTOR_INSTAGRAM || "apify~instagram-scraper",
     youtube: process.env.APIFY_ACTOR_YOUTUBE || "streamers~youtube-scraper",
+    // Cùng actor với việc lấy bài lẻ — nó nhận cả URL trang lẫn URL bài.
+    facebook: process.env.APIFY_ACTOR_FB_POST || "apify~facebook-posts-scraper",
   };
   return map[platform] || null; // Douyin không qua Apify — dùng f2 miễn phí
 }
@@ -275,7 +277,14 @@ export async function enrichMetrics(
   let raws: any[] = [];
   try {
     // Quét cả kênh và tra cứu bài lẻ dùng input khác nhau.
-    const input = opts.asProfile
+    const input = platform === "facebook"
+      ? {
+          // Actor Facebook nhận thẳng URL trang, và giới hạn tên là resultsLimit
+          // — dùng nhầm tên trường thì nó bỏ qua và trả về bao nhiêu tuỳ nó.
+          startUrls: allowed.map((url) => ({ url })),
+          resultsLimit: opts.asProfile ? Math.min(opts.limit ?? 20, limit) : allowed.length,
+        }
+      : opts.asProfile
       ? {
           // Actor nhận tên tài khoản, không phải URL đầy đủ.
           profiles: allowed.map((u) => u.replace(/\/+$/, "").split("/").pop()!.replace(/^@/, "")),

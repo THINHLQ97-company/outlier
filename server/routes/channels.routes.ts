@@ -16,7 +16,7 @@ import { isActiveAdmin } from "./studio.routes";
 import { rescoreRadarJob } from "./radar.routes";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const PLATFORMS = ["youtube", "tiktok", "douyin", "instagram"];
+const PLATFORMS = ["facebook", "youtube", "tiktok", "douyin", "instagram"];
 const DEFAULT_LIMIT = 20;
 
 /** Câu mô tả chi phí cho người dùng dễ hình dung. */
@@ -39,6 +39,7 @@ export function guessPlatform(url: string): string | null {
   if (u.includes("tiktok.com")) return "tiktok";
   if (u.includes("douyin.com")) return "douyin";
   if (u.includes("instagram.com")) return "instagram";
+  if (u.includes("facebook.com") || u.includes("fb.com")) return "facebook";
   return null;
 }
 
@@ -193,11 +194,11 @@ export function registerChannelRoutes(app: Express) {
 
     // TikTok và Instagram không quét kênh được bằng công cụ miễn phí — phải qua
     // dịch vụ có phí, nên người dùng phải chủ động đồng ý trước.
-    const needsPaid = platform === "tiktok" || platform === "instagram";
+    const needsPaid = platform === "tiktok" || platform === "instagram" || platform === "facebook";
     const useApify = needsPaid ? req.body?.useApify === true : false;
     if (needsPaid && !useApify) {
       return res.status(400).json({
-        error: `Kênh ${platform === "tiktok" ? "TikTok" : "Instagram"} không lấy được bằng công cụ miễn phí. ` +
+        error: `Kênh ${platform === "tiktok" ? "TikTok" : platform === "facebook" ? "Facebook" : "Instagram"} không lấy được bằng công cụ miễn phí. ` +
                `Cần dùng dịch vụ có phí — mỗi lần làm mới ${limitCostHint(20)}.`,
         needsPaid: true,
         estimatedCostUsd: Number(estimateCostUsd(20).toFixed(4)),

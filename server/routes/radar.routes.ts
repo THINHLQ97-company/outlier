@@ -268,9 +268,45 @@ export function registerRadarRoutes(app: Express) {
       if (job.owner !== username && !(await isActiveAdmin(username))) {
         return res.status(403).json({ error: "Không có quyền xem phiên quét này." });
       }
-      const items = await getDb().select().from(radarItems).where(eq(radarItems.jobId, id))
+      const rows = await getDb().select().from(radarItems).where(eq(radarItems.jobId, id))
         .orderBy(desc(radarItems.outperformScore)).limit(200);
-      res.json({ ...job, items, minSampleForBaseline: MIN_SAMPLE_FOR_BASELINE });
+
+      // Nhận định tính lúc đọc chứ không lưu: quy tắc còn đang chỉnh, lưu lại
+      // thì kết quả cũ mang quy tắc cũ mà không ai biết.
+      const { judgeContent, isRecommended } = await import("../services/content-verdict");
+      const baselines = await getDb().select().from(channelBaselines);
+      const sampleByChannel = new Map(baselines.map((b) => [b.channelKey, b.sampleSize ?? 0]));
+
+      const items = rows.map((r) => {
+        const verdict = judgeContent({
+          outperformScore: r.outperformScore != null ? r.outperformScore / 100 : null,
+          baselineSample: sampleByChannel.get(r.channelKey) ?? 0,
+          likes: r.likes,
+          comments: r.comments,
+          shares: r.shares,
+          views: r.views,
+          publishedAt: r.publishedAt,
+          textLength: r.title?.length ?? null,
+          confidence: (r.confidence as any) ?? undefined,
+        });
+        return { ...r, verdict };
+      });
+
+      // Bài đáng chú ý lên đầu, còn lại giữ nguyên thứ tự theo điểm — không bài
+      // nào bị loại khỏi danh sách.
+      items.sort((a, b) => {
+        const ra = isRecommended(a.verdict.level) ? 1 : 0;
+        const rb = isRecommended(b.verdict.level) ? 1 : 0;
+        if (ra !== rb) return rb - ra;
+        return (b.outperformScore ?? 0) - (a.outperformScore ?? 0);
+      });
+
+      res.json({
+        ...job,
+        items,
+        minSampleForBaseline: MIN_SAMPLE_FOR_BASELINE,
+        recommendedCount: items.filter((i) => isRecommended(i.verdict.level)).length,
+      });
     } catch (e: any) {
       console.error("radar get:", e?.message || e);
       res.status(500).json({ error: "Không tải được kết quả." });

@@ -17,6 +17,31 @@ function hostOf(url: string): string {
   }
 }
 
+/**
+ * Đọc ngược phần tóm tắt kiểu cũ.
+ *
+ * Các mục quét trước khi có dữ liệu cấu trúc vẫn nằm đó với tất cả nhồi trong
+ * một chuỗi. Bắt người dùng bấm quét lại mới thấy giao diện mới là vô lý — nên
+ * đọc ngược ngay lúc hiển thị. Dạng cũ:
+ *   "Khoảng 200+ lượt tìm kiếm. Tin liên quan: - 'Tiêu đề' (Báo): https://… - …"
+ */
+export function parseLegacySummary(raw: string): SignalSourceMeta | null {
+  if (!raw || !/lượt tìm kiếm/i.test(raw)) return null;
+
+  const traffic = /Khoảng\s+([^\s.]+)\s+lượt tìm kiếm/i.exec(raw)?.[1];
+  const news: { title: string; url: string; source?: string }[] = [];
+
+  // Mỗi tin: "- <tiêu đề> (<nguồn>): <url>", các tin nối nhau bằng " - ".
+  for (const m of raw.matchAll(/-\s*'?([^']*?)'?\s*\(([^)]+)\):\s*(https?:\/\/\S+?)(?=\s+-\s|$)/g)) {
+    const title = m[1].trim();
+    const url = m[3].replace(/[.,;]+$/, "");
+    if (title && url) news.push({ title, url, source: m[2].trim() });
+  }
+
+  if (!traffic && news.length === 0) return null;
+  return { approxTraffic: traffic, news };
+}
+
 export default function TrendNewsList({ meta }: { meta: SignalSourceMeta }) {
   const news = meta.news || [];
 
