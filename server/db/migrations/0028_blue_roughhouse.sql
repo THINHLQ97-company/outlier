@@ -1,0 +1,1 @@
+ALTER TABLE "remakes" ADD COLUMN "published_json" jsonb DEFAULT '[]'::jsonb;

@@ -643,8 +643,21 @@ export interface RemakeRow {
   /** Các phương án ảnh đã vẽ cho bản viết này. */
   imagesJson?: RemakeImage[];
   selectedImageUrl?: string | null;
+  /** Bài đã đăng lên trang nào. */
+  publishedJson?: PublishedRecord[];
   createdAt: string;
   updatedAt: string;
+}
+
+/** Một lần đăng bài — mirror server/db/schema.ts (PublishedRecord). */
+export interface PublishedRecord {
+  fanpageId: string;
+  pageName?: string;
+  postId: string;
+  permalink: string;
+  publishedAt: string;
+  scheduled?: boolean;
+  scheduledFor?: string;
 }
 
 /** Một phương án ảnh — mirror server/db/schema.ts (RemakeImage). */

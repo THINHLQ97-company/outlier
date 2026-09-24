@@ -474,6 +474,22 @@ const TOOLS = [
     },
   },
   {
+    name: "remake_publish",
+    description: "Đăng một bản viết lên fanpage đã nối Meta. Chỉ đăng được lên trang thuộc đúng thương hiệu của bản viết đó. Có ảnh đang chọn thì đăng dạng bài ảnh, không thì đăng chỉ chữ. Truyền scheduled_at để hẹn giờ — Facebook giữ bài và tự đăng, cách hiện tại ít nhất 10 phút. Đã đăng lên trang đó rồi thì bị chặn, trừ khi truyền force=true. Đây là thao tác CÔNG KHAI, không hoàn tác được — hỏi người dùng trước khi gọi.",
+    annotations: { title: "Đăng lên fanpage", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: {
+        remake_id: { type: "string", description: "Mã bản viết (từ remake_get)" },
+        fanpage_id: { type: "string", description: "Mã dòng fanpage đã nối Meta (từ brand_profile_get, mục pages)" },
+        scheduled_at: { type: "string", description: "Thời điểm hẹn đăng, dạng ISO. Bỏ trống = đăng ngay." },
+        force: { type: "boolean", description: "Đăng lại dù đã đăng lên trang này rồi" },
+      },
+      required: ["remake_id", "fanpage_id"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "deconstruct_comments",
     description: "Đọc bình luận dưới bài gốc rồi rút ra NGƯỜI XEM THẬT SỰ QUAN TÂM GÌ: các cụm chủ đề họ bàn (kèm số lượng và câu trích thật), câu hỏi lặp lại, điều họ phản đối, và góc nên làm tiếp. Bóc cấu trúc cho biết bài được dựng thế nào; cái này cho biết nó chạm vào đâu — hai thứ hay lệch nhau, và thứ người đọc bàn mới là thứ đáng viết tiếp. YouTube đọc MIỄN PHÍ (cần YOUTUBE_API_KEY); Facebook và TikTok qua Apify nên TỐN TIỀN theo từng bình luận — hỏi người dùng trước khi gọi. Số lượng trong kết quả do code đếm lại, không phải model tự khai.",
     annotations: { title: "Phân tích bình luận", readOnlyHint: false },
@@ -1259,6 +1275,54 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
       }
     }
     return { image: out.image, description: out.description, ...(__mcpContent ? { __mcpContent } : {}) };
+  }
+
+  if (name === "remake_publish") {
+    if (!UUID_RE.test(args.remake_id || "")) throw new Error("remake_id không hợp lệ");
+    if (!UUID_RE.test(args.fanpage_id || "")) throw new Error("fanpage_id không hợp lệ");
+
+    const [row] = await db.select().from(remakes).where(eq(remakes.id, args.remake_id));
+    if (!row) throw new Error("Không tìm thấy bản viết");
+    if (!row.draft?.trim()) throw new Error("Bản viết chưa có nội dung");
+
+    const [page] = await db.select().from(brandFanpages).where(eq(brandFanpages.id, args.fanpage_id));
+    if (!page || page.brandId !== row.brandId) throw new Error("Trang này không thuộc thương hiệu của bản viết");
+    if (!page.metaTokenEnc || !page.metaPageId) throw new Error("Trang chưa nối Meta");
+
+    const already = (row.publishedJson || []).find((p) => p.fanpageId === args.fanpage_id);
+    if (already && !args.force) {
+      throw new Error(
+        `Bản viết này đã đăng lên "${already.pageName || "trang này"}" (${already.permalink}). Truyền force=true nếu vẫn muốn đăng lại.`,
+      );
+    }
+
+    const scheduledAt = args.scheduled_at ? new Date(String(args.scheduled_at)) : null;
+    if (scheduledAt && isNaN(scheduledAt.getTime())) throw new Error("scheduled_at không đọc được");
+
+    const { publishToPage } = await import("../services/meta-publish");
+    const out = await publishToPage({
+      pageId: page.metaPageId,
+      tokenEnc: page.metaTokenEnc,
+      message: row.draft,
+      imageUrl: row.selectedImageUrl,
+      scheduledAt,
+    });
+
+    const record = {
+      fanpageId: args.fanpage_id,
+      pageName: page.pageName || page.pageUrl,
+      postId: out.postId,
+      permalink: out.permalink,
+      publishedAt: new Date().toISOString(),
+      scheduled: out.scheduled,
+      scheduledFor: scheduledAt ? scheduledAt.toISOString() : undefined,
+    };
+    await db
+      .update(remakes)
+      .set({ publishedJson: [...(row.publishedJson || []), record], updatedAt: new Date() })
+      .where(eq(remakes.id, args.remake_id));
+
+    return record;
   }
 
   if (name === "deconstruct_comments") {

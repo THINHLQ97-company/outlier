@@ -9,7 +9,7 @@
 // services/deconstruct.ts. Riêng /recheck là ĐỒNG BỘ — trả kết quả ngay,
 // không cần poll (dùng khi người dùng tự sửa tay nội dung).
 import { authHeaders, asError } from "./http";
-import type { RemakeRow, RemakeCreateResult, RemakeFormat, RemakeImage } from "../types";
+import type { RemakeRow, RemakeCreateResult, RemakeFormat, RemakeImage, PublishedRecord } from "../types";
 
 export async function listRemakes(): Promise<RemakeRow[]> {
   const res = await fetch("/api/remakes", { headers: authHeaders(false) });
@@ -154,5 +154,34 @@ export async function selectRemakeImage(id: string, url: string): Promise<Remake
     body: JSON.stringify({ url }),
   });
   if (!res.ok) return asError(res, "Không chọn được ảnh.");
+  return res.json();
+}
+
+// ===== Đăng lên fanpage =====
+
+export interface PublishTarget {
+  fanpageId: string;
+  pageName: string;
+  platform: string;
+  pictureUrl?: string | null;
+}
+
+export async function listPublishTargets(id: string): Promise<{ targets: PublishTarget[]; note?: string }> {
+  const res = await fetch(`/api/remakes/${id}/publish-targets`, { headers: authHeaders(false) });
+  if (!res.ok) return asError(res, "Không tải được danh sách trang.");
+  return res.json();
+}
+
+export async function publishRemake(
+  id: string,
+  fanpageId: string,
+  opts: { scheduledAt?: string; force?: boolean } = {},
+): Promise<PublishedRecord> {
+  const res = await fetch(`/api/remakes/${id}/publish`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ fanpageId, ...opts }),
+  });
+  if (!res.ok) return asError(res, "Không đăng được bài.");
   return res.json();
 }

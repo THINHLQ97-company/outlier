@@ -6,7 +6,7 @@
 import type { Express } from "express";
 import { desc, eq } from "drizzle-orm";
 import { getDb, isDbConfigured } from "../db/client";
-import { remakes, brands, deconstructions, type DeconstructedStructure } from "../db/schema";
+import { remakes, brands, deconstructions, type DeconstructedStructure, brandFanpages } from "../db/schema";
 import { requireAuth, getAuthUser } from "../auth-mw";
 import { writeRemake, type BrandContext, type RemakeFormat } from "../services/remake";
 import { isActiveAdmin } from "./studio.routes";
@@ -265,6 +265,110 @@ export function registerRemakeRoutes(app: Express) {
     } catch (e: any) {
       console.error("remake recheck:", e?.message || e);
       res.status(500).json({ error: "Không kiểm tra lại được." });
+    }
+  });
+
+  // ===== Đăng lên fanpage =====
+  // Chỉ đăng lên trang đã nối Meta trong hồ sơ thương hiệu — không nhận page id
+  // tuỳ ý từ client, để không ai đăng nhầm lên trang người khác.
+  app.get("/api/remakes/:id/publish-targets", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const { id } = req.params;
+    if (!UUID_RE.test(id)) return res.status(400).json({ error: "Mã không hợp lệ." });
+    try {
+      const [row] = await getDb().select().from(remakes).where(eq(remakes.id, id));
+      if (!row) return res.status(404).json({ error: "Không tìm thấy bản viết." });
+
+      const pages = await getDb().select().from(brandFanpages).where(eq(brandFanpages.brandId, row.brandId));
+      const targets = pages
+        .filter((p) => !!p.metaTokenEnc && !!p.metaPageId)
+        .map((p) => ({
+          fanpageId: p.id,
+          pageName: p.pageName || p.pageUrl,
+          platform: p.platform,
+          pictureUrl: p.metaPictureUrl,
+        }));
+
+      res.json({
+        targets,
+        // Nói rõ vì sao danh sách trống, thay vì để người dùng đoán.
+        note:
+          targets.length === 0
+            ? "Chưa trang nào nối Meta. Vào Thương hiệu → Trang của thương hiệu → Nối Meta trước."
+            : undefined,
+      });
+    } catch (e: any) {
+      console.error("publish targets:", e?.message || e);
+      res.status(500).json({ error: "Không tải được danh sách trang." });
+    }
+  });
+
+  app.post("/api/remakes/:id/publish", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const { id } = req.params;
+    if (!UUID_RE.test(id)) return res.status(400).json({ error: "Mã không hợp lệ." });
+    const fanpageId = String(req.body?.fanpageId || "").trim();
+    if (!UUID_RE.test(fanpageId)) return res.status(400).json({ error: "Chưa chọn trang để đăng." });
+
+    try {
+      const [row] = await getDb().select().from(remakes).where(eq(remakes.id, id));
+      if (!row) return res.status(404).json({ error: "Không tìm thấy bản viết." });
+      if (!row.draft?.trim()) return res.status(400).json({ error: "Bản viết chưa có nội dung." });
+
+      const username = getAuthUser(req)!;
+      if (row.owner !== username && !(await isActiveAdmin(username))) {
+        return res.status(403).json({ error: "Không có quyền đăng bản viết này." });
+      }
+
+      const [page] = await getDb().select().from(brandFanpages).where(eq(brandFanpages.id, fanpageId));
+      if (!page || page.brandId !== row.brandId) {
+        return res.status(400).json({ error: "Trang này không thuộc thương hiệu của bản viết." });
+      }
+      if (!page.metaTokenEnc || !page.metaPageId) {
+        return res.status(400).json({ error: "Trang chưa nối Meta." });
+      }
+
+      // Đã đăng lên đúng trang này rồi thì chặn — bấm hai lần là chuyện thường.
+      const already = (row.publishedJson || []).find((p) => p.fanpageId === fanpageId);
+      if (already && !req.body?.force) {
+        return res.status(409).json({
+          error: `Bản viết này đã đăng lên "${already.pageName || "trang này"}" ngày ${new Date(already.publishedAt).toLocaleDateString("vi-VN")}.`,
+          permalink: already.permalink,
+        });
+      }
+
+      const scheduledAt = req.body?.scheduledAt ? new Date(req.body.scheduledAt) : null;
+      if (scheduledAt && isNaN(scheduledAt.getTime())) {
+        return res.status(400).json({ error: "Thời điểm hẹn giờ không hợp lệ." });
+      }
+
+      const { publishToPage } = await import("../services/meta-publish");
+      const out = await publishToPage({
+        pageId: page.metaPageId,
+        tokenEnc: page.metaTokenEnc,
+        message: row.draft,
+        imageUrl: row.selectedImageUrl,
+        scheduledAt,
+      });
+
+      const record = {
+        fanpageId,
+        pageName: page.pageName || page.pageUrl,
+        postId: out.postId,
+        permalink: out.permalink,
+        publishedAt: new Date().toISOString(),
+        scheduled: out.scheduled,
+        scheduledFor: scheduledAt ? scheduledAt.toISOString() : undefined,
+      };
+      await getDb()
+        .update(remakes)
+        .set({ publishedJson: [...(row.publishedJson || []), record], updatedAt: new Date() })
+        .where(eq(remakes.id, id));
+
+      res.json(record);
+    } catch (e: any) {
+      console.warn("publish remake:", e?.message || e);
+      res.status(400).json({ error: e?.message || "Không đăng được bài." });
     }
   });
 

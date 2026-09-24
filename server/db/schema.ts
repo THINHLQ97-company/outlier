@@ -637,6 +637,18 @@ export interface RemakeImage {
   isDemo?: boolean;
 }
 
+/** Một lần đăng bài lên trang. */
+export interface PublishedRecord {
+  fanpageId: string;
+  pageName?: string;
+  postId: string;
+  permalink: string;
+  publishedAt: string;
+  /** true = hẹn giờ, Facebook giữ lại đăng sau. */
+  scheduled?: boolean;
+  scheduledFor?: string;
+}
+
 export const remakes = pgTable("remakes", {
   id: uuid("id").primaryKey().defaultRandom(),
   owner: text("owner").notNull(),
@@ -663,6 +675,12 @@ export const remakes = pgTable("remakes", {
   imagesJson: jsonb("images_json").$type<RemakeImage[]>().default([]),
   /** URL ảnh đang chọn trong imagesJson. */
   selectedImageUrl: text("selected_image_url"),
+
+  /**
+   * Bài đã đăng lên đâu. Giữ để không đăng trùng và để mở lại bài thật.
+   * Mảng vì một bản viết có thể đăng lên nhiều trang.
+   */
+  publishedJson: jsonb("published_json").$type<PublishedRecord[]>().default([]),
 
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

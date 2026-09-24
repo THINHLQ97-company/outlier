@@ -24,6 +24,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import type { BrandRow, DeconstructionRow, RemakeRow, RemakeFormat, GuardrailReport, GuardrailIssue, GuardrailCode } from "../types";
 import RemakeModeSwitch from "../components/RemakeModeSwitch";
 import RemakeImages from "../components/RemakeImages";
+import PublishPanel from "../components/PublishPanel";
 
 // Trang "Viết lại" — màn CUỐI khép kín vòng sản phẩm: tìm bài (Radar) → bóc
 // cấu trúc (Bóc cấu trúc) → viết lại cho thương hiệu (ở đây) → kiểm tra.
@@ -883,6 +884,14 @@ function RemakeDetailPanel({
             )}
           </div>
           </form>
+
+          <PublishPanel
+            remakeId={row.id}
+            hasDraft={!!row.draft?.trim()}
+            hasImage={!!row.selectedImageUrl}
+            published={row.publishedJson}
+            onChanged={onChanged}
+          />
 
           <RemakeImages
             remakeId={row.id}
