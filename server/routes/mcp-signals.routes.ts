@@ -28,6 +28,9 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // công cụ này để làm gì, đi theo thứ tự nào, và chỗ nào dễ làm sai.
 const SERVER_INSTRUCTIONS = `Đây là Outlier — công cụ tìm nội dung đang bật lên rồi remake cho thương hiệu của người dùng.
 
+PHIÊN LÀM VIỆC ĐỊNH KỲ
+Gọi daily_brief TRƯỚC TIÊN. Nó cho biết có gì mới và nên làm gì, trong một lần gọi, không tốn tiền. Rồi làm theo thứ tự trong suggestedActions — danh sách đó đã xếp rẻ trước, tốn tiền sau. Việc nào tốn tiền (channel_refresh, deconstruct_comments với Facebook/TikTok) thì hỏi người dùng, đừng tự quyết.
+
 QUY TẮC XUYÊN SUỐT
 - Luôn bắt đầu bằng brand_brief để biết mình đang viết cho TRANG NÀO. Không có hồ sơ trang thì mọi thứ viết ra chỉ là giọng chung chung.
 - Hồ sơ nói mục nào "chưa có dữ liệu" thì ĐỪNG tự suy ra. Hỏi người dùng rồi ghi bằng brand_set.
@@ -64,9 +67,15 @@ PHÂN BIỆT HAI THỨ HAY LẪN
 
 Còn một luồng cũ vẫn dùng được: signals_score chấm tin theo rubric (rubric_get để biết ngưỡng), signals_suggest_angle gợi ý góc hài với dàn nhân vật cố định (characters_list).`;
 
-const READONLY_TOOLS = new Set(["signals_list", "signals_get", "rubric_get", "characters_list", "brands_list", "brand_profile_get", "brand_brief", "radar_jobs_list", "radar_results", "deconstruct_get", "remake_get", "channels_list", "channel_items", "video_frames", "video_projects_list", "video_get"]);
+const READONLY_TOOLS = new Set(["daily_brief", "signals_list", "signals_get", "rubric_get", "characters_list", "brands_list", "brand_profile_get", "brand_brief", "radar_jobs_list", "radar_results", "deconstruct_get", "remake_get", "channels_list", "channel_items", "video_frames", "video_projects_list", "video_get"]);
 
 const TOOLS = [
+  {
+    name: "daily_brief",
+    description: "TOÀN CẢNH trong một lần gọi — nên gọi ĐẦU TIÊN mỗi phiên làm việc, nhất là phiên chạy định kỳ. Trả về: xu hướng mới chưa xử lý, bài hay điểm cao chưa đem đi bóc, bản bóc chưa đọc bình luận, bản viết xong chưa đăng, kênh lâu chưa quét, và danh sách việc nên làm tiếp đã xếp theo thứ tự rẻ trước tốn tiền sau. Tool này KHÔNG tự quét gì nên luôn miễn phí.",
+    annotations: { title: "Toàn cảnh hôm nay", readOnlyHint: true },
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
   {
     name: "signals_list",
     description: "Liệt kê tín hiệu (mặc định 14 ngày gần nhất). Lọc theo status (new|queued|idea_bank|rejected), truc (ai|ke_toan|hosting), days, limit.",
@@ -667,6 +676,11 @@ async function getActiveThresholds(db: any): Promise<{ queue_min: number; idea_b
 // Xử lý 1 tool call → trả object payload (đã unwrap khỏi content).
 async function callTool(name: string, args: any, principal: McpPrincipal): Promise<any> {
   const db = getDb();
+
+  if (name === "daily_brief") {
+    const { buildDailyBrief } = await import("../services/daily-brief");
+    return await buildDailyBrief(principal.username);
+  }
 
   if (name === "signals_list") {
     const days = typeof args.days === "number" && args.days >= 0 ? args.days : RETENTION_DAYS;

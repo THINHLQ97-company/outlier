@@ -27,44 +27,47 @@ Cập nhật mỗi khi xong một phần. Ngày ghi là ngày hoàn thành.
 | Lọc kênh theo nền tảng | Thêm Facebook (trước đó thiếu) · 2026-09-24 |
 | **Phân tích bình luận** | Cụm chủ đề (số lượng do code đếm), câu hỏi lặp lại, điều bị phản đối, góc nên làm tiếp. Tự đưa vào prompt khi remake · 2026-09-24 |
 | YouTube đọc bình luận miễn phí | Data API v3, chỉ cần API key · 2026-09-24 |
+| **Chấm điểm sâu hơn** | Thêm trục bình luận + chia sẻ so với lượt thích; giao diện hiện phân rã điểm · 2026-09-24 |
+| **Thư viện ba thể loại** | Bài viết / Hình ảnh / Video, tách khỏi nguyên liệu · 2026-09-24 |
+| **Đăng lên fanpage** | Đăng ngay hoặc hẹn giờ (Facebook giữ bài); chống đăng trùng · 2026-09-24 |
+| **`daily_brief` cho phiên định kỳ** | Toàn cảnh một lần gọi, miễn phí; việc xếp rẻ trước tốn tiền sau · 2026-09-24 |
 
 ---
 
 ## Còn thiếu
 
-Xếp theo thứ tự nên làm.
+### 1. YouTube: quét kênh miễn phí
+Đã dùng Data API v3 cho **bình luận**. Còn có thể thay Apify ở phần **quét kênh và
+lấy bài** — cùng API key đó. Cần đặt `YOUTUBE_API_KEY`.
 
-### 1. Chấm điểm hiệu quả nội dung
-Hiện chỉ có điểm vượt trội của Radar (so với chính kênh). Cần một thang rõ ràng
-theo tiêu chí bạn nêu: **like, comment, lưu lại/chia sẻ** — và nói rõ vì sao bài
-này đáng remake. Có sẵn công thức tham khảo: `likes + comments×3 + shares×5`
-(đang dùng trong `fanpage-stats.ts`).
-
-*Chưa rõ*: "lưu lại" không lấy được từ bài người khác — Meta không công khai. Có
-thể thay bằng chia sẻ, hoặc bỏ.
-
-### 2. Thư viện phân loại rõ ba thể loại
-Tab **Hình ảnh / Bài viết (caption + ảnh) / Video**. Hiện thư viện trộn chung.
-
-### 3. Đăng tự động lên fanpage được chỉ định
-- Đăng: `POST /{page-id}/feed` (chữ), `/photos` (ảnh), `/videos`
-- Cần quyền `pages_manage_posts` — **token hiện tại chưa có quyền này**
-- Lên lịch: mỗi phút kiểm tra hàng đợi, mỗi lượt đăng một bài, có giờ hoạt động
-  và giãn cách chống spam
-
-### 4. Claude tự quét theo lịch, đề xuất ngược
-Để Claude chạy định kỳ: quét trend mới, chọn bài hot trong các kênh theo dõi, đẩy
-đề xuất vào công cụ cho người dùng duyệt.
-
-*Chưa rõ*: chạy lịch ở đâu — trong app (cron) hay bên Claude. Nếu trong app thì
-phải cẩn thận vì quét kênh tốn tiền.
-
-### 5. YouTube: mở rộng phần miễn phí
-Đã dùng Data API v3 cho **bình luận**. Còn có thể thay Apify ở phần **quét kênh
-và lấy bài** — cùng API key đó. Cần đặt `YOUTUBE_API_KEY`.
-
-### 6. Remake video
+### 2. Remake video
 Để sau, theo đúng ý bạn.
+
+### 3. Những thứ cần bạn cấp mới chạy được
+- `YOUTUBE_API_KEY` — mở khoá phần YouTube miễn phí
+- Page Access Token có quyền `pages_manage_posts` — token hiện tại **chưa có
+  quyền này**, nên nút đăng sẽ báo lỗi cho tới khi lấy token mới
+
+---
+
+## Chạy định kỳ bằng Claude
+
+Bạn đã chọn chạy lịch bên Claude thay vì cron trong app — nghĩa là không có gì
+tự tốn tiền sau lưng, nhưng cũng nghĩa là phải có phiên Claude đang mở.
+
+**Cách làm:**
+
+1. Nối MCP (xem `docs/MCP-SIGNALS.md`)
+2. Trong Claude Code, chạy lệnh lặp:
+   ```
+   /loop 6h Gọi daily_brief của Outlier, làm theo suggestedActions nhưng dừng lại
+   hỏi tôi trước mọi việc tốn tiền. Xong thì tóm tắt ngắn có gì mới.
+   ```
+3. Hoặc dùng lịch của Claude (`/schedule`) nếu muốn chạy cả khi không mở máy
+
+**Vì sao `daily_brief` gọi trước tiên:** nó trả về toàn cảnh trong một lần gọi và
+không tự quét gì, nên luôn miễn phí. Danh sách việc trong đó đã xếp **rẻ trước,
+tốn tiền sau**, và mọi việc tốn tiền đều ghi rõ là tốn tiền.
 
 ---
 
