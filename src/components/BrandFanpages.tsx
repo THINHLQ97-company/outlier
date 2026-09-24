@@ -13,6 +13,7 @@ import { listCharacters } from "../services/characters";
 import type { CharacterRow } from "../types";
 import type { BrandFanpage } from "../types";
 import FanpageStatsPanel from "./FanpageStatsPanel";
+import { imageDisplayUrl } from "../services/http";
 
 // Trang của CHÍNH thương hiệu — khác "Kênh theo dõi" (là kênh người khác để học).
 //
@@ -385,23 +386,34 @@ export default function BrandFanpages({
                                       : "border-stone-200 hover:border-stone-300"
                                   }`}
                                 >
-                                  {c.referenceImageUrl ? (
+                                  {/* imageMissing = có đường dẫn nhưng file đã mất; hiện thẻ img
+                                      lúc đó chỉ ra một ô ảnh vỡ. Dùng chữ cái đầu thay thế. */}
+                                  {c.referenceImageUrl && !c.imageMissing ? (
                                     <img
-                                      src={c.referenceImageUrl}
+                                      src={imageDisplayUrl(c.referenceImageUrl) || undefined}
                                       alt=""
-                                      className="w-7 h-7 rounded-full object-cover bg-stone-100"
+                                      className="w-7 h-7 rounded-full object-cover bg-stone-100 shrink-0"
                                       loading="lazy"
                                     />
                                   ) : (
                                     <span
-                                      className="w-7 h-7 rounded-full bg-stone-100 shrink-0"
+                                      className="w-7 h-7 rounded-full bg-stone-200 shrink-0 flex items-center justify-center text-[11px] font-bold text-stone-500"
                                       aria-hidden="true"
-                                    />
+                                    >
+                                      {c.name.trim().charAt(0).toUpperCase()}
+                                    </span>
                                   )}
                                   <span className="text-xs font-medium text-stone-700">{c.name}</span>
-                                  {!c.referenceImageUrl && (
-                                    <span className="text-[10px] text-amber-600" title="Chưa có ảnh mẫu">
-                                      chưa có ảnh
+                                  {(!c.referenceImageUrl || c.imageMissing) && (
+                                    <span
+                                      className="text-[10px] text-amber-600"
+                                      title={
+                                        c.imageMissing
+                                          ? "Ảnh mẫu đã mất — cần tải lại ở menu Thư viện → Nhân vật"
+                                          : "Chưa có ảnh mẫu"
+                                      }
+                                    >
+                                      {c.imageMissing ? "ảnh đã mất" : "chưa có ảnh"}
                                     </span>
                                   )}
                                 </button>

@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { listRemakes } from "../services/remakes";
 import { listVideos } from "../services/videos";
 import type { RemakeRow, VideoProject } from "../types";
+import { imageDisplayUrl } from "../services/http";
 
 // Ba thể loại nội dung đã làm ra, tách riêng vì mỗi thứ dùng vào việc khác nhau:
 // bài viết đem đăng, hình ảnh đem ghép, video đem tải lên.
@@ -52,7 +53,7 @@ export function PostsTab() {
           <li key={r.id} className="ds-card">
             <div className="ds-card-body flex gap-3">
               {hasImage ? (
-                <img src={r.selectedImageUrl!} alt="" className="w-16 h-16 rounded-lg object-cover bg-stone-100 shrink-0" loading="lazy" />
+                <img src={imageDisplayUrl(r.selectedImageUrl) || undefined} alt="" className="w-16 h-16 rounded-lg object-cover bg-stone-100 shrink-0" loading="lazy" />
               ) : (
                 <div className="w-16 h-16 rounded-lg bg-stone-100 shrink-0 flex items-center justify-center">
                   <FileText className="w-5 h-5 text-stone-300" aria-hidden="true" />
@@ -132,14 +133,14 @@ export function ImagesTab() {
     <ul className="grid grid-cols-2 md:grid-cols-4 gap-3">
       {items.map((img) => (
         <li key={img.url} className="border border-stone-200 rounded-xl overflow-hidden">
-          <img src={img.url} alt={img.prompt.slice(0, 60)} className="w-full aspect-square object-cover bg-stone-100" loading="lazy" />
+          <img src={imageDisplayUrl(img.url) || undefined} alt={img.prompt.slice(0, 60)} className="w-full aspect-square object-cover bg-stone-100" loading="lazy" />
           <div className="p-2">
             <p className="text-[11px] text-stone-500 line-clamp-2">{img.prompt}</p>
             <div className="flex items-center justify-between gap-2 mt-1.5">
               <Link to={`/remakes?id=${img.remakeId}`} className="text-[11px] text-storm-600 hover:underline">
                 Mở bài
               </Link>
-              <a href={img.url} download className="text-stone-400 hover:text-stone-700" title="Tải ảnh về" aria-label="Tải ảnh về">
+              <a href={imageDisplayUrl(img.url) || img.url} download className="text-stone-400 hover:text-stone-700" title="Tải ảnh về" aria-label="Tải ảnh về">
                 <Download className="w-3.5 h-3.5" aria-hidden="true" />
               </a>
             </div>

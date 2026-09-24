@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Loader2, ImagePlus, Check, Download, Pencil } from "lucide-react";
 import { generateRemakeImage, selectRemakeImage } from "../services/remakes";
 import type { RemakeImage } from "../types";
+import { imageDisplayUrl } from "../services/http";
 
 // Ảnh cho bản viết. Khác luồng "Sáng tạo" (vẽ meme theo dàn nhân vật cố định):
 // ở đây ảnh bám nhận diện của thương hiệu người dùng.
@@ -174,12 +175,12 @@ export default function RemakeImages({
                         isSelected ? "border-storm-500 ring-2 ring-storm-200" : "border-stone-200"
                       }`}
                     >
-                      <img src={img.url} alt={img.prompt.slice(0, 80)} className="w-full aspect-square object-cover bg-stone-100" loading="lazy" />
+                      <img src={imageDisplayUrl(img.url) || undefined} alt={img.prompt.slice(0, 80)} className="w-full aspect-square object-cover bg-stone-100" loading="lazy" />
                       <div className="p-2 flex items-center justify-between gap-2">
                         <span className="text-[11px] text-stone-400">{img.aspectRatio}</span>
                         <div className="flex items-center gap-1">
                           <a
-                            href={img.url}
+                            href={imageDisplayUrl(img.url) || img.url}
                             download
                             className="text-xs text-stone-500 hover:text-stone-800 p-1"
                             title="Tải ảnh về"
