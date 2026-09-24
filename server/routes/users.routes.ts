@@ -36,6 +36,42 @@ function publicUser(u: any) {
 }
 
 export function registerUserRoutes(app: Express) {
+  // Xem TÊN TRƯỜNG mà dịch vụ quét trả về, lấy từ bộ nhớ đệm.
+  //
+  // Vì sao cần: mỗi actor đặt tên trường một kiểu, đoán sai thì dữ liệu rơi im
+  // lặng (ngày về 0, số bình luận trống) mà không có lỗi nào. Endpoint này đọc
+  // lại kết quả ĐÃ LƯU nên không tốn thêm tiền, và chỉ trả về TÊN trường cùng
+  // kiểu dữ liệu — không trả nội dung, để không lộ gì.
+  app.get("/api/admin/scan-fields", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { apifyCache } = await import("../db/schema");
+      const rows = await getDb().select().from(apifyCache).limit(200);
+      const prefix = typeof req.query.platform === "string" ? req.query.platform : "";
+      const picked = rows.filter((r) => !prefix || r.cacheKey.startsWith(prefix));
+
+      const shape: Record<string, { type: string; sample?: string }> = {};
+      for (const r of picked.slice(0, 20)) {
+        for (const [k, v] of Object.entries(r.payload || {})) {
+          if (shape[k]) continue;
+          const type = Array.isArray(v) ? `array(${v.length})` : v === null ? "null" : typeof v;
+          // Chỉ lấy mẫu với số và chuỗi ngắn — đủ để nhận ra trường nào là gì.
+          const sample =
+            typeof v === "number" ? String(v) : typeof v === "string" && v.length <= 40 ? v : undefined;
+          shape[k] = { type, sample };
+        }
+      }
+
+      res.json({
+        cacheKeys: picked.slice(0, 5).map((r) => r.cacheKey),
+        rowsInspected: Math.min(picked.length, 20),
+        fields: shape,
+      });
+    } catch (e: any) {
+      console.error("scan fields:", e?.message || e);
+      res.status(500).json({ error: "Không đọc được bộ nhớ đệm." });
+    }
+  });
+
   // ===== Chi phí dịch vụ ngoài =====
   // Ai cũng xem được, không riêng quản trị: người tiêu tiền cần thấy mình đã
   // tiêu bao nhiêu, không phải đi hỏi.
