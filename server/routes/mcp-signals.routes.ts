@@ -1313,13 +1313,23 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
 
     let inserted = 0;
     let skipped = 0;
+    let upgraded = 0;
     for (const t of items) {
-      const existing = await db
-        .select({ id: signals.id })
+      const [existing] = await db
+        .select({ id: signals.id, sourceMetaJson: signals.sourceMetaJson })
         .from(signals)
         .where(and(eq(signals.title, t.title), eq(signals.radar, `google_trends_${geo}`)));
-      if (existing.length > 0) {
-        skipped++;
+      if (existing) {
+        // Nâng cấp bản ghi cũ tại chỗ thay vì bỏ qua (xem ghi chú ở signals.routes.ts).
+        if (!existing.sourceMetaJson) {
+          await db
+            .update(signals)
+            .set({ rawSummary: trendToSummary(t), sourceMetaJson: trendToMeta(t, geo) })
+            .where(eq(signals.id, existing.id));
+          upgraded++;
+        } else {
+          skipped++;
+        }
         continue;
       }
       await db.insert(signals).values({
@@ -1340,6 +1350,7 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
       geo,
       found: items.length,
       inserted,
+      upgraded,
       skipped,
       trends: items.map((t) => ({ title: t.title, traffic: t.approxTraffic, news: t.news.slice(0, 2) })),
       note: "Đây là thứ người ta đang TÌM KIẾM, chưa phải thứ đang lan trên mạng xã hội. Muốn bắt trend thì đọc tin kèm theo để biết chuyện gì đang xảy ra, rồi dùng trend_draft.",

@@ -98,6 +98,8 @@ export interface GoogleTrendsScanResult {
   geo: string;
   found: number;
   inserted: number;
+  /** Bản ghi cũ vừa được bổ sung dữ liệu có cấu trúc. */
+  upgraded: number;
   skipped: number;
   note: string;
 }

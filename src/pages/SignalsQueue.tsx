@@ -81,6 +81,7 @@ export default function SignalsQueue() {
       // "thêm 0" mà không giải thích thì dễ tưởng hỏng.
       setWarnings([
         `Google Trends: tìm thấy ${r.found}, thêm mới ${r.inserted}` +
+          (r.upgraded ? `, làm mới ${r.upgraded} mục cũ` : "") +
           (r.skipped ? `, bỏ qua ${r.skipped} từ khoá đã có` : "") +
           `. ${r.note}`,
       ]);

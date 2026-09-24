@@ -183,15 +183,26 @@ export function registerSignalRoutes(app: Express) {
       const db = getDb();
       let inserted = 0;
       let skipped = 0;
+      let upgraded = 0;
       for (const t of items) {
         // Trùng tên trong cùng nguồn thì bỏ qua: Google giữ một từ khoá trên
         // bảng xếp hạng nhiều ngày liền, quét mỗi ngày sẽ nhân bản nó ra.
-        const existing = await db
-          .select({ id: signals.id })
+        const [existing] = await db
+          .select({ id: signals.id, sourceMetaJson: signals.sourceMetaJson })
           .from(signals)
           .where(and(eq(signals.title, t.title), eq(signals.radar, `google_trends_${geo}`)));
-        if (existing.length > 0) {
-          skipped++;
+        if (existing) {
+          // Bản ghi cũ tạo trước khi có dữ liệu cấu trúc thì nâng cấp tại chỗ,
+          // thay vì bỏ qua rồi để nó hiển thị mãi theo kiểu cũ.
+          if (!existing.sourceMetaJson) {
+            await db
+              .update(signals)
+              .set({ rawSummary: trendToSummary(t), sourceMetaJson: trendToMeta(t, geo) })
+              .where(eq(signals.id, existing.id));
+            upgraded++;
+          } else {
+            skipped++;
+          }
           continue;
         }
         await db.insert(signals).values({
@@ -212,6 +223,7 @@ export function registerSignalRoutes(app: Express) {
         geo,
         found: items.length,
         inserted,
+        upgraded,
         skipped,
         note: "Đây là thứ người ta đang TÌM KIẾM, chưa phải thứ đang lan trên mạng xã hội. Đọc tin kèm theo để biết chuyện gì đang xảy ra rồi mới quyết có đu hay không.",
       });
