@@ -748,6 +748,7 @@ function DeconstructDetailPanel({
           )}
 
           <AudienceInsightPanel
+            deconstructionId={row.id}
             insight={row.audienceInsight}
             commentsFetchedAt={row.commentsFetchedAt}
             platform={row.platform}

@@ -160,6 +160,53 @@ export function registerDeconstructRoutes(app: Express) {
   });
 
   // ===== Bắt đầu phân tích =====
+  // Báo giá TRƯỚC khi chạy, để người dùng quyết định có bấm hay không.
+  // Con số này là trần: tiền thật tính theo số bình luận nhận về, có thể ít hơn.
+  app.get("/api/deconstructions/:id/comments/estimate", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const { id } = req.params;
+    if (!UUID_RE.test(id)) return res.status(400).json({ error: "Mã không hợp lệ." });
+    const limit = Math.min(300, Math.max(10, Number(req.query.limit) || 100));
+    try {
+      const [row] = await getDb().select().from(deconstructions).where(eq(deconstructions.id, id));
+      if (!row) return res.status(404).json({ error: "Không tìm thấy bản phân tích." });
+
+      const platform = (row.platform || "").toLowerCase();
+      if (platform === "youtube") {
+        return res.json({
+          platform,
+          free: true,
+          maxCostUsd: 0,
+          note: "YouTube đọc bình luận miễn phí bằng Data API v3 — không tốn đồng nào.",
+        });
+      }
+
+      const { estimateCommentCostUsd, supportsComments } = await import("../services/comment-fetch");
+      if (!supportsComments(platform)) {
+        return res.json({ platform, free: false, maxCostUsd: 0, unsupported: true, note: `Chưa hỗ trợ lấy bình luận từ ${platform}.` });
+      }
+
+      const { getCostSummary } = await import("../services/cost-tracker");
+      const summary = await getCostSummary();
+      const maxCostUsd = estimateCommentCostUsd(limit);
+
+      res.json({
+        platform,
+        free: false,
+        limit,
+        maxCostUsd,
+        // Cho thấy khoản này nằm ở đâu trong ngân sách, không chỉ đưa con số trần trụi.
+        budget: summary.dailyBudget,
+        spentToday: summary.today.costUsd,
+        note: `Tối đa ${maxCostUsd.toFixed(3)} đô cho ${limit} bình luận. Tiền thật tính theo số nhận về, có thể ít hơn.`,
+        overBudget: summary.dailyBudget.remaining < limit,
+      });
+    } catch (e: any) {
+      console.error("estimate comments:", e?.message || e);
+      res.status(500).json({ error: "Không ước tính được." });
+    }
+  });
+
   // ===== Bình luận: lấy về rồi rút ra người xem quan tâm gì =====
   // Tách khỏi việc bóc cấu trúc vì tốn tiền riêng (mỗi bình luận là một kết quả
   // Apify) — người dùng phải chủ động bấm, và thấy trước con số ước tính.

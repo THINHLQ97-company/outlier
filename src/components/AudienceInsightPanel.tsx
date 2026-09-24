@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { Loader2, MessageSquare, HelpCircle, ShieldAlert, Lightbulb, AlertTriangle } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Loader2, MessageSquare, HelpCircle, ShieldAlert, Lightbulb, AlertTriangle, Coins } from "lucide-react";
+import { estimateCommentCost, type CommentCostEstimate } from "../services/deconstruct";
 import type { AudienceInsight } from "../types";
 
 // Người xem bài gốc quan tâm gì.
@@ -15,6 +16,7 @@ const SENTIMENT_CLS: Record<string, string> = {
 };
 
 export default function AudienceInsightPanel({
+  deconstructionId,
   insight,
   commentsFetchedAt,
   platform,
@@ -22,6 +24,7 @@ export default function AudienceInsightPanel({
   onFetch,
   error,
 }: {
+  deconstructionId: string;
   insight?: AudienceInsight | null;
   commentsFetchedAt?: string | null;
   platform?: string | null;
@@ -30,7 +33,19 @@ export default function AudienceInsightPanel({
   error?: string | null;
 }) {
   const [limit, setLimit] = useState(100);
-  const isFree = platform === "youtube";
+
+  // Giá hỏi thẳng máy chủ chứ không tự nhân ở giao diện: đơn giá và ngân sách
+  // nằm ở máy chủ, tính lại ở đây là có hai nguồn sự thật, rồi lệch nhau.
+  const [estimate, setEstimate] = useState<CommentCostEstimate | null>(null);
+  useEffect(() => {
+    let alive = true;
+    estimateCommentCost(deconstructionId, limit)
+      .then((e) => alive && setEstimate(e))
+      .catch(() => alive && setEstimate(null));
+    return () => {
+      alive = false;
+    };
+  }, [deconstructionId, limit]);
 
   return (
     <div className="ds-card">
@@ -47,17 +62,33 @@ export default function AudienceInsightPanel({
 
         {!insight ? (
           <div className="mt-3">
-            <p className="text-sm text-stone-500">
-              Chưa đọc bình luận của bài này.{" "}
-              {isFree ? (
-                <span className="text-green-700">YouTube đọc bình luận miễn phí.</span>
-              ) : (
-                <span className="text-amber-700">
-                  Với Facebook và TikTok, mỗi bình luận tính một lượt — {limit} bình luận tốn khoảng{" "}
-                  {(limit * 0.0035).toFixed(2)} đô.
-                </span>
-              )}
-            </p>
+            <p className="text-sm text-stone-500">Chưa đọc bình luận của bài này.</p>
+
+            {/* Giá phải hiện TRƯỚC khi bấm, và phải là con số thật từ máy chủ. */}
+            {estimate && (
+              <div
+                className={`mt-2 rounded-lg border px-3 py-2 text-xs ${
+                  estimate.free
+                    ? "bg-green-50 border-green-200 text-green-900"
+                    : estimate.overBudget
+                    ? "bg-red-50 border-red-200 text-red-900"
+                    : "bg-amber-50 border-amber-200 text-amber-900"
+                }`}
+              >
+                <div className="flex items-center gap-1.5 font-medium">
+                  <Coins className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                  {estimate.free ? "Miễn phí" : `Tối đa ${estimate.maxCostUsd.toFixed(3)} đô`}
+                </div>
+                <p className="mt-1">{estimate.note}</p>
+                {estimate.budget && !estimate.free && (
+                  <p className="mt-1">
+                    Ngân sách hôm nay còn <strong>{estimate.budget.remaining}</strong>/{estimate.budget.limit} lượt · đã
+                    tiêu {estimate.spentToday?.toFixed(3)} đô.
+                    {estimate.overBudget && " Không đủ ngân sách cho lần quét này."}
+                  </p>
+                )}
+              </div>
+            )}
             <div className="flex items-center gap-2 mt-2 flex-wrap">
               <label htmlFor="cmt-limit" className="text-xs text-stone-600">
                 Số bình luận
@@ -74,7 +105,12 @@ export default function AudienceInsightPanel({
                   </option>
                 ))}
               </select>
-              <button type="button" onClick={() => onFetch(limit)} disabled={busy} className="ds-btn ds-btn-primary ds-btn-sm">
+              <button
+                type="button"
+                onClick={() => onFetch(limit)}
+                disabled={busy || estimate?.unsupported || estimate?.overBudget}
+                className="ds-btn ds-btn-primary ds-btn-sm"
+              >
                 {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> : null}
                 Đọc bình luận và phân tích
               </button>

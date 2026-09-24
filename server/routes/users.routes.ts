@@ -4,7 +4,7 @@ import type { Express } from "express";
 import { desc, eq } from "drizzle-orm";
 import { getDb, isDbConfigured } from "../db/client";
 import { users } from "../db/schema";
-import { requireAdmin, getAuthUser } from "../auth-mw";
+import { requireAdmin, requireAuth, getAuthUser } from "../auth-mw";
 import { hashPassword } from "../password";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -36,6 +36,20 @@ function publicUser(u: any) {
 }
 
 export function registerUserRoutes(app: Express) {
+  // ===== Chi phí dịch vụ ngoài =====
+  // Ai cũng xem được, không riêng quản trị: người tiêu tiền cần thấy mình đã
+  // tiêu bao nhiêu, không phải đi hỏi.
+  app.get("/api/costs", requireAuth, async (_req, res) => {
+    try {
+      const { getCostSummary, KIND_LABEL } = await import("../services/cost-tracker");
+      const summary = await getCostSummary();
+      res.json({ ...summary, kindLabels: KIND_LABEL });
+    } catch (e: any) {
+      console.error("costs:", e?.message || e);
+      res.status(500).json({ error: "Không tải được số liệu chi phí." });
+    }
+  });
+
   app.get("/api/users", requireAdmin, async (_req, res) => {
     if (dbDown(res)) return;
     try {

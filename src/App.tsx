@@ -13,6 +13,7 @@ import Deconstruct from "./pages/Deconstruct";
 import Remake from "./pages/Remake";
 import Videos from "./pages/Videos";
 import AdminUsers from "./pages/AdminUsers";
+import Costs from "./pages/Costs";
 
 function Gate() {
   const { isAuthenticated, authChecked } = useAppContext();
@@ -40,6 +41,7 @@ function Gate() {
         <Route path="/remakes" element={<Remake />} />
         <Route path="/videos" element={<Videos />} />
         <Route path="/signals" element={<SignalsQueue />} />
+        <Route path="/costs" element={<Costs />} />
         <Route path="/admin/users" element={<AdminUsers />} />
         <Route path="*" element={<Navigate to="/studio" replace />} />
       </Routes>

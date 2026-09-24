@@ -172,6 +172,11 @@ export async function fetchPostViaApify(url: string): Promise<FetchOutcome> {
     let data: any;
     try { data = JSON.parse(body); } catch { return { warning: "Phản hồi không đọc được." }; }
     const arr = Array.isArray(data) ? data : [data];
+
+    // Ghi sổ: trước đây đường này không ghi gì nên con số "đã dùng hôm nay"
+    // luôn thấp hơn thực tế — mà đó là con số dùng để quyết định có chặn hay không.
+    const { recordUsage } = await import("./cost-tracker");
+    await recordUsage({ actorId: actor, itemCount: arr.length, kind: "post", note: `bài lẻ ${platform}` });
     if (arr.length === 0) return { warning: "Không lấy được nội dung bài này." };
 
     const first = arr[0];

@@ -510,6 +510,19 @@ export const apifyUsage = pgTable("apify_usage", {
   actorId: text("actor_id").notNull(),
   itemCount: integer("item_count").notNull().default(0),
   note: text("note"),
+
+  /**
+   * Tiền của lượt chạy này, tính theo số kết quả THỰC NHẬN.
+   *
+   * Lưu dạng chuỗi để khỏi mất chính xác: số tiền ở đây nhỏ (hàng phần nghìn
+   * đô), cộng dồn kiểu số thực sẽ lệch dần.
+   */
+  costUsd: text("cost_usd"),
+  /** Loại việc: enrich | post | comments | channel — để biết tiền đi vào đâu. */
+  kind: text("kind"),
+  /** Ai gây ra khoản này. */
+  owner: text("owner"),
+
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
   dayIdx: index("apify_usage_day_idx").on(t.day),

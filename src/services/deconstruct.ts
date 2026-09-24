@@ -120,3 +120,24 @@ export async function analyzePostComments(id: string, limit = 100): Promise<Comm
   if (!res.ok) return asError(res, "Không phân tích được bình luận.");
   return res.json();
 }
+
+export interface CommentCostEstimate {
+  platform: string;
+  free: boolean;
+  unsupported?: boolean;
+  limit?: number;
+  maxCostUsd: number;
+  budget?: { limit: number; used: number; remaining: number };
+  spentToday?: number;
+  overBudget?: boolean;
+  note: string;
+}
+
+/** Báo giá TRƯỚC khi quét. Con số là trần — tiền thật tính theo số nhận về. */
+export async function estimateCommentCost(id: string, limit: number): Promise<CommentCostEstimate> {
+  const res = await fetch(`/api/deconstructions/${id}/comments/estimate?limit=${limit}`, {
+    headers: authHeaders(false),
+  });
+  if (!res.ok) return asError(res, "Không ước tính được chi phí.");
+  return res.json();
+}

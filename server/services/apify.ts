@@ -295,7 +295,8 @@ export async function enrichMetrics(
 
   if (isDbConfigured()) {
     // Ghi theo SỐ KẾT QUẢ NHẬN VỀ (thứ bị tính tiền), không phải số URL đã xin.
-    await getDb().insert(apifyUsage).values({ day: today(), actorId: actor, itemCount: raws.length, note: `enrich ${platform}` }).catch(() => {});
+    const { recordUsage } = await import("./cost-tracker");
+    await recordUsage({ actorId: actor, itemCount: raws.length, kind: "enrich", note: `enrich ${platform}` });
   }
 
   const fresh: { key: string; value: ApifyMetrics }[] = [];

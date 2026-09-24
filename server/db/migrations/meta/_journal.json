@@ -204,6 +204,13 @@
       "when": 1790230689071,
       "tag": "0028_blue_roughhouse",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1790232078995,
+      "tag": "0029_mean_stryfe",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,7 @@
 import { type ReactNode, useState } from "react";
 import { NavLink } from "react-router-dom";
 import {
+  Wallet,
   LogOut,
   Radar,
   Images,
@@ -61,10 +62,14 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
-const ADMIN_GROUP: NavGroup = {
+// Chi phí nằm ngoài nhóm quản trị: ai tiêu tiền cũng cần thấy mình đã tiêu
+// bao nhiêu, không phải chỉ quản trị viên.
+const SYSTEM_GROUP: NavGroup = {
   label: "Hệ thống",
-  items: [{ to: "/admin/users", label: "Quản trị", icon: ShieldCheck }],
+  items: [{ to: "/costs", label: "Chi phí", icon: Wallet }],
 };
+
+const ADMIN_ITEM: NavItem = { to: "/admin/users", label: "Quản trị", icon: ShieldCheck };
 
 const SIDEBAR_COLLAPSED_KEY = "outlier:sidebarCollapsed";
 
@@ -83,7 +88,9 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   // Mobile luôn mở drawer đầy đủ nhãn — "collapsed" chỉ là trạng thái desktop.
   const showLabels = !collapsed || mobileOpen;
-  const groups = isAdmin ? [...NAV_GROUPS, ADMIN_GROUP] : NAV_GROUPS;
+  const groups = isAdmin
+    ? [...NAV_GROUPS, { ...SYSTEM_GROUP, items: [...SYSTEM_GROUP.items, ADMIN_ITEM] }]
+    : [...NAV_GROUPS, SYSTEM_GROUP];
   const initials = (username || "?").slice(0, 2).toUpperCase();
 
   return (

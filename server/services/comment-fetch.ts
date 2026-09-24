@@ -106,6 +106,16 @@ export async function fetchComments(
 
     const rows = Array.isArray(data) ? data : [data];
     const all = normalize(rows);
+
+    // Tính tiền theo số THỰC NHẬN, kể cả phần bị cắt bớt sau đó — Apify đã tính
+    // tiền cho chúng rồi.
+    const { recordUsage } = await import("./cost-tracker");
+    await recordUsage({
+      actorId: actor,
+      itemCount: all.length,
+      kind: "comments",
+      note: `bình luận ${platform}`,
+    });
     // Cắt lại một lần nữa: actor có thể trả nhiều hơn số đã xin.
     const comments = all.slice(0, safeLimit);
 
