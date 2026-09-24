@@ -25,6 +25,58 @@ function dbDown(res: any): boolean {
 }
 
 /** Phân tích chạy nền; lỗi ghi thẳng vào bản ghi vì request đã trả về rồi. */
+/**
+ * Bóc cấu trúc từ dữ liệu ĐÃ QUÉT, không gọi lại dịch vụ tính tiền.
+ *
+ * Lúc quét kênh đã trả tiền để lấy caption, ảnh và số liệu của bài này rồi.
+ * Quét lại là trả tiền hai lần cho cùng một thứ. Phần còn thiếu — hiểu nội
+ * dung trong ảnh — làm bằng Gemini, miễn phí.
+ *
+ * Bình luận vẫn là việc riêng, người dùng tự bấm và tự quyết có trả tiền không.
+ */
+export async function runDeconstructFromRadarItem(
+  id: string,
+  item: typeof radarItems.$inferSelect,
+) {
+  try {
+    const { readImage, imageReadingToText } = await import("../services/image-read");
+    const imageReading = item.coverUrl ? await readImage(item.coverUrl) : null;
+
+    const combined = [item.title || "", imageReading ? imageReadingToText(imageReading) : ""]
+      .filter((x) => x.trim())
+      .join("\n\n");
+
+    let structure: any = null;
+    let dropped: string[] = [];
+    let warning: string | undefined;
+    if (combined.trim().length > 40) {
+      const out = await deconstructFromTranscript(combined, { title: item.title, durationSec: item.durationSec });
+      structure = out.structure;
+      dropped = out.dropped;
+      warning = out.warning;
+    } else {
+      warning = "Bài này quá ít nội dung để rút ra cách triển khai.";
+    }
+
+    await getDb().update(deconstructions).set({
+      status: "ready",
+      needsPaid: false,
+      imageReading,
+      bodyText: item.title ?? null,
+      structure,
+      analysisMode: "transcript",
+      analyzedBy: "gemini-vision",
+      errorMessage: [warning, ...dropped].filter(Boolean).join(" · ").slice(0, 500) || null,
+      updatedAt: new Date(),
+    } as any).where(eq(deconstructions.id, id));
+  } catch (e: any) {
+    console.error("deconstruct from radar item:", e?.message || e);
+    await getDb().update(deconstructions)
+      .set({ status: "error", errorMessage: String(e?.message || e).slice(0, 300), updatedAt: new Date() })
+      .where(eq(deconstructions.id, id));
+  }
+}
+
 export async function runDeconstructInBackground(id: string, url: string, allowPaid = false) {
   try {
     await getDb().update(deconstructions).set({ status: "analyzing", updatedAt: new Date() }).where(eq(deconstructions.id, id));
@@ -361,12 +413,18 @@ export function registerDeconstructRoutes(app: Express) {
     const radarItemId = UUID_RE.test(req.body?.radarItemId || "") ? req.body.radarItemId : null;
 
     let url = rawUrl;
+    // Bài đến từ kết quả quét thì mọi thứ cần thiết đã có sẵn và đã trả tiền
+    // rồi: caption, ảnh, số liệu. Quét lại là trả tiền hai lần cho cùng một bài.
+    let fromRadar: typeof radarItems.$inferSelect | null = null;
     try {
-      // Cho phép chỉ đưa mã bài trong Radar, tự lấy link ra.
       if (!url && radarItemId) {
         const [item] = await getDb().select().from(radarItems).where(eq(radarItems.id, radarItemId));
         if (!item) return res.status(404).json({ error: "Không tìm thấy bài trong kết quả quét." });
         url = item.url;
+        fromRadar = item;
+      } else if (radarItemId) {
+        const [item] = await getDb().select().from(radarItems).where(eq(radarItems.id, radarItemId));
+        fromRadar = item || null;
       }
       if (!url) return res.status(400).json({ error: "Dán link bài muốn phân tích." });
       assertPublicUrl(url); // chặn link trỏ vào mạng nội bộ
@@ -376,15 +434,56 @@ export function registerDeconstructRoutes(app: Express) {
 
     try {
       const [row] = await getDb().insert(deconstructions)
-        .values({ owner: username, sourceUrl: url, radarItemId, status: "downloading" })
+        .values({
+          owner: username,
+          sourceUrl: url,
+          radarItemId,
+          status: "downloading",
+          // Chép sẵn những gì đã có — nếu đi đường miễn phí thì đây là dữ liệu chính.
+          ...(fromRadar
+            ? {
+                platform: fromRadar.platform,
+                title: fromRadar.title,
+                thumbnailUrl: fromRadar.coverUrl,
+                views: fromRadar.views,
+                likes: fromRadar.likes,
+                comments: fromRadar.comments,
+                shares: fromRadar.shares,
+                followerCount: fromRadar.followerCount,
+                channelName: fromRadar.channelName,
+                durationSec: fromRadar.durationSec,
+                contentKind: fromRadar.contentKind,
+              }
+            : {}),
+        } as any)
         .returning();
 
+      // Bài viết (không phải video) đã có caption và ảnh thì bóc được ngay mà
+      // không tốn đồng nào: đọc ảnh bằng Gemini rồi rút cách triển khai. Chỉ
+      // lấy BÌNH LUẬN mới phải trả tiền, và đó là việc riêng người dùng tự bấm.
+      // Dựa vào NỀN TẢNG chứ không vào nhãn contentKind: bài Facebook quét
+      // trước hôm nay bị đánh nhầm là "video", tin vào nhãn đó là lại trả tiền
+      // oan. Chỉ YouTube/TikTok/Douyin mới thật sự cần tải video về.
+      const VIDEO_PLATFORMS = ["youtube", "tiktok", "douyin"];
+      const canDoFree =
+        !!fromRadar &&
+        !VIDEO_PLATFORMS.includes(fromRadar.platform) &&
+        !!(fromRadar.title?.trim() || fromRadar.coverUrl);
+
       res.status(201).json({
-        ...row, polling: true,
-        message: "Đang phân tích bài này. Việc này mất khoảng 1-3 phút.",
+        ...row,
+        polling: true,
+        message: canDoFree
+          ? "Đang phân tích bằng dữ liệu đã quét — không tốn thêm phí."
+          : "Đang phân tích bài này. Việc này mất khoảng 1-3 phút.",
+        free: canDoFree,
       });
 
-      void runDeconstructInBackground(row.id, url, req.body?.allowPaid === true);
+      if (canDoFree) {
+        void runDeconstructFromRadarItem(row.id, fromRadar!);
+      } else {
+        void runDeconstructInBackground(row.id, url, req.body?.allowPaid === true);
+      }
     } catch (e: any) {
       console.error("deconstruct create:", e?.message || e);
       res.status(500).json({ error: "Không bắt đầu phân tích được." });
