@@ -22,16 +22,67 @@ export interface ChannelBaseline {
 }
 
 export interface OutperformWeights {
-  vsChannelMedian: number; // vượt mốc thường ngày của kênh
-  vsFollowers: number;     // tương tác so với quy mô người theo dõi
-  freshness: number;       // bài mới có giá trị tham khảo hơn
+  vsChannelMedian: number;  // vượt mốc thường ngày của kênh
+  vsFollowers: number;      // tương tác so với quy mô người theo dõi
+  engagementDepth: number;  // người ta có bình luận/chia sẻ không, hay chỉ lướt qua thả tim
+  freshness: number;        // bài mới có giá trị tham khảo hơn
 }
 
 export const DEFAULT_WEIGHTS: OutperformWeights = {
-  vsChannelMedian: 0.55,
-  vsFollowers: 0.30,
+  vsChannelMedian: 0.42,
+  vsFollowers: 0.20,
+  engagementDepth: 0.23,
   freshness: 0.15,
 };
+
+/**
+ * Độ sâu tương tác: người ta chỉ lướt qua thả tim, hay dừng lại bình luận và
+ * mang đi chia sẻ.
+ *
+ * Vì sao đáng một trục riêng khi muốn tìm bài để REMAKE: lượt thích gần như
+ * miễn phí, ai cũng bấm. Bình luận tốn công gõ, chia sẻ tốn cả uy tín cá nhân —
+ * nên tỉ lệ bình luận và chia sẻ trên lượt thích nói lên bài có thật sự chạm
+ * hay không. Một bài 1000 thích / 5 bình luận là bài đẹp mắt; 300 thích / 200
+ * bình luận là bài đúng chỗ ngứa, và đó mới là bài đáng học.
+ *
+ * Mốc tham chiếu từ dữ liệu thực tế mạng xã hội Việt Nam: bình luận thường vào
+ * khoảng 2-5% lượt thích, chia sẻ khoảng 1-3%.
+ */
+export function engagementDepthScore(
+  likes?: number | null,
+  comments?: number | null,
+  shares?: number | null,
+): { score: number; reason: string } | null {
+  const l = num(likes) ?? 0;
+  const c = num(comments) ?? 0;
+  const sh = num(shares) ?? 0;
+
+  // Không có bình luận lẫn chia sẻ thì không có gì để nói — trả null thay vì 0,
+  // để trục này bị loại khỏi phép tính thay vì kéo điểm xuống oan.
+  if (c === 0 && sh === 0) return null;
+  // Bài quá ít tương tác thì mọi tỉ lệ đều nhiễu.
+  if (l + c + sh < 20) return null;
+
+  const base = Math.max(l, 1);
+  const commentRate = c / base;
+  const shareRate = sh / base;
+
+  // 5% bình luận và 3% chia sẻ coi như đạt trần của trục này.
+  const cPart = Math.min(1, commentRate / 0.05);
+  const sPart = Math.min(1, shareRate / 0.03);
+  const score = Math.min(1, cPart * 0.6 + sPart * 0.4);
+
+  const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
+  let reason: string;
+  if (score >= 0.7) {
+    reason = `Người đọc thật sự phản ứng: ${pct(commentRate)} bình luận, ${pct(shareRate)} chia sẻ trên lượt thích`;
+  } else if (score >= 0.35) {
+    reason = `Có tương tác khá: ${pct(commentRate)} bình luận, ${pct(shareRate)} chia sẻ trên lượt thích`;
+  } else {
+    reason = `Chủ yếu chỉ thả tim — ${pct(commentRate)} bình luận, ${pct(shareRate)} chia sẻ`;
+  }
+  return { score, reason };
+}
 
 /** Số bài tối thiểu để mốc của kênh đáng tin. */
 export const MIN_SAMPLE_FOR_BASELINE = 5;
@@ -44,6 +95,8 @@ export interface OutperformResult {
   breakdown: {
     vsChannelMedian: number | null;
     vsFollowers: number | null;
+    /** Bình luận + chia sẻ so với lượt thích — null khi chưa có số liệu. */
+    engagementDepth: number | null;
     /** So với mặt bằng lần quét — chỉ có khi thiếu mốc kênh. */
     sessionRelative?: number | null;
     freshness: number;
@@ -152,7 +205,12 @@ export function scoreOutperform(
     reasons.push("Chưa có số người theo dõi để so sánh");
   }
 
-  // --- Trục 3: độ tươi ---
+  // --- Trục 3: độ sâu tương tác (bình luận/chia sẻ so với lượt thích) ---
+  const depth = engagementDepthScore(item.likes, item.comments, item.shares);
+  if (depth) reasons.push(depth.reason);
+  else reasons.push("Chưa có số bình luận/chia sẻ để đánh giá mức độ chạm");
+
+  // --- Trục 4: độ tươi ---
   const fresh = freshnessScore(item.publishedAt, now);
 
   // --- Gộp điểm: chỉ tính các trục có dữ liệu, rồi chuẩn hoá lại trọng số ---
@@ -160,13 +218,16 @@ export function scoreOutperform(
   if (vsMedian !== null) parts.push({ v: vsMedian, w: weights.vsChannelMedian });
   else if (sessionRelative !== null) parts.push({ v: sessionRelative, w: weights.vsChannelMedian });
   if (vsFollowers !== null) parts.push({ v: vsFollowers, w: weights.vsFollowers });
+  if (depth) parts.push({ v: depth.score, w: weights.engagementDepth });
   const totalW = parts.reduce((s, p) => s + p.w, 0);
   const score = totalW > 0 ? parts.reduce((s, p) => s + p.v * p.w, 0) / totalW : 0;
 
   // --- Độ tin cậy: phụ thuộc có bao nhiêu trục thực sự có dữ liệu ---
+  // Càng nhiều trục có dữ liệu thật thì điểm càng đáng tin.
+  const axesWithData = [vsMedian, vsFollowers, depth?.score ?? null].filter((v) => v !== null).length;
   let confidence: OutperformResult["confidence"] = "low";
-  if (vsMedian !== null && vsFollowers !== null) confidence = "high";
-  else if (vsMedian !== null || vsFollowers !== null) confidence = "medium";
+  if (axesWithData >= 3) confidence = "high";
+  else if (axesWithData >= 1) confidence = "medium";
   if (confidence !== "high") {
     reasons.push("Điểm này chỉ nên tham khảo — còn thiếu số liệu để chấm chắc chắn");
   }
@@ -174,7 +235,14 @@ export function scoreOutperform(
   return {
     score: Math.max(0, Math.min(1, score)),
     confidence,
-    breakdown: { vsChannelMedian: vsMedian, vsFollowers, freshness: fresh, sessionRelative, reasons },
+    breakdown: {
+      vsChannelMedian: vsMedian,
+      vsFollowers,
+      engagementDepth: depth?.score ?? null,
+      freshness: fresh,
+      sessionRelative,
+      reasons,
+    },
   };
 }
 

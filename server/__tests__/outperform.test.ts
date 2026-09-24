@@ -4,7 +4,7 @@
 //   kênh 14.000.000 follower có bài 6.000 like
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { scoreOutperform, squashRatio, freshnessScore, median, MIN_SAMPLE_FOR_BASELINE } from "../services/outperform";
+import { scoreOutperform, squashRatio, freshnessScore, median, MIN_SAMPLE_FOR_BASELINE, engagementDepthScore } from "../services/outperform";
 
 const NOW = new Date("2026-09-18T00:00:00Z");
 const daysAgo = (d: number) => new Date(NOW.getTime() - d * 86_400_000);
@@ -36,9 +36,47 @@ describe("Yêu cầu cốt lõi: kênh nhỏ bật lên thắng kênh lớn ì �
     assert.ok(kenhLon.score < 0.5, `kênh lớn dưới mức thường phải < 0.5, đang ${kenhLon.score.toFixed(3)}`);
   });
 
-  test("cả hai đều có đủ dữ liệu → độ tin cậy cao", () => {
-    assert.equal(kenhNho.confidence, "high");
-    assert.equal(kenhLon.confidence, "high");
+  test("có mốc kênh và quy mô nhưng thiếu bình luận/chia sẻ → tin cậy vừa", () => {
+    // "Cao" đòi hỏi biết cả người ta có bình luận, chia sẻ hay không. Thiếu
+    // phần đó thì chỉ biết bài được nhìn nhiều, chưa biết có chạm hay không.
+    assert.equal(kenhNho.confidence, "medium");
+    assert.equal(kenhLon.confidence, "medium");
+  });
+});
+
+describe("engagementDepthScore — bình luận/chia sẻ nói lên bài có chạm không", () => {
+  test("không có bình luận lẫn chia sẻ thì bỏ trục này, không chấm 0", () => {
+    // Trả null để trục bị loại khỏi phép tính, thay vì kéo điểm xuống oan.
+    assert.equal(engagementDepthScore(1000, 0, 0), null);
+  });
+
+  test("quá ít tương tác thì mọi tỉ lệ đều nhiễu", () => {
+    assert.equal(engagementDepthScore(5, 2, 1), null);
+  });
+
+  test("bài chạm thật được điểm cao hơn bài chỉ đẹp mắt", () => {
+    const chiDepMat = engagementDepthScore(1000, 5, 2)!;      // 0.5% bình luận
+    const dungChoNgua = engagementDepthScore(300, 200, 40)!;  // gõ phím ào ào
+    assert.ok(dungChoNgua.score > chiDepMat.score);
+    assert.ok(dungChoNgua.score >= 0.7, `bài chạm thật phải cao: ${dungChoNgua.score}`);
+    assert.ok(chiDepMat.score < 0.35, `bài chỉ thả tim phải thấp: ${chiDepMat.score}`);
+  });
+
+  test("lời giải thích nói đúng bản chất, không chỉ đưa con số", () => {
+    assert.match(engagementDepthScore(300, 200, 40)!.reason, /thật sự phản ứng/);
+    assert.match(engagementDepthScore(2000, 20, 5)!.reason, /chỉ thả tim/);
+  });
+
+  test("điểm không vượt quá 1 dù tỉ lệ cực cao", () => {
+    const r = engagementDepthScore(100, 500, 300)!;
+    assert.ok(r.score <= 1);
+  });
+
+  test("chia sẻ được tính nhẹ hơn bình luận nhưng vẫn có trọng lượng", () => {
+    const chiBinhLuan = engagementDepthScore(1000, 50, 0)!;
+    const chiChiaSe = engagementDepthScore(1000, 0, 30)!;
+    assert.ok(chiBinhLuan.score > chiChiaSe.score);
+    assert.ok(chiChiaSe.score > 0);
   });
 });
 

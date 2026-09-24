@@ -410,6 +410,8 @@ export interface RadarJob {
 export interface RadarScoreBreakdown {
   vsChannelMedian: number | null;
   vsFollowers: number | null;
+  /** Bình luận + chia sẻ so với lượt thích — bài có chạm hay chỉ đẹp mắt. */
+  engagementDepth?: number | null;
   sessionRelative?: number | null;
   freshness: number;
   reasons: string[];

@@ -817,6 +817,36 @@ function RadarItemCard({ item, minSampleForBaseline }: { item: RadarItem; minSam
           </button>
         </div>
 
+        {/* Điểm đến từ đâu: thấy được mới tin được, và mới biết nên đọc kỹ chỗ nào. */}
+        {item.scoreBreakdown && (
+          <div className="flex items-center gap-3 flex-wrap text-[11px]">
+            {(
+              [
+                ["Hơn mức thường của kênh", item.scoreBreakdown.vsChannelMedian],
+                ["Người đọc phản ứng", item.scoreBreakdown.engagementDepth],
+                ["So với quy mô kênh", item.scoreBreakdown.vsFollowers],
+                ["Độ mới", item.scoreBreakdown.freshness],
+              ] as [string, number | null | undefined][]
+            ).map(([label, v]) => (
+              <span key={label} className="flex items-center gap-1.5">
+                <span className="text-stone-400">{label}</span>
+                {v == null ? (
+                  <span className="text-stone-300" title="Chưa có số liệu cho phần này">
+                    —
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1">
+                    <span className="w-10 h-1.5 rounded-full bg-stone-200 overflow-hidden">
+                      <span className="block h-full bg-storm-500" style={{ width: `${Math.round(v * 100)}%` }} />
+                    </span>
+                    <span className="text-stone-600 font-medium">{Math.round(v * 100)}</span>
+                  </span>
+                )}
+              </span>
+            ))}
+          </div>
+        )}
+
         {reasons.length > 0 && (
           <ul className="flex flex-col gap-1 text-xs text-stone-500 bg-stone-50 border border-stone-100 rounded-lg px-2.5 py-2">
             {reasons.map((r, i) => (
