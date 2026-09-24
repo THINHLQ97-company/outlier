@@ -442,11 +442,24 @@ export interface RadarItem {
   // rời): bài này mới xuất hiện so với lần làm mới trước — xem
   // server/routes/channels.routes.ts. Radar thường không set field này.
   isNew?: boolean;
+  /** Nhận định bài có đáng remake không — server tính lúc đọc. */
+  verdict?: ContentVerdict;
+}
+
+/** Mirror server/services/content-verdict.ts. */
+export interface ContentVerdict {
+  level: "nen_lam" | "can_nhac" | "chua_noi_bat";
+  label: string;
+  reason: string;
+  signals: { name: string; passed: boolean; detail: string }[];
+  whatToLearn?: string;
 }
 
 export interface RadarJobDetail extends RadarJob {
   items: RadarItem[];
   minSampleForBaseline: number;
+  /** Bao nhiêu bài được đề xuất lên đầu. */
+  recommendedCount?: number;
 }
 
 // POST /api/radar trả về NGAY (status="scanning"), việc quét chạy nền — client

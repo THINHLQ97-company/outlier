@@ -788,9 +788,29 @@ function RadarItemCard({ item, minSampleForBaseline }: { item: RadarItem; minSam
         </div>
 
         <div className="flex items-center gap-1.5 flex-wrap">
+          {/* Chỉ gắn nhãn cho bài đáng chú ý. Bài "chưa nổi bật" không hiện gì:
+              máy chấm sai thì một cái nhãn phủ định sẽ khiến người dùng lướt qua
+              bài đáng làm. */}
+          {item.verdict && item.verdict.level !== "chua_noi_bat" && (
+            <span
+              className={`ds-badge ${item.verdict.level === "nen_lam" ? "ds-badge-success" : "ds-badge-warning"}`}
+              title={item.verdict.reason}
+            >
+              {item.verdict.label}
+            </span>
+          )}
           <span className={`ds-badge ${conf.cls}`}>{conf.label}</span>
           <span className={`ds-badge ${src.cls}`}>{src.label}</span>
         </div>
+
+        {item.verdict && item.verdict.level !== "chua_noi_bat" && (
+          <div className="text-xs bg-storm-50 border border-storm-200 rounded-lg px-2.5 py-2">
+            <p className="text-storm-900">{item.verdict.reason}</p>
+            {item.verdict.whatToLearn && (
+              <p className="text-storm-700 mt-1">{item.verdict.whatToLearn}</p>
+            )}
+          </div>
+        )}
 
         <div className="flex items-center gap-3 flex-wrap text-xs text-stone-600">
           <span className="flex items-center gap-1" title="Lượt xem">
