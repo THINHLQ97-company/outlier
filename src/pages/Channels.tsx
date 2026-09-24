@@ -33,6 +33,7 @@ import {
 } from "../services/channels";
 import ConfirmDialog from "../components/ConfirmDialog";
 import type { WatchedChannel, WatchedChannelDetail, RadarItem, RadarConfidence, RadarMetricsSource } from "../types";
+import PlatformMark from "../components/PlatformMark";
 
 // Trang "Kênh theo dõi" — thêm kênh đối thủ rồi mỗi ngày bấm "Làm mới" để xem
 // họ vừa đăng gì và bài nào đang bật (docs/PRD.md §4 J2). LINH HỒN màn này:
@@ -294,8 +295,22 @@ export default function Channels() {
                 }`}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <span className="text-sm font-semibold text-stone-800 truncate block min-w-0">
-                    {c.channelName || c.channelUrl}
+                  <span className="flex items-center gap-2 min-w-0">
+                    {c.channelAvatarUrl ? (
+                      <img
+                        src={c.channelAvatarUrl}
+                        alt=""
+                        className="w-7 h-7 rounded-full object-cover bg-stone-100 shrink-0"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <span className="w-7 h-7 rounded-full bg-stone-100 shrink-0 flex items-center justify-center">
+                        <PlatformMark platform={c.platform} className="w-4 h-4" />
+                      </span>
+                    )}
+                    <span className="text-sm font-semibold text-stone-800 truncate block min-w-0">
+                      {c.channelName || c.channelUrl}
+                    </span>
                   </span>
                   {c.lastNewCount > 0 && (
                     <span className="shrink-0 flex items-center gap-1 text-[10px] font-bold text-white bg-storm-600 px-1.5 py-0.5 rounded-full">
@@ -304,7 +319,10 @@ export default function Channels() {
                   )}
                 </div>
                 <div className="flex items-center gap-1.5 flex-wrap mt-1">
-                  <span className="text-[10px] text-stone-400">{PLATFORM_LABEL[c.platform] || c.platform}</span>
+                  <span className="inline-flex items-center gap-1 text-[10px] text-stone-400">
+                    <PlatformMark platform={c.platform} className="w-3 h-3" />
+                    {PLATFORM_LABEL[c.platform] || c.platform}
+                  </span>
                   {c.followerCount != null && (
                     <span className="text-[10px] text-stone-400 flex items-center gap-0.5">
                       <Users className="w-2.5 h-2.5" aria-hidden="true" /> {formatMetric(c.followerCount)}
@@ -564,12 +582,29 @@ function ChannelDetailPanel({
       <div className="ds-card">
       <div className="ds-card-body">
         <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 flex gap-3">
+            {/* Avatar kênh: nhận ra ngay đang xem kênh nào, không phải đọc URL. */}
+            {detail.channelAvatarUrl ? (
+              <img
+                src={detail.channelAvatarUrl}
+                alt=""
+                className="w-11 h-11 rounded-full object-cover bg-stone-100 shrink-0"
+                loading="lazy"
+              />
+            ) : (
+              <span className="w-11 h-11 rounded-full bg-stone-100 shrink-0 flex items-center justify-center">
+                <PlatformMark platform={detail.platform} className="w-5 h-5" />
+              </span>
+            )}
+            <div className="min-w-0">
             <h2 className="text-lg font-bold text-stone-800 font-display truncate">
               {detail.channelName || detail.channelUrl}
             </h2>
             <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-              <span className="text-[11px] text-stone-400">{PLATFORM_LABEL[detail.platform] || detail.platform}</span>
+              <span className="inline-flex items-center gap-1 text-[11px] text-stone-400">
+                <PlatformMark platform={detail.platform} className="w-3 h-3" />
+                {PLATFORM_LABEL[detail.platform] || detail.platform}
+              </span>
               {detail.followerCount != null && (
                 <span className="text-[11px] text-stone-400 flex items-center gap-0.5">
                   <Users className="w-3 h-3" aria-hidden="true" /> {formatMetric(detail.followerCount)} người theo dõi
@@ -593,6 +628,7 @@ function ChannelDetailPanel({
               </a>
             </div>
             {detail.note && <p className="text-xs text-stone-500 mt-1.5 italic">"{detail.note}"</p>}
+            </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button onClick={onRefresh} disabled={watching} className="ds-btn ds-btn-primary">

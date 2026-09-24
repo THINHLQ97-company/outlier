@@ -786,6 +786,8 @@ export const watchedChannels = pgTable("watched_channels", {
   channelUrl: text("channel_url").notNull(),
   channelKey: text("channel_key"),          // id kênh trên nền tảng (biết sau lần quét đầu)
   channelName: text("channel_name"),
+  /** Ảnh đại diện kênh — để danh sách nhận ra ngay là kênh nào. */
+  channelAvatarUrl: text("channel_avatar_url"),
   followerCount: integer("follower_count"),
   note: text("note"),                        // ghi chú của người dùng, vd "đối thủ trực tiếp"
 

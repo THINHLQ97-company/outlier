@@ -1,0 +1,1 @@
+ALTER TABLE "watched_channels" ADD COLUMN "channel_avatar_url" text;

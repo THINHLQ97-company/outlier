@@ -503,6 +503,8 @@ export type RadarEnrichResult = RadarEnrichSkipped | RadarEnrichStarted;
 export type ChannelScanStatus = "idle" | "scanning" | "error";
 
 export interface WatchedChannel {
+  /** Ảnh đại diện kênh, lấy được sau lần quét. */
+  channelAvatarUrl?: string | null;
   id: string;
   owner: string;
   platform: string;

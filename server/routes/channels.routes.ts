@@ -117,12 +117,17 @@ export async function refreshChannelInBackground(channelId: string, limit = DEFA
       .where(eq(radarJobs.id, job.id));
 
     const first = r.candidates.find((c) => c.channelKey || c.channelName || c.followerCount);
+    // Avatar có thể nằm ở bài khác với bài mang tên kênh, nên tìm riêng.
+    const withAvatar = r.candidates.find((c) => (c as any).channelAvatarUrl);
     await db.update(watchedChannels).set({
       scanStatus: "idle", errorMessage: null,
       lastScanAt: new Date(), lastJobId: job.id, lastNewCount: newKeys.length,
       scanCount: (chan.scanCount || 0) + 1,
       channelKey: chan.channelKey ?? first?.channelKey ?? null,
-      channelName: chan.channelName ?? first?.channelName ?? null,
+      // Tên quét được thắng tên cũ: lần đầu thêm kênh thì tên chính là URL,
+      // giữ nó lại thì danh sách mãi hiện đường dẫn thay vì tên trang.
+      channelName: first?.channelName ?? chan.channelName ?? null,
+      channelAvatarUrl: (withAvatar as any)?.channelAvatarUrl ?? chan.channelAvatarUrl ?? null,
       followerCount: first?.followerCount ?? chan.followerCount ?? null,
       updatedAt: new Date(),
     }).where(eq(watchedChannels.id, channelId));
@@ -150,6 +155,7 @@ async function scanChannelViaApify(platform: string, channelUrl: string, limit: 
     contentKind: (platform === "facebook" ? "post" : "video") as any,
     publishedAt: m.publishedAt,
     channelKey: m.channelKey, channelName: m.channelName,
+    channelAvatarUrl: m.channelAvatarUrl,
     followerCount: m.followerCount,
     views: m.views, likes: m.likes,
     __fromApify: true,
