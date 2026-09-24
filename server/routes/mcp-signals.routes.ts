@@ -499,6 +499,20 @@ const TOOLS = [
     },
   },
   {
+    name: "deconstruct_image",
+    description: "Bóc cấu trúc từ một ẢNH thay vì từ link — dùng khi chỉ có ảnh chụp bài, hoặc khi link tốn tiền quét. Đọc chữ trong ảnh (giữ nguyên văn), nhận ra loại ảnh (ảnh chế, ảnh chat, đồ hoạ…), rút ra ảnh gây chú ý bằng cách nào, rồi bóc ra cách triển khai. MIỄN PHÍ — chỉ dùng Gemini, không đụng dịch vụ tính tiền.",
+    annotations: { title: "Bóc cấu trúc từ ảnh", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: {
+        image_base64: { type: "string", description: "Ảnh dạng data URL (data:image/png;base64,...) hoặc base64 thuần" },
+        caption: { type: "string", description: "Caption của bài, nếu biết" },
+      },
+      required: ["image_base64"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "deconstruct_comments",
     description: "Đọc bình luận dưới bài gốc rồi rút ra NGƯỜI XEM THẬT SỰ QUAN TÂM GÌ: các cụm chủ đề họ bàn (kèm số lượng và câu trích thật), câu hỏi lặp lại, điều họ phản đối, và góc nên làm tiếp. Bóc cấu trúc cho biết bài được dựng thế nào; cái này cho biết nó chạm vào đâu — hai thứ hay lệch nhau, và thứ người đọc bàn mới là thứ đáng viết tiếp. YouTube đọc MIỄN PHÍ (cần YOUTUBE_API_KEY); Facebook và TikTok qua Apify nên TỐN TIỀN theo từng bình luận — hỏi người dùng trước khi gọi. Số lượng trong kết quả do code đếm lại, không phải model tự khai.",
     annotations: { title: "Phân tích bình luận", readOnlyHint: false },
@@ -1337,6 +1351,58 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
       .where(eq(remakes.id, args.remake_id));
 
     return record;
+  }
+
+  if (name === "deconstruct_image") {
+    const raw = String(args.image_base64 || "").trim();
+    if (!raw) throw new Error("Cần image_base64");
+    // Nhận cả data URL lẫn base64 thuần — Claude gửi kiểu nào cũng được.
+    const dataUrl = raw.startsWith("data:") ? raw : `data:image/png;base64,${raw}`;
+
+    const { parseDataUrl, persistDataUrl } = await import("../storage");
+    const parsed = parseDataUrl(dataUrl);
+    if (!parsed) throw new Error("Ảnh không đọc được");
+    if (parsed.buffer.length > 8 * 1024 * 1024) throw new Error("Ảnh lớn hơn 8MB");
+
+    const { readImageData, imageReadingToText } = await import("../services/image-read");
+    const reading = await readImageData({
+      mimeType: `image/${parsed.ext === "jpg" ? "jpeg" : parsed.ext}`,
+      data: parsed.buffer.toString("base64"),
+    });
+    if (!reading) throw new Error("Không đọc được nội dung trong ảnh");
+
+    const storedUrl = await persistDataUrl("deconstruct", dataUrl);
+    const caption = args.caption ? String(args.caption).trim() : "";
+    const combined = [caption, imageReadingToText(reading)].filter((x) => x.trim()).join("\n\n");
+
+    let structure: any = null;
+    let warning: string | undefined;
+    if (combined.trim().length > 40) {
+      const { deconstructFromTranscript } = await import("../services/deconstruct");
+      const out = await deconstructFromTranscript(combined, { title: null, durationSec: null });
+      structure = out.structure;
+      warning = out.warning;
+    } else {
+      warning = "Ảnh có quá ít nội dung để rút ra cách triển khai.";
+    }
+
+    const [row] = await db.insert(deconstructions).values({
+      owner: principal.username,
+      sourceUrl: storedUrl || "upload://image",
+      platform: "upload",
+      contentKind: "image",
+      status: "ready",
+      title: caption ? caption.slice(0, 120) : reading.textInImage.slice(0, 120) || "Ảnh tải lên",
+      thumbnailUrl: storedUrl,
+      imageReading: reading,
+      bodyText: caption || null,
+      structure,
+      analysisMode: "transcript",
+      analyzedBy: "gemini-vision",
+      errorMessage: warning || null,
+    } as any).returning();
+
+    return { deconstruction_id: row.id, image_reading: reading, structure, warning };
   }
 
   if (name === "deconstruct_comments") {

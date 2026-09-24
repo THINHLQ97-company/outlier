@@ -66,9 +66,21 @@ async function fetchImageAsBase64(url: string): Promise<{ mimeType: string; data
   }
 }
 
+/**
+ * Đọc ảnh đã có sẵn trong bộ nhớ — dùng cho ảnh người dùng tự tải lên.
+ * Tách khỏi readImage vì ảnh tải lên không có đường dẫn công khai để tải về.
+ */
+export async function readImageData(img: { mimeType: string; data: string }): Promise<ImageReading | null> {
+  return analyzeAndParse(img);
+}
+
 export async function readImage(imageUrl: string): Promise<ImageReading | null> {
   const img = await fetchImageAsBase64(imageUrl);
   if (!img) return null;
+  return analyzeAndParse(img);
+}
+
+async function analyzeAndParse(img: { mimeType: string; data: string }): Promise<ImageReading | null> {
 
   let raw: string;
   try {

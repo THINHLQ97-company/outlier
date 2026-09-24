@@ -183,6 +183,79 @@ export function registerDeconstructRoutes(app: Express) {
   });
 
   // ===== Bắt đầu phân tích =====
+  // ===== Bóc cấu trúc từ ẢNH TẢI LÊN =====
+  // Nhiều bài hay chỉ còn lại ảnh chụp màn hình, hoặc link thì tốn tiền quét.
+  // Đường này hoàn toàn MIỄN PHÍ (chỉ dùng Gemini) và không đụng Apify.
+  app.post("/api/deconstructions/from-image", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const username = getAuthUser(req)!;
+    const dataUrl = typeof req.body?.imageBase64 === "string" ? req.body.imageBase64 : "";
+    const note = typeof req.body?.note === "string" ? req.body.note.trim() : "";
+    const caption = typeof req.body?.caption === "string" ? req.body.caption.trim() : "";
+    if (!dataUrl) return res.status(400).json({ error: "Chưa có ảnh." });
+
+    try {
+      const { parseDataUrl, persistDataUrl } = await import("../storage");
+      const parsed = parseDataUrl(dataUrl);
+      if (!parsed) return res.status(400).json({ error: "Ảnh không đọc được — cần tệp ảnh thật." });
+      if (parsed.buffer.length > 8 * 1024 * 1024) {
+        return res.status(400).json({ error: "Ảnh lớn hơn 8MB — thu nhỏ rồi thử lại." });
+      }
+
+      const { readImageData, imageReadingToText } = await import("../services/image-read");
+      const reading = await readImageData({
+        mimeType: `image/${parsed.ext === "jpg" ? "jpeg" : parsed.ext}`,
+        data: parsed.buffer.toString("base64"),
+      });
+      if (!reading) {
+        return res.status(400).json({ error: "Không đọc được nội dung trong ảnh. Thử ảnh rõ hơn." });
+      }
+
+      // Giữ lại ảnh để người dùng đối chiếu với kết luận.
+      const storedUrl = await persistDataUrl("deconstruct", dataUrl);
+
+      // Bóc cấu trúc từ nội dung đọc được, gộp cả caption nếu người dùng có dán.
+      const combined = [caption, imageReadingToText(reading), note ? `Ghi chú: ${note}` : ""]
+        .filter((x) => x.trim())
+        .join("\n\n");
+
+      let structure: any = null;
+      let dropped: string[] = [];
+      let warning: string | undefined;
+      if (combined.trim().length > 40) {
+        const viaText = await deconstructFromTranscript(combined, { title: null, durationSec: null });
+        structure = viaText.structure;
+        dropped = viaText.dropped;
+        warning = viaText.warning;
+      } else {
+        warning = "Ảnh có quá ít nội dung để rút ra cách triển khai.";
+      }
+
+      const [row] = await getDb().insert(deconstructions).values({
+        owner: username,
+        // Ảnh tải lên không có bài gốc trên mạng; trỏ về chính ảnh đã lưu để
+        // người dùng mở lại được, thay vì để trống rồi hỏng chỗ khác.
+        sourceUrl: storedUrl || "upload://image",
+        platform: "upload",
+        contentKind: "image",
+        status: "ready",
+        title: caption ? caption.slice(0, 120) : reading.textInImage.slice(0, 120) || "Ảnh tải lên",
+        thumbnailUrl: storedUrl,
+        imageReading: reading,
+        bodyText: caption || null,
+        structure,
+        analysisMode: "transcript",
+        analyzedBy: "gemini-vision",
+        errorMessage: [warning, ...dropped].filter(Boolean).join(" · ").slice(0, 500) || null,
+      } as any).returning();
+
+      res.status(201).json(row);
+    } catch (e: any) {
+      console.error("deconstruct from image:", e?.message || e);
+      res.status(500).json({ error: e?.message || "Không phân tích được ảnh." });
+    }
+  });
+
   // Báo giá TRƯỚC khi chạy, để người dùng quyết định có bấm hay không.
   // Con số này là trần: tiền thật tính theo số bình luận nhận về, có thể ít hơn.
   app.get("/api/deconstructions/:id/comments/estimate", requireAuth, async (req, res) => {

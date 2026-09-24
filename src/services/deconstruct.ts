@@ -141,3 +141,23 @@ export async function estimateCommentCost(id: string, limit: number): Promise<Co
   if (!res.ok) return asError(res, "Không ước tính được chi phí.");
   return res.json();
 }
+
+/**
+ * Bóc cấu trúc từ ẢNH tải lên thay vì link.
+ *
+ * Hoàn toàn miễn phí (chỉ dùng Gemini đọc ảnh), không đụng dịch vụ tính tiền.
+ * Trả về ngay khi xong — không cần theo dõi việc chạy nền như đường link.
+ */
+export async function createDeconstructionFromImage(input: {
+  imageBase64: string;
+  caption?: string;
+  note?: string;
+}): Promise<DeconstructionRow> {
+  const res = await fetch("/api/deconstructions/from-image", {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) return asError(res, "Không phân tích được ảnh.");
+  return res.json();
+}

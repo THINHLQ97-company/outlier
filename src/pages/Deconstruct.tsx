@@ -20,11 +20,13 @@ import {
   Sparkles,
   PenLine,
   Clapperboard,
+  ImagePlus,
   type LucideIcon, Coins } from "lucide-react";
 import {
   listDeconstructions,
   getDeconstruction,
   createDeconstruction,
+  createDeconstructionFromImage,
   deleteDeconstruction,
   pollDeconstruction,
   analyzePostComments,
@@ -469,6 +471,8 @@ function NewLinkForm({ onCreated }: { onCreated: (row: DeconstructionRow) => voi
   const [url, setUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<"link" | "image">("link");
+  const [caption, setCaption] = useState("");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -490,37 +494,137 @@ function NewLinkForm({ onCreated }: { onCreated: (row: DeconstructionRow) => voi
     }
   }
 
+  // Dán ảnh từ bộ nhớ tạm: chụp màn hình xong Ctrl+V là xong, không phải lưu ra
+  // tệp rồi đi tìm. Bắt ở cấp cửa sổ để người dùng không phải bấm vào ô nào
+  // trước — nhưng chỉ khi đang ở chế độ ảnh, để không cướp Ctrl+V của ô nhập link.
+  useEffect(() => {
+    if (mode !== "image") return;
+    function onPaste(e: ClipboardEvent) {
+      if (submitting) return;
+      for (const item of Array.from(e.clipboardData?.items || [])) {
+        if (!item.type.startsWith("image/")) continue;
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          void handleImage(file);
+          return;
+        }
+      }
+    }
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  });
+
+  async function handleImage(file: File) {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error("Không đọc được tệp."));
+        reader.readAsDataURL(file);
+      });
+      const row = await createDeconstructionFromImage({ imageBase64: dataUrl, caption: caption.trim() });
+      setCaption("");
+      onCreated(row as any);
+    } catch (e: any) {
+      setError(e?.message || "Không phân tích được ảnh.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
-    <form onSubmit={handleSubmit} className="ds-card">
+    <div className="ds-card">
       <div className="ds-card-body flex flex-col gap-2.5">
-      <label htmlFor="dc-url" className="ds-label">
-        Link video (YouTube, TikTok, Douyin, Facebook...) — hoặc bấm "Bóc cấu trúc" từ một bài trong Radar
-      </label>
-      <div className="flex flex-col sm:flex-row gap-2">
-        <input
-          id="dc-url"
-          type="url"
-          required
-          disabled={submitting}
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          placeholder="https://..."
-          className="ds-input flex-1"
-        />
-        <button type="submit" disabled={submitting} className="ds-btn ds-btn-primary shrink-0">
-          {submitting ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Scissors className="w-4 h-4" aria-hidden="true" />}
-          {submitting ? "Đang bắt đầu..." : "Phân tích"}
-        </button>
-      </div>
-      {error && <div role="alert" className="ds-alert ds-alert-danger">{error}</div>}
-      {submitting && (
-        <div className="ds-alert ds-alert-warning">
-          <Loader2 className="w-4 h-4 animate-spin shrink-0" aria-hidden="true" />
-          Việc phân tích chạy nền, mất khoảng 1-3 phút — kết quả sẽ tự hiện bên dưới.
+        {/* Hai đường vào, khác nhau ở chỗ tốn tiền hay không — nói rõ ngay trên tab. */}
+        <div className="flex gap-1 border-b border-stone-200 -mt-1">
+          {(
+            [
+              ["link", "Từ link"],
+              ["image", "Từ ảnh"],
+            ] as const
+          ).map(([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setMode(k)}
+              className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                mode === k ? "border-storm-600 text-storm-700" : "border-transparent text-stone-500 hover:text-stone-700"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
-      )}
+
+        {mode === "link" ? (
+          <form onSubmit={handleSubmit} className="flex flex-col gap-2.5">
+            <label htmlFor="dc-url" className="ds-label">
+              Link video hoặc bài đăng (YouTube, TikTok, Facebook…) — hoặc bấm "Bóc cấu trúc" từ một bài trong Bài hay đã quét
+            </label>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                id="dc-url"
+                type="url"
+                required
+                disabled={submitting}
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://..."
+                className="ds-input flex-1"
+              />
+              <button type="submit" disabled={submitting} className="ds-btn ds-btn-primary shrink-0">
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Scissors className="w-4 h-4" aria-hidden="true" />}
+                {submitting ? "Đang bắt đầu..." : "Phân tích"}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="flex flex-col gap-2.5">
+            <label htmlFor="dc-caption" className="ds-label">
+              Ảnh chụp bài (ảnh chế, ảnh chat, đồ hoạ…) — công cụ đọc chữ trong ảnh rồi rút ra cách triển khai
+            </label>
+            <input
+              id="dc-caption"
+              className="ds-input"
+              disabled={submitting}
+              value={caption}
+              onChange={(e) => setCaption(e.target.value)}
+              placeholder="Caption của bài, nếu có (không bắt buộc)"
+            />
+            <label className="ds-btn ds-btn-primary self-start cursor-pointer">
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <ImagePlus className="w-4 h-4" aria-hidden="true" />}
+              {submitting ? "Đang đọc ảnh..." : "Chọn ảnh để phân tích"}
+              <input
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                disabled={submitting}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (f) handleImage(f);
+                }}
+              />
+            </label>
+            <p className="ds-hint">
+              Chọn tệp, hoặc <strong>dán thẳng bằng Ctrl+V</strong> sau khi chụp màn hình. Miễn phí — chỉ dùng
+              Gemini đọc ảnh, không tốn tiền quét. Tối đa 8MB.
+            </p>
+          </div>
+        )}
+
+        {error && <div role="alert" className="ds-alert ds-alert-danger">{error}</div>}
+        {submitting && mode === "link" && (
+          <div className="ds-alert ds-alert-warning">
+            <Loader2 className="w-4 h-4 animate-spin shrink-0" aria-hidden="true" />
+            Việc phân tích chạy nền, mất khoảng 1-3 phút — kết quả sẽ tự hiện bên dưới.
+          </div>
+        )}
       </div>
-    </form>
+    </div>
   );
 }
 
