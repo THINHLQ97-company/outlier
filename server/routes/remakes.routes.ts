@@ -406,6 +406,75 @@ export function registerRemakeRoutes(app: Express) {
     }
   });
 
+  // Chỉnh ảnh bằng lời, có thể khoanh vùng — dùng chung cơ chế với trang Sáng
+  // tạo. Trước đây ảnh của Remake vẽ xong là xong, muốn đổi chi tiết nhỏ phải
+  // vẽ lại từ đầu và mất luôn bố cục vừa ưng.
+  app.post("/api/remakes/:id/image/edit", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const { id } = req.params;
+    if (!UUID_RE.test(id)) return res.status(400).json({ error: "Mã không hợp lệ." });
+    const instruction = String(req.body?.instruction || "").trim();
+    if (!instruction) return res.status(400).json({ error: "Chưa nói cần chỉnh gì." });
+
+    try {
+      const [row] = await getDb().select().from(remakes).where(eq(remakes.id, id));
+      if (!row) return res.status(404).json({ error: "Không tìm thấy bản viết." });
+      const username = getAuthUser(req)!;
+      if (row.owner !== username && !(await isActiveAdmin(username))) {
+        return res.status(403).json({ error: "Không có quyền sửa bản viết này." });
+      }
+
+      const images = (row.imagesJson || []) as any[];
+      const targetUrl = String(req.body?.imageUrl || row.selectedImageUrl || images[images.length - 1]?.url || "");
+      const current = images.find((i) => i.url === targetUrl);
+      if (!targetUrl || !current) return res.status(400).json({ error: "Chưa có ảnh để chỉnh." });
+
+      const { internalKeyFromUrl, storage, persistDataUrl } = await import("../storage");
+      const key = internalKeyFromUrl(targetUrl);
+      if (!key) return res.status(400).json({ error: "Không đọc được ảnh gốc." });
+      const buf = await storage.get(key);
+
+      const maskRaw = typeof req.body?.mask === "string" ? req.body.mask : "";
+      let maskImage: { mimeType: string; data: string } | null = null;
+      if (maskRaw.startsWith("data:image/")) {
+        const m = maskRaw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+        if (m) maskImage = { mimeType: m[1], data: m[2] };
+      }
+
+      const { editImage } = await import("../services/social-proxy");
+      const result = await editImage({
+        sourceImage: { mimeType: "image/png", data: buf.toString("base64") },
+        instruction,
+        aspectRatio: current.aspectRatio || "1:1",
+        // Mô tả đã tạo ra ảnh này — để model hiểu bối cảnh gốc khi chỉnh tiếp.
+        previousContext: current.prompt,
+        maskImage,
+      });
+      if (result.isDemo) {
+        return res.status(502).json({ error: result.warning || "Không chỉnh được ảnh." });
+      }
+
+      const newUrl = (await persistDataUrl("remakes", result.url)) || result.url;
+      const newImage = {
+        url: newUrl,
+        // Giữ dấu vết đã chỉnh gì, để lần sau nhìn lại còn hiểu.
+        prompt: `${current.prompt}\n[đã chỉnh] ${instruction}${maskImage ? " (vùng khoanh)" : ""}`,
+        aspectRatio: current.aspectRatio || "1:1",
+        createdAt: new Date().toISOString(),
+      };
+
+      await getDb()
+        .update(remakes)
+        .set({ imagesJson: [...images, newImage], selectedImageUrl: newUrl, updatedAt: new Date() })
+        .where(eq(remakes.id, id));
+
+      res.json({ image: newImage });
+    } catch (e: any) {
+      console.warn("remake image edit:", e?.message || e);
+      res.status(400).json({ error: e?.message || "Không chỉnh được ảnh." });
+    }
+  });
+
   // Chọn lại một ảnh đã vẽ trước đó.
   app.post("/api/remakes/:id/select-image", requireAuth, async (req, res) => {
     if (dbDown(res)) return;

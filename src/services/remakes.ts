@@ -185,3 +185,17 @@ export async function publishRemake(
   if (!res.ok) return asError(res, "Không đăng được bài.");
   return res.json();
 }
+
+/** Chỉnh ảnh bằng lời; `mask` là vùng khoanh (data URL) nếu chỉ muốn sửa một chỗ. */
+export async function editRemakeImage(
+  id: string,
+  input: { instruction: string; imageUrl?: string; mask?: string | null },
+): Promise<{ image: RemakeImage }> {
+  const res = await fetch(`/api/remakes/${id}/image/edit`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) return asError(res, "Không chỉnh được ảnh.");
+  return res.json();
+}

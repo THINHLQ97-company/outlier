@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Loader2, ImagePlus, Check, Download, Pencil } from "lucide-react";
-import { generateRemakeImage, selectRemakeImage } from "../services/remakes";
+import { Loader2, ImagePlus, Check, Download, Pencil, Wand2, X } from "lucide-react";
+import { generateRemakeImage, selectRemakeImage, editRemakeImage } from "../services/remakes";
 import type { RemakeImage } from "../types";
 import { imageDisplayUrl } from "../services/http";
+import ImageRegionEditor from "./ImageRegionEditor";
 
 // Ảnh cho bản viết. Khác luồng "Sáng tạo" (vẽ meme theo dàn nhân vật cố định):
 // ở đây ảnh bám nhận diện của thương hiệu người dùng.
@@ -38,6 +39,24 @@ export default function RemakeImages({
   const [showPrompt, setShowPrompt] = useState(false);
   const [lastDescription, setLastDescription] = useState<string | null>(null);
   const [charsUsed, setCharsUsed] = useState<{ id: string; name: string; hasReference: boolean }[]>([]);
+  // Chỉnh ảnh: mở đúng một ảnh mỗi lần, để khỏi lẫn đang sửa cái nào.
+  const [editing, setEditing] = useState<RemakeImage | null>(null);
+  const [editBusy, setEditBusy] = useState(false);
+
+  async function handleEdit(instruction: string, mask: string | null) {
+    if (!editing) return;
+    setEditBusy(true);
+    setError(null);
+    try {
+      await editRemakeImage(remakeId, { instruction, imageUrl: editing.url, mask });
+      setEditing(null);
+      onChanged();
+    } catch (e: any) {
+      setError(e?.message || "Không chỉnh được ảnh.");
+    } finally {
+      setEditBusy(false);
+    }
+  }
 
   async function handleGenerate() {
     setBusy(true);
@@ -176,7 +195,15 @@ export default function RemakeImages({
                       }`}
                     >
                       <img src={imageDisplayUrl(img.url) || undefined} alt={img.prompt.slice(0, 80)} className="w-full aspect-square object-cover bg-stone-100" loading="lazy" />
-                      <div className="p-2 flex items-center justify-between gap-2">
+                      <div className="p-2">
+                        {/* Mô tả đã dùng để vẽ — trước đây lưu mà không hiện ra bao giờ. */}
+                        <details className="mb-1.5">
+                          <summary className="text-[11px] text-stone-400 cursor-pointer hover:text-stone-600">
+                            Xem mô tả đã dùng
+                          </summary>
+                          <p className="text-[11px] text-stone-500 mt-1 whitespace-pre-wrap">{img.prompt}</p>
+                        </details>
+                        <div className="flex items-center justify-between gap-2">
                         <span className="text-[11px] text-stone-400">{img.aspectRatio}</span>
                         <div className="flex items-center gap-1">
                           <a
@@ -196,12 +223,57 @@ export default function RemakeImages({
                               Chọn
                             </button>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => setEditing(img)}
+                            className="text-xs text-stone-500 hover:text-storm-700 p-1"
+                            title="Chỉnh ảnh bằng lời, khoanh vùng được"
+                            aria-label="Chỉnh ảnh"
+                          >
+                            <Wand2 className="w-3.5 h-3.5" aria-hidden="true" />
+                          </button>
+                        </div>
                         </div>
                       </div>
                     </li>
                   );
                 })}
               </ul>
+            )}
+
+            {editing && (
+              <div
+                className="ds-modal-overlay open"
+                onClick={() => !editBusy && setEditing(null)}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Chỉnh ảnh"
+              >
+                <div className="ds-modal !max-w-2xl" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-stone-200">
+                    <h3 className="font-bold text-stone-800">Chỉnh ảnh</h3>
+                    <button
+                      type="button"
+                      onClick={() => !editBusy && setEditing(null)}
+                      className="ds-btn ds-btn-ghost ds-btn-sm"
+                      aria-label="Đóng"
+                    >
+                      <X className="w-4 h-4" aria-hidden="true" />
+                    </button>
+                  </div>
+                  <div className="ds-modal-body max-h-[75vh] overflow-y-auto">
+                    <p className="text-xs text-stone-500 mb-2">
+                      Nói cần đổi gì, hoặc khoanh vùng trên ảnh rồi nói — chỉ vùng khoanh bị sửa, phần còn lại giữ nguyên.
+                    </p>
+                    <ImageRegionEditor
+                      imageUrl={imageDisplayUrl(editing.url) || editing.url}
+                      aspectRatio={editing.aspectRatio || "1:1"}
+                      editing={editBusy}
+                      onSubmit={handleEdit}
+                    />
+                  </div>
+                </div>
+              </div>
             )}
           </>
         )}

@@ -14,6 +14,7 @@ import type { CharacterRow } from "../types";
 import type { BrandFanpage } from "../types";
 import FanpageStatsPanel from "./FanpageStatsPanel";
 import { imageDisplayUrl } from "../services/http";
+import MetaTokenExchange from "./MetaTokenExchange";
 
 // Trang của CHÍNH thương hiệu — khác "Kênh theo dõi" (là kênh người khác để học).
 //
@@ -366,6 +367,10 @@ export default function BrandFanpages({
                         <code className="bg-stone-100 px-1 rounded">me/accounts?fields=id,name,access_token</code> —
                         kết quả có sẵn mã page và token của từng trang bạn quản lý.
                       </p>
+                      {/* Token từ Explorer sống ~1 giờ; đổi một lần ở đây thì hết hạn nữa. */}
+                      <div className="mt-2">
+                        <MetaTokenExchange />
+                      </div>
                     </div>
                   )}
 

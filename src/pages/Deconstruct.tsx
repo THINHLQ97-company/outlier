@@ -853,9 +853,31 @@ function DeconstructDetailPanel({
           )}
 
           {/* Ảnh đứng trước bình luận: với nhiều bài, đây là nội dung chính. */}
-          {row.imageReading && (
+          {row.imageReading ? (
             <ImageReadingPanel reading={row.imageReading} thumbnailUrl={row.thumbnailUrl} />
-          )}
+          ) : row.thumbnailUrl ? (
+            // Chưa đọc được nội dung trong ảnh thì ít nhất vẫn cho xem ảnh —
+            // người dùng tự nhìn được thứ mà máy chưa đọc ra.
+            <div className="ds-card">
+              <div className="ds-card-body">
+                <h3 className="font-bold text-stone-800 flex items-center gap-2">
+                  <ImagePlus className="w-4 h-4 text-storm-500" aria-hidden="true" />
+                  Ảnh của bài
+                </h3>
+                <a href={row.thumbnailUrl} target="_blank" rel="noreferrer" className="block mt-2">
+                  <img
+                    src={row.thumbnailUrl}
+                    alt=""
+                    className="max-w-md w-full rounded-xl border border-stone-200 bg-stone-50"
+                    loading="lazy"
+                  />
+                </a>
+                <p className="text-xs text-stone-400 mt-2">
+                  Chưa đọc được nội dung trong ảnh — bài này bóc trước khi công cụ biết đọc ảnh, hoặc ảnh không có chữ.
+                </p>
+              </div>
+            </div>
+          ) : null}
 
           <AudienceInsightPanel
             deconstructionId={row.id}

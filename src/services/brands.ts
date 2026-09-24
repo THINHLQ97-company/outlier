@@ -216,3 +216,27 @@ export async function setFanpageCharacters(
 }
 
 export type { BrandField };
+
+export interface TokenExchangeResult {
+  pages: { id: string; name: string; accessToken: string; category?: string }[];
+  neverExpires: boolean;
+  note: string;
+}
+
+/**
+ * Đổi token ngắn hạn (từ Graph API Explorer) sang token page không hết hạn.
+ * App Secret chỉ đi qua máy chủ một lần rồi bỏ, không lưu ở đâu.
+ */
+export async function exchangeMetaToken(input: {
+  appId: string;
+  appSecret: string;
+  shortLivedToken: string;
+}): Promise<TokenExchangeResult> {
+  const res = await fetch("/api/meta/exchange-token", {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) return asError(res, "Không đổi được token.");
+  return res.json();
+}

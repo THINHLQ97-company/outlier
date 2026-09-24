@@ -39,9 +39,27 @@ async function graphGet(path: string, token: string, params: Record<string, stri
   const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
   const body = await res.json().catch(() => ({}));
   if (!res.ok || body?.error) {
-    // Thông báo của Meta nói khá rõ lỗi gì (token hết hạn, thiếu quyền, sai id)
-    // nên chuyển nguyên văn thay vì nuốt đi rồi báo chung chung.
     const e = body?.error || {};
+
+    // Ba lỗi này chiếm gần hết các lần hỏng, và người dùng tự sửa được — nói
+    // thẳng phải làm gì thay vì chuyển nguyên văn thông báo kỹ thuật của Meta.
+    if (e.code === 190) {
+      throw new Error(
+        "Token Meta đã hết hạn. Token lấy từ Graph API Explorer chỉ sống khoảng 1 giờ — " +
+          "vào developers.facebook.com/tools/debug/accesstoken, dán token vào rồi bấm " +
+          "\"Extend Access Token\" để đổi sang token dài hạn, sau đó nối lại trang.",
+      );
+    }
+    if (e.code === 200 || e.code === 10) {
+      throw new Error(
+        "Token thiếu quyền cho việc này. Cần pages_read_engagement để đọc bài, " +
+          "pages_manage_posts để đăng bài — cấp thêm quyền rồi lấy token mới.",
+      );
+    }
+    if (e.code === 4 || e.code === 17 || e.code === 32) {
+      throw new Error("Meta đang chặn tạm vì gọi quá nhiều. Chờ ít phút rồi thử lại.");
+    }
+
     throw new Error(`Meta Graph lỗi${e.code ? ` (mã ${e.code})` : ""}: ${e.message || res.statusText}`);
   }
   return body;

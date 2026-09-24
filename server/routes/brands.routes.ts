@@ -399,6 +399,26 @@ export function registerBrandRoutes(app: Express) {
     }
   });
 
+  // Đổi token ngắn hạn sang token page KHÔNG HẾT HẠN.
+  // App Secret chỉ dùng ngay rồi bỏ — nó là chìa khoá của cả ứng dụng, giữ lại
+  // là rủi ro không cần thiết cho một việc chỉ làm một lần.
+  app.post("/api/meta/exchange-token", requireAuth, async (req, res) => {
+    const appId = String(req.body?.appId || "").trim();
+    const appSecret = String(req.body?.appSecret || "").trim();
+    const token = String(req.body?.shortLivedToken || "").trim();
+    if (!appId || !appSecret || !token) {
+      return res.status(400).json({ error: "Cần đủ App ID, App Secret và token hiện tại." });
+    }
+    try {
+      const { exchangeForLongLivedPageTokens } = await import("../services/meta-token-exchange");
+      const out = await exchangeForLongLivedPageTokens(appId, appSecret, token);
+      res.json(out);
+    } catch (e: any) {
+      console.warn("exchange token:", e?.message || e);
+      res.status(400).json({ error: e?.message || "Không đổi được token." });
+    }
+  });
+
   app.post("/api/brands/:id/fanpages/:fid/meta/disconnect", requireAuth, async (req, res) => {
     if (dbDown(res)) return;
     const { id, fid } = req.params;
