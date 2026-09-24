@@ -211,10 +211,10 @@ export default function Radar() {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-lg font-bold text-stone-800 font-display">Radar</h1>
+          <h1 className="text-lg font-bold text-stone-800 font-display">Bài hay đã quét</h1>
           <p className="text-sm text-stone-500">
-            Tìm content đang bật lên trong một ngách — xếp theo mức vượt trội so với quy mô của chính kênh đó, không phải theo
-            lượt thích tuyệt đối.
+            Bài đang bật lên trên các kênh bạn theo dõi — xếp theo mức vượt trội so với quy mô của chính kênh đó, không phải
+            theo lượt thích tuyệt đối. Thấy bài đáng học thì đưa sang <strong>Bóc cấu trúc</strong>.
           </p>
         </div>
         <button onClick={() => setShowNewForm(true)} className="ds-btn ds-btn-primary shrink-0">

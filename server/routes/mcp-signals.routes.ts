@@ -474,6 +474,19 @@ const TOOLS = [
     },
   },
   {
+    name: "google_trends_scan",
+    description: "Quét xu hướng tìm kiếm của Google (RSS công khai, MIỄN PHÍ, không cần key) rồi nạp vào Xu hướng. Mỗi mục kèm lượng tìm kiếm ước lượng và vài tin báo chí liên quan. Lưu ý: đây là thứ người ta đang TÌM KIẾM, chưa phải thứ đang lan trên mạng xã hội — đọc tin kèm theo mới biết chuyện gì đang xảy ra. Từ khoá trùng ngày trước sẽ bị bỏ qua, gọi lại nhiều lần không nhân bản dữ liệu.",
+    annotations: { title: "Quét Google Trends", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: {
+        geo: { type: "string", description: "Mã quốc gia hai chữ, mặc định VN" },
+        limit: { type: "number", description: "Số xu hướng lấy về, 1-50, mặc định 20" },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: "trend_draft",
     description: "Từ một trend đang nóng (drama, tin hot, meme đang lan) → mấy phương án nội dung ĐĂNG ĐƯỢC LUÔN, viết đúng giọng của trang và đã soi qua guardrail. Đây là bước nối giữa 'tìm được trend' và 'có bài để đăng'. Chọn kind='post' cho bài viết, kind='video' cho kịch bản video — hai khuôn khác nhau. Nếu trend không hợp với trang, tool sẽ nói thẳng là KHÔNG NÊN ĐU thay vì cố viết.",
     annotations: { title: "Trend → nội dung", readOnlyHint: false },
@@ -1232,6 +1245,46 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
       }
     }
     return { image: out.image, description: out.description, ...(__mcpContent ? { __mcpContent } : {}) };
+  }
+
+  if (name === "google_trends_scan") {
+    const geo = typeof args.geo === "string" && /^[A-Za-z]{2}$/.test(args.geo) ? args.geo.toUpperCase() : "VN";
+    const limit = Math.min(50, Math.max(1, Number(args.limit) || 20));
+    const { fetchGoogleTrends, trendToSummary } = await import("../services/google-trends");
+    const items = await fetchGoogleTrends(geo, limit);
+
+    let inserted = 0;
+    let skipped = 0;
+    for (const t of items) {
+      const existing = await db
+        .select({ id: signals.id })
+        .from(signals)
+        .where(and(eq(signals.title, t.title), eq(signals.radar, `google_trends_${geo}`)));
+      if (existing.length > 0) {
+        skipped++;
+        continue;
+      }
+      await db.insert(signals).values({
+        source: "google_trends",
+        radar: `google_trends_${geo}`,
+        truc: null,
+        title: t.title,
+        rawSummary: trendToSummary(t),
+        sourceUrl: t.news[0]?.url || null,
+        publishedDate: t.publishedAt ? new Date(t.publishedAt) : new Date(),
+        status: "new",
+        scoreJson: {},
+      });
+      inserted++;
+    }
+    return {
+      geo,
+      found: items.length,
+      inserted,
+      skipped,
+      trends: items.map((t) => ({ title: t.title, traffic: t.approxTraffic, news: t.news.slice(0, 2) })),
+      note: "Đây là thứ người ta đang TÌM KIẾM, chưa phải thứ đang lan trên mạng xã hội. Muốn bắt trend thì đọc tin kèm theo để biết chuyện gì đang xảy ra, rồi dùng trend_draft.",
+    };
   }
 
   if (name === "trend_draft") {

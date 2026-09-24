@@ -93,3 +93,22 @@ export async function updateRubric(input: {
   if (!res.ok) return asError(res, "Cập nhật rubric thất bại.");
   return res.json();
 }
+
+export interface GoogleTrendsScanResult {
+  geo: string;
+  found: number;
+  inserted: number;
+  skipped: number;
+  note: string;
+}
+
+/** Quét Google Trends — miễn phí, không cần key. */
+export async function scanGoogleTrends(geo = "VN", limit = 20): Promise<GoogleTrendsScanResult> {
+  const res = await fetch("/api/signals/google-trends", {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ geo, limit }),
+  });
+  if (!res.ok) return asError(res, "Không quét được Google Trends.");
+  return res.json();
+}

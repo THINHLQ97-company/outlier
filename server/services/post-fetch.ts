@@ -154,7 +154,13 @@ export async function fetchPostViaApify(url: string): Promise<FetchOutcome> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), RUN_TIMEOUT_MS);
   try {
-    const res = await fetch(`${API_BASE}/acts/${encodeURIComponent(actor)}/run-sync-get-dataset-items`, {
+    // Trần tiền cứng do Apify áp phía họ — chặn được cả khi code mình tính sai
+    // số kết quả (xem maxChargePerRunUsd trong apify.ts).
+    const { maxChargePerRunUsd } = await import("./apify");
+    const runUrl =
+      `${API_BASE}/acts/${encodeURIComponent(actor)}/run-sync-get-dataset-items` +
+      `?maxTotalChargeUsd=${maxChargePerRunUsd()}`;
+    const res = await fetch(runUrl, {
       method: "POST",
       signal: ctrl.signal,
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey()}` },

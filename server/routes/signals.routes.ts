@@ -133,6 +133,58 @@ export function registerSignalRoutes(app: Express) {
     }
   });
 
+  // ===== Quét Google Trends =====
+  // Nguồn trend duy nhất vừa thật, vừa miễn phí, vừa không cần đăng ký gì.
+  // Tách khỏi /sync vì hai thứ khác hẳn nhau: /sync đi hỏi các MCP nội bộ, còn
+  // cái này gọi thẳng RSS công khai của Google.
+  app.post("/api/signals/google-trends", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const geo = typeof req.body?.geo === "string" && /^[A-Za-z]{2}$/.test(req.body.geo) ? req.body.geo.toUpperCase() : "VN";
+    const limit = Math.min(50, Math.max(1, Number(req.body?.limit) || 20));
+    try {
+      const { fetchGoogleTrends, trendToSummary } = await import("../services/google-trends");
+      const items = await fetchGoogleTrends(geo, limit);
+
+      const db = getDb();
+      let inserted = 0;
+      let skipped = 0;
+      for (const t of items) {
+        // Trùng tên trong cùng nguồn thì bỏ qua: Google giữ một từ khoá trên
+        // bảng xếp hạng nhiều ngày liền, quét mỗi ngày sẽ nhân bản nó ra.
+        const existing = await db
+          .select({ id: signals.id })
+          .from(signals)
+          .where(and(eq(signals.title, t.title), eq(signals.radar, `google_trends_${geo}`)));
+        if (existing.length > 0) {
+          skipped++;
+          continue;
+        }
+        await db.insert(signals).values({
+          source: "google_trends",
+          radar: `google_trends_${geo}`,
+          truc: null,
+          title: t.title,
+          rawSummary: trendToSummary(t),
+          sourceUrl: t.news[0]?.url || null,
+          publishedDate: t.publishedAt ? new Date(t.publishedAt) : new Date(),
+          status: "new",
+          scoreJson: {},
+        });
+        inserted++;
+      }
+      res.json({
+        geo,
+        found: items.length,
+        inserted,
+        skipped,
+        note: "Đây là thứ người ta đang TÌM KIẾM, chưa phải thứ đang lan trên mạng xã hội. Đọc tin kèm theo để biết chuyện gì đang xảy ra rồi mới quyết có đu hay không.",
+      });
+    } catch (e: any) {
+      console.warn("google trends:", e?.message || e);
+      res.status(400).json({ error: e?.message || "Không quét được Google Trends." });
+    }
+  });
+
   // FR2.3 — gợi ý điểm, KHÔNG lưu. Ưu tiên LLM (Gemini "hiểu" nội dung) khi có
   // GEMINI_API_KEY; lỗi/thiếu key → fallback rule-based (đếm từ khóa glossary).
   // Người vận hành LUÔN rà/sửa tay trước khi chốt (/score).

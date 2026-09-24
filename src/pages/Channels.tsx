@@ -41,11 +41,15 @@ import type { WatchedChannel, WatchedChannelDetail, RadarItem, RadarConfidence, 
 // lại nguyên cơ chế poll của Radar (services/channels.ts::pollChannel, port
 // từ pollRadarJob).
 const PLATFORM_LABEL: Record<string, string> = {
-  youtube: "YouTube",
+  facebook: "Facebook",
   tiktok: "TikTok",
+  youtube: "YouTube",
   instagram: "Instagram",
   douyin: "Douyin",
 };
+
+// Thứ tự tab: đặt theo mức độ hay dùng, không theo bảng chữ cái.
+const PLATFORM_ORDER = ["facebook", "tiktok", "youtube", "instagram", "douyin"];
 
 const CONFIDENCE_META: Record<RadarConfidence, { label: string; cls: string }> = {
   low: { label: "Tham khảo", cls: "ds-badge-warning" },
@@ -97,6 +101,9 @@ function formatRelative(iso: string | null | undefined): string {
 
 export default function Channels() {
   const [channels, setChannels] = useState<WatchedChannel[]>([]);
+  // Lọc theo nền tảng. Mỗi nền tảng quét bằng đường khác nhau và chi phí khác
+  // nhau, nên xem tách ra dễ quyết định hơn là trộn chung một danh sách.
+  const [platformFilter, setPlatformFilter] = useState<string>("all");
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -226,6 +233,16 @@ export default function Channels() {
     }
   }
 
+  const visibleChannels =
+    platformFilter === "all" ? channels : channels.filter((c) => c.platform === platformFilter);
+
+  // Đếm theo nền tảng, giữ thứ tự đã định rồi mới tới những nền tảng lạ.
+  const counts = new Map<string, number>();
+  for (const c of channels) counts.set(c.platform, (counts.get(c.platform) || 0) + 1);
+  const platformCounts = [...counts.entries()].sort(
+    (a, b) => PLATFORM_ORDER.indexOf(a[0]) - PLATFORM_ORDER.indexOf(b[0]),
+  );
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -268,7 +285,7 @@ export default function Channels() {
               </div>
             </div>
           ) : (
-            channels.map((c) => (
+            visibleChannels.map((c) => (
               <button
                 key={c.id}
                 onClick={() => setSelectedId(c.id)}

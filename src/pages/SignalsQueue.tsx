@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { RefreshCw, Plus, Loader2, X, ExternalLink, AlertTriangle, Wand2, Sparkles } from "lucide-react";
-import { listSignals, syncSignals, createManualSignal } from "../services/signals";
+import { RefreshCw, Plus, Loader2, X, ExternalLink, AlertTriangle, Wand2, Sparkles, TrendingUp } from "lucide-react";
+import { listSignals, syncSignals, createManualSignal, scanGoogleTrends } from "../services/signals";
 import type { Signal } from "../types";
 import { AXES, type AxisKey } from "../../shared/engine-data";
 
@@ -46,6 +46,7 @@ export default function SignalsQueue() {
   const [signals, setSignals] = useState<Signal[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [scanningTrends, setScanningTrends] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [showManualForm, setShowManualForm] = useState(false);
@@ -66,6 +67,27 @@ export default function SignalsQueue() {
     reload();
   }, []);
 
+  async function handleGoogleTrends() {
+    setScanningTrends(true);
+    setError(null);
+    setWarnings([]);
+    try {
+      const r = await scanGoogleTrends("VN", 20);
+      // Nói rõ cả phần bỏ qua: quét mỗi ngày sẽ gặp lại từ khoá cũ, thấy
+      // "thêm 0" mà không giải thích thì dễ tưởng hỏng.
+      setWarnings([
+        `Google Trends: tìm thấy ${r.found}, thêm mới ${r.inserted}` +
+          (r.skipped ? `, bỏ qua ${r.skipped} từ khoá đã có` : "") +
+          `. ${r.note}`,
+      ]);
+      await reload();
+    } catch (e: any) {
+      setError(e?.message || "Không quét được Google Trends.");
+    } finally {
+      setScanningTrends(false);
+    }
+  }
+
   async function handleSync() {
     setSyncing(true);
     setError(null);
@@ -85,12 +107,23 @@ export default function SignalsQueue() {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-lg font-bold text-stone-800 font-display">Tín hiệu</h1>
-          <p className="text-sm text-stone-500">Ý tưởng và sự kiện đang được nhắc tới gần đây — dùng để lên ý tưởng nội dung mới.</p>
+          <h1 className="text-lg font-bold text-stone-800 font-display">Xu hướng</h1>
+          <p className="text-sm text-stone-500">
+            Chuyện đang nóng ngoài thị trường: tin báo chí, trend, drama — nguồn để bắt trend. Khác{" "}
+            <strong>Bài hay đã quét</strong> (bài thật của kênh khác, để học cách triển khai).
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowManualForm(true)} className="ds-btn">
-            <Plus className="w-4 h-4" aria-hidden="true" /> Thêm tín hiệu tay
+            <Plus className="w-4 h-4" aria-hidden="true" /> Thêm xu hướng tay
+          </button>
+          <button type="button" onClick={handleGoogleTrends} disabled={scanningTrends} className="ds-btn">
+            {scanningTrends ? (
+              <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <TrendingUp className="w-4 h-4" aria-hidden="true" />
+            )}
+            Quét Google Trends
           </button>
           <button onClick={handleSync} disabled={syncing} className="ds-btn ds-btn-primary">
             {syncing ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="w-4 h-4" aria-hidden="true" />}
@@ -130,7 +163,7 @@ export default function SignalsQueue() {
             <p className="ds-empty-title">Chưa có tín hiệu nào</p>
             <p className="ds-empty-desc">Bấm "Quét tín hiệu mới" để tự động thu thập, hoặc thêm tín hiệu thủ công.</p>
             <button onClick={() => setShowManualForm(true)} className="ds-btn ds-btn-primary ds-btn-sm mt-1">
-              <Plus className="w-3.5 h-3.5" aria-hidden="true" /> Thêm tín hiệu tay
+              <Plus className="w-3.5 h-3.5" aria-hidden="true" /> Thêm xu hướng tay
             </button>
           </div>
         </div>

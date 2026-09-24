@@ -65,6 +65,19 @@ function dailyResultBudget(): number {
 /** Giá mỗi kết quả (USD), đo thực tế — dùng để ước tính chi phí trước khi chạy. */
 export const USD_PER_RESULT = 0.0035;
 
+/**
+ * Trần tiền CỨNG cho mỗi lượt gọi Apify, gửi kèm ngay trong URL.
+ *
+ * Ngân sách theo ngày chặn được tổng, nhưng không chặn được một lượt chạy đi
+ * hoang: actor nhận sai tên trường đầu vào thì nó lờ giới hạn của mình và trả
+ * về bao nhiêu tuỳ nó. Trần này do Apify tự áp phía họ, nên nó chặn ngay cả khi
+ * code mình tính sai.
+ */
+export function maxChargePerRunUsd(): number {
+  const raw = Number(process.env.APIFY_MAX_CHARGE_PER_RUN_USD ?? 0.4);
+  return Number.isFinite(raw) && raw > 0 ? raw : 0.4;
+}
+
 /** Ước tính chi phí cho N kết quả, để hiện cho người dùng TRƯỚC khi bấm quét. */
 export function estimateCostUsd(resultCount: number): number {
   return Math.max(0, resultCount) * USD_PER_RESULT;
@@ -131,7 +144,10 @@ async function runActorSync(actorId: string, input: Record<string, any>): Promis
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), RUN_TIMEOUT_MS);
   try {
-    const res = await fetch(`${API_BASE}/acts/${encodeURIComponent(actorId)}/run-sync-get-dataset-items`, {
+    const url =
+      `${API_BASE}/acts/${encodeURIComponent(actorId)}/run-sync-get-dataset-items` +
+      `?maxTotalChargeUsd=${maxChargePerRunUsd()}`;
+    const res = await fetch(url, {
       method: "POST",
       signal: ctrl.signal,
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apifyToken()}` },

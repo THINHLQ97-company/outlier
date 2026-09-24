@@ -27,28 +27,37 @@ type NavGroup = { label: string; items: NavItem[] };
 // nguyên bộ đã chọn từ bản nav ngang để không trùng (Radar đã dùng cho "Tín
 // hiệu" nên Radar/ngách dùng Telescope; Bóc cấu trúc dùng Scissors; Viết lại
 // dùng PenLine; Kênh theo dõi dùng Eye).
+// Sắp theo đúng luồng làm việc: chuẩn bị một lần → tìm cái đáng remake → làm ra
+// nội dung → đem đi dùng.
+//
+// Hai cái tên cũ đặt ngược nhau nên ai cũng lẫn: trang "Radar" thật ra là quét
+// bài của các kênh đang theo dõi (thuộc về Kênh theo dõi), còn trang "Tín hiệu"
+// mới là trend từ báo chí. Giờ gọi đúng việc chúng làm.
 const NAV_GROUPS: NavGroup[] = [
   {
-    label: "Chuẩn bị",
+    label: "Thiết lập",
     items: [{ to: "/brands", label: "Thương hiệu", icon: Fingerprint }],
   },
   {
     label: "Tìm nội dung",
     items: [
       { to: "/channels", label: "Kênh theo dõi", icon: Eye },
-      { to: "/radar", label: "Radar", icon: Telescope },
-      { to: "/signals", label: "Tín hiệu", icon: Radar },
+      { to: "/radar", label: "Bài hay đã quét", icon: Telescope },
+      { to: "/signals", label: "Xu hướng", icon: Radar },
     ],
   },
   {
     label: "Sản xuất",
     items: [
       { to: "/deconstruct", label: "Bóc cấu trúc", icon: Scissors },
-      { to: "/remakes", label: "Remake bài viết", icon: PenLine },
+      { to: "/remakes", label: "Remake bài & ảnh", icon: PenLine },
       { to: "/videos", label: "Remake video", icon: Clapperboard },
-      { to: "/studio", label: "Sáng tạo", icon: Wand2 },
-      { to: "/library", label: "Thư viện", icon: Images },
+      { to: "/studio", label: "Sáng tạo nhanh", icon: Wand2 },
     ],
+  },
+  {
+    label: "Kết quả",
+    items: [{ to: "/library", label: "Thư viện", icon: Images }],
   },
 ];
 
