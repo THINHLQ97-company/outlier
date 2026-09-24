@@ -474,6 +474,20 @@ const TOOLS = [
     },
   },
   {
+    name: "deconstruct_comments",
+    description: "Đọc bình luận dưới bài gốc rồi rút ra NGƯỜI XEM THẬT SỰ QUAN TÂM GÌ: các cụm chủ đề họ bàn (kèm số lượng và câu trích thật), câu hỏi lặp lại, điều họ phản đối, và góc nên làm tiếp. Bóc cấu trúc cho biết bài được dựng thế nào; cái này cho biết nó chạm vào đâu — hai thứ hay lệch nhau, và thứ người đọc bàn mới là thứ đáng viết tiếp. YouTube đọc MIỄN PHÍ (cần YOUTUBE_API_KEY); Facebook và TikTok qua Apify nên TỐN TIỀN theo từng bình luận — hỏi người dùng trước khi gọi. Số lượng trong kết quả do code đếm lại, không phải model tự khai.",
+    annotations: { title: "Phân tích bình luận", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: {
+        deconstruction_id: { type: "string", description: "Mã bản bóc cấu trúc (từ deconstruct_get)" },
+        limit: { type: "number", description: "Số bình luận đọc, 10-300, mặc định 100. Facebook/TikTok tính tiền theo số này." },
+      },
+      required: ["deconstruction_id"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "google_trends_scan",
     description: "Quét xu hướng tìm kiếm của Google (RSS công khai, MIỄN PHÍ, không cần key) rồi nạp vào Xu hướng. Mỗi mục kèm lượng tìm kiếm ước lượng và vài tin báo chí liên quan. Lưu ý: đây là thứ người ta đang TÌM KIẾM, chưa phải thứ đang lan trên mạng xã hội — đọc tin kèm theo mới biết chuyện gì đang xảy ra. Từ khoá trùng ngày trước sẽ bị bỏ qua, gọi lại nhiều lần không nhân bản dữ liệu.",
     annotations: { title: "Quét Google Trends", readOnlyHint: false },
@@ -1245,6 +1259,50 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
       }
     }
     return { image: out.image, description: out.description, ...(__mcpContent ? { __mcpContent } : {}) };
+  }
+
+  if (name === "deconstruct_comments") {
+    if (!UUID_RE.test(args.deconstruction_id || "")) throw new Error("deconstruction_id không hợp lệ");
+    const limit = Math.min(300, Math.max(10, Number(args.limit) || 100));
+
+    const [row] = await db.select().from(deconstructions).where(eq(deconstructions.id, args.deconstruction_id));
+    if (!row) throw new Error("Không tìm thấy bản bóc cấu trúc");
+
+    const platform = (row.platform || "").toLowerCase();
+    let comments: { text: string; likes?: number }[] = [];
+    let warning: string | undefined;
+    let costUsd = 0;
+
+    if (platform === "youtube") {
+      const { fetchYouTubeComments } = await import("../services/youtube-comments");
+      const out = await fetchYouTubeComments(row.sourceUrl, limit);
+      comments = out.comments;
+      warning = out.warning;
+    } else {
+      const { fetchComments } = await import("../services/comment-fetch");
+      const out = await fetchComments(platform, row.sourceUrl, limit);
+      comments = out.comments;
+      warning = out.warning;
+      costUsd = out.costUsd;
+    }
+
+    if (comments.length === 0) throw new Error(warning || "Không lấy được bình luận nào.");
+
+    const { analyzeComments } = await import("../services/audience-insight");
+    const { insight } = await analyzeComments(comments);
+
+    await db
+      .update(deconstructions)
+      .set({ commentsJson: comments, audienceInsight: insight, commentsFetchedAt: new Date(), updatedAt: new Date() })
+      .where(eq(deconstructions.id, args.deconstruction_id));
+
+    return {
+      fetched: comments.length,
+      cost_usd: costUsd,
+      insight,
+      warning,
+      note: "Đã lưu. Lần remake tới từ bản bóc này sẽ tự bám theo mối quan tâm của người đọc.",
+    };
   }
 
   if (name === "google_trends_scan") {

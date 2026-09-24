@@ -40,10 +40,11 @@ export async function runRemakeInBackground(
   sourceText: string | null,
   note?: string,
   previousDraft?: string | null,
+  audienceText?: string,
 ) {
   try {
     await getDb().update(remakes).set({ status: "writing", updatedAt: new Date() }).where(eq(remakes.id, id));
-    const r = await writeRemake(brand, structure, format, { sourceText, note });
+    const r = await writeRemake(brand, structure, format, { sourceText, note, audienceText });
 
     if (!r.draft) {
       await getDb().update(remakes)
@@ -178,9 +179,14 @@ export function registerRemakeRoutes(app: Express) {
         hint: hasBrandData ? undefined : "Hồ sơ thương hiệu còn trống nên bản viết sẽ chung chung. Nạp tài liệu ở mục Thương hiệu để kết quả sát hơn.",
       });
 
+      // Bản bóc đã phân tích bình luận thì đưa luôn vào: viết bám mối quan tâm
+      // của người đọc trúng hơn bám nội dung bài gốc.
+      const { insightToText } = await import("../services/audience-insight");
+      const audienceText = decon.audienceInsight ? insightToText(decon.audienceInsight as any) : undefined;
+
       void runRemakeInBackground(
         row.id, toBrandContext(brand), decon.structure as DeconstructedStructure,
-        format, decon.transcript,
+        format, decon.transcript, undefined, undefined, audienceText || undefined,
       );
     } catch (e: any) {
       console.error("remake create:", e?.message || e);

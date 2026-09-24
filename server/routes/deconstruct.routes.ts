@@ -160,6 +160,57 @@ export function registerDeconstructRoutes(app: Express) {
   });
 
   // ===== Bắt đầu phân tích =====
+  // ===== Bình luận: lấy về rồi rút ra người xem quan tâm gì =====
+  // Tách khỏi việc bóc cấu trúc vì tốn tiền riêng (mỗi bình luận là một kết quả
+  // Apify) — người dùng phải chủ động bấm, và thấy trước con số ước tính.
+  app.post("/api/deconstructions/:id/comments", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const { id } = req.params;
+    if (!UUID_RE.test(id)) return res.status(400).json({ error: "Mã không hợp lệ." });
+    const limit = Math.min(300, Math.max(10, Number(req.body?.limit) || 100));
+
+    try {
+      const [row] = await getDb().select().from(deconstructions).where(eq(deconstructions.id, id));
+      if (!row) return res.status(404).json({ error: "Không tìm thấy bản phân tích." });
+
+      const platform = (row.platform || "").toLowerCase();
+      let comments: { text: string; likes?: number; author?: string }[] = [];
+      let warning: string | undefined;
+      let costUsd = 0;
+
+      if (platform === "youtube") {
+        // YouTube đọc miễn phí bằng API key — không đụng tới Apify.
+        const { fetchYouTubeComments } = await import("../services/youtube-comments");
+        const out = await fetchYouTubeComments(row.sourceUrl, limit);
+        comments = out.comments;
+        warning = out.warning;
+      } else {
+        const { fetchComments } = await import("../services/comment-fetch");
+        const out = await fetchComments(platform, row.sourceUrl, limit);
+        comments = out.comments;
+        warning = out.warning;
+        costUsd = out.costUsd;
+      }
+
+      if (comments.length === 0) {
+        return res.status(400).json({ error: warning || "Không lấy được bình luận nào." });
+      }
+
+      const { analyzeComments } = await import("../services/audience-insight");
+      const { insight } = await analyzeComments(comments);
+
+      await getDb()
+        .update(deconstructions)
+        .set({ commentsJson: comments, audienceInsight: insight, commentsFetchedAt: new Date(), updatedAt: new Date() })
+        .where(eq(deconstructions.id, id));
+
+      res.json({ fetched: comments.length, costUsd, insight, warning });
+    } catch (e: any) {
+      console.warn("fetch comments:", e?.message || e);
+      res.status(400).json({ error: e?.message || "Không phân tích được bình luận." });
+    }
+  });
+
   app.post("/api/deconstructions", requireAuth, async (req, res) => {
     if (dbDown(res)) return;
     const username = getAuthUser(req)!;

@@ -8,7 +8,7 @@
 // pollRadarJob ở services/radar.ts — cố ý để tránh proxy (Traefik/Coolify)
 // ngắt request giữ mở quá lâu.
 import { authHeaders, asError } from "./http";
-import type { DeconstructionRow, DeconstructionCreateResult } from "../types";
+import type { DeconstructionRow, DeconstructionCreateResult, AudienceInsight } from "../types";
 
 export async function listDeconstructions(): Promise<DeconstructionRow[]> {
   const res = await fetch("/api/deconstructions", { headers: authHeaders(false) });
@@ -98,4 +98,25 @@ export function pollDeconstruction(id: string, opts: DeconstructPollOptions): ()
     if (timer) clearTimeout(timer);
     timer = null;
   };
+}
+
+export interface CommentAnalysisResult {
+  fetched: number;
+  costUsd: number;
+  insight: AudienceInsight;
+  warning?: string;
+}
+
+/**
+ * Lấy bình luận của bài gốc rồi phân tích.
+ * Tốn tiền với Facebook/TikTok (mỗi bình luận một lượt); YouTube miễn phí.
+ */
+export async function analyzePostComments(id: string, limit = 100): Promise<CommentAnalysisResult> {
+  const res = await fetch(`/api/deconstructions/${id}/comments`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ limit }),
+  });
+  if (!res.ok) return asError(res, "Không phân tích được bình luận.");
+  return res.json();
 }

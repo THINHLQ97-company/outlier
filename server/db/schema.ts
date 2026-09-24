@@ -539,6 +539,36 @@ export interface DeconstructedStructure {
   notes?: string | null;
 }
 
+/**
+ * Người xem thật sự quan tâm gì — rút từ phần bình luận.
+ *
+ * Vì sao đáng làm riêng: bài nói một đằng, người đọc bàn một nẻo là chuyện rất
+ * thường. Bóc cấu trúc cho biết bài được dựng thế nào, còn phần này cho biết
+ * nó CHẠM vào đâu. Remake theo mối quan tâm của người đọc trúng hơn nhiều so
+ * với remake theo nội dung gốc.
+ */
+export interface AudienceInsight {
+  /** Số bình luận đã đọc — người dùng cần biết kết luận dựa trên bao nhiêu. */
+  sampleSize: number;
+  /** Các cụm chủ đề người ta bàn, xếp theo mức được nhắc nhiều. */
+  themes: {
+    label: string;
+    /** Bao nhiêu bình luận thuộc cụm này. Do CODE đếm, không lấy số model tự khai. */
+    count: number;
+    /** Vài câu nguyên văn làm bằng chứng. */
+    quotes: string[];
+    sentiment?: "tích cực" | "tiêu cực" | "trung tính" | "lẫn lộn";
+  }[];
+  /** Câu hỏi lặp đi lặp lại — mỏ vàng cho bài tiếp theo. */
+  questions: string[];
+  /** Điều người đọc phản đối hoặc nghi ngờ. */
+  objections: string[];
+  /** Góc remake gợi ý, bám đúng thứ người đọc quan tâm. */
+  remakeAngles: string[];
+  /** Nói rõ khi mẫu quá nhỏ hoặc bình luận không có gì để rút. */
+  warning?: string;
+}
+
 export const deconstructions = pgTable("deconstructions", {
   id: uuid("id").primaryKey().defaultRandom(),
   owner: text("owner").notNull(),
@@ -572,6 +602,13 @@ export const deconstructions = pgTable("deconstructions", {
 
   transcript: text("transcript"),                       // lời thoại (nếu lấy được)
   structure: jsonb("structure").$type<DeconstructedStructure | null>(),
+
+  /** Bình luận đã lấy về, giữ nguyên văn để đối chiếu với kết luận. */
+  commentsJson: jsonb("comments_json").$type<{ text: string; likes?: number; author?: string }[] | null>(),
+  /** Người xem quan tâm gì — rút từ commentsJson. */
+  audienceInsight: jsonb("audience_insight").$type<AudienceInsight | null>(),
+  /** Lần lấy bình luận gần nhất, để biết dữ liệu còn mới không. */
+  commentsFetchedAt: timestamp("comments_fetched_at", { withTimezone: true }),
   analyzedBy: text("analyzed_by"),                      // model đã dùng
   /** "video" = xem được hình; "transcript" = chỉ đọc lời thoại (kém chính xác hơn). */
   analysisMode: text("analysis_mode"),

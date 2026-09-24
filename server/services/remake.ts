@@ -68,7 +68,13 @@ function describeFormula(s: DeconstructedStructure): string {
   return lines.join("\n") || "(chưa bóc được công thức rõ ràng)";
 }
 
-function buildPrompt(brand: BrandContext, structure: DeconstructedStructure, format: RemakeFormat, note?: string): string {
+function buildPrompt(
+  brand: BrandContext,
+  structure: DeconstructedStructure,
+  format: RemakeFormat,
+  note?: string,
+  audienceText?: string,
+): string {
   const kind = format === "post" ? "một bài đăng mạng xã hội" : "một kịch bản video ngắn (kèm mốc thời gian gợi ý)";
   return `Bạn viết nội dung cho thương hiệu dưới đây. Hãy viết ${kind} MỚI, đi theo CÁCH TRIỂN KHAI đã cho.
 
@@ -79,10 +85,12 @@ QUY TẮC BẮT BUỘC:
 4. Tuyệt đối tránh các từ trong "TỪ NGỮ KHÔNG ĐƯỢC DÙNG".
 5. Giữ đúng giọng điệu và xưng hô của thương hiệu.
 6. Mục nào ghi "CHƯA CÓ DỮ LIỆU" thì không được tự bịa.
+${audienceText ? `7. Bài gốc đã có người bàn tán — viết bám vào thứ HỌ QUAN TÂM, đừng chỉ bám nội dung bài gốc. Bài nói một đằng người đọc bàn một nẻo là chuyện thường, và thứ họ bàn mới là thứ đáng viết tiếp.` : ""}
 
 ${describeBrand(brand)}
 
 ${describeFormula(structure)}
+${audienceText ? `\n=== NGƯỜI ĐỌC BÀI GỐC QUAN TÂM GÌ ===\n${audienceText}` : ""}
 ${note ? `\nYÊU CẦU CHỈNH SỬA THÊM: ${note}` : ""}
 
 Trả về DUY NHẤT phần nội dung đã viết, không giải thích, không mở đầu bằng "Đây là...".`;
@@ -97,11 +105,15 @@ export async function writeRemake(
   brand: BrandContext,
   structure: DeconstructedStructure,
   format: RemakeFormat,
-  opts: { sourceText?: string | null; note?: string } = {},
+  opts: { sourceText?: string | null; note?: string; audienceText?: string } = {},
 ): Promise<RemakeOutcome> {
   let draft: string;
   try {
-    draft = (await generateTextGemini(buildPrompt(brand, structure, format, opts.note), { asPlainText: true })).trim();
+    draft = (
+      await generateTextGemini(buildPrompt(brand, structure, format, opts.note, opts.audienceText), {
+        asPlainText: true,
+      })
+    ).trim();
   } catch (e: any) {
     return {
       draft: "",

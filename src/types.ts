@@ -544,6 +544,21 @@ export interface DeconstructedStructure {
 export type DeconstructionStatus = "pending" | "downloading" | "analyzing" | "ready" | "error";
 export type DeconstructAnalysisMode = "video" | "transcript";
 
+/** Mirror server/db/schema.ts (AudienceInsight). */
+export interface AudienceInsight {
+  sampleSize: number;
+  themes: {
+    label: string;
+    count: number;
+    quotes: string[];
+    sentiment?: "tích cực" | "tiêu cực" | "trung tính" | "lẫn lộn";
+  }[];
+  questions: string[];
+  objections: string[];
+  remakeAngles: string[];
+  warning?: string;
+}
+
 export interface DeconstructionRow {
   id: string;
   owner: string;
@@ -554,6 +569,9 @@ export interface DeconstructionRow {
   durationSec?: number | null;
   /** video | post | image | unknown — quyết định remake đi đường bài viết hay video. */
   contentKind?: string | null;
+  /** Người đọc bài gốc quan tâm gì — rút từ bình luận. */
+  audienceInsight?: AudienceInsight | null;
+  commentsFetchedAt?: string | null;
   thumbnailUrl?: string | null;
   status: DeconstructionStatus;
   /** true = nội dung chỉ lấy được bằng dịch vụ có phí, cần người dùng đồng ý. */

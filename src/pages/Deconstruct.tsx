@@ -27,9 +27,11 @@ import {
   createDeconstruction,
   deleteDeconstruction,
   pollDeconstruction,
+  analyzePostComments,
 } from "../services/deconstruct";
 import ConfirmDialog from "../components/ConfirmDialog";
 import type { DeconstructionRow, DeconstructedStructure, RetentionBeat, DeconstructAnalysisMode } from "../types";
+import AudienceInsightPanel from "../components/AudienceInsightPanel";
 
 // Trang "Bóc cấu trúc" — vì sao một bài giữ được người xem (docs/PRD.md §4
 // J3). LINH HỒN màn này: trình bày theo NHỊP THỜI GIAN (không phải bảng phẳng)
@@ -259,8 +261,10 @@ export default function Deconstruct() {
     });
   }
 
-  async function loadAndWatch(id: string) {
-    setDetailLoading(true);
+  async function loadAndWatch(id: string, opts: { silent?: boolean } = {}) {
+    // silent: làm mới sau một thao tác (vừa phân tích xong bình luận) — bật cờ
+    // loading lúc đó sẽ gỡ cả khối chi tiết, cuốn người dùng về đầu trang.
+    if (!opts.silent) setDetailLoading(true);
     setDetailError(null);
     try {
       const d = await getDeconstruction(id);
@@ -269,9 +273,9 @@ export default function Deconstruct() {
       if (d.status === "pending" || d.status === "downloading" || d.status === "analyzing") startWatching(id);
     } catch (e: any) {
       setDetailError(e?.message || "Không tải được bản phân tích.");
-      setDetail(null);
+      if (!opts.silent) setDetail(null);
     } finally {
-      setDetailLoading(false);
+      if (!opts.silent) setDetailLoading(false);
     }
   }
 
@@ -429,6 +433,7 @@ export default function Deconstruct() {
                 watchTimedOut={watchTimedOut}
                 onRequestDelete={() => setDeleteTarget(detail)}
                 onRemake={() => navigate(`/remakes?deconstructionId=${detail.id}`)}
+                onChanged={() => loadAndWatch(detail.id, { silent: true })}
                 onPaidRetry={handlePaidRetry}
                 paidBusy={paidBusy}
               />
@@ -527,6 +532,7 @@ function DeconstructDetailPanel({
   onRemake,
   onPaidRetry,
   paidBusy,
+  onChanged,
 }: {
   row: DeconstructionRow;
   watching: boolean;
@@ -536,11 +542,28 @@ function DeconstructDetailPanel({
   onRemake: () => void;
   onPaidRetry?: (row: DeconstructionRow) => void;
   paidBusy?: boolean;
+  onChanged: () => void;
 }) {
   // row.errorMessage được backend TÁI DÙNG để chở cảnh báo khi status=ready
   // (các mốc bị loại vì không đối chiếu được với độ dài video thật — tính
   // minh bạch, KHÔNG phải hỏng), CHỈ là lỗi thật khi status=error — xem
   // server/routes/deconstruct.routes.ts.
+  const [cmtBusy, setCmtBusy] = useState(false);
+  const [cmtError, setCmtError] = useState<string | null>(null);
+
+  async function handleFetchComments(limit: number) {
+    setCmtBusy(true);
+    setCmtError(null);
+    try {
+      await analyzePostComments(row.id, limit);
+      onChanged();
+    } catch (e: any) {
+      setCmtError(e?.message || "Không phân tích được bình luận.");
+    } finally {
+      setCmtBusy(false);
+    }
+  }
+
   const warningsText = row.status !== "error" ? row.errorMessage : null;
   const warnings = warningsText ? warningsText.split(" · ").filter(Boolean) : [];
   const duration = formatDuration(row.durationSec);
@@ -723,6 +746,15 @@ function DeconstructDetailPanel({
               </div>
             </div>
           )}
+
+          <AudienceInsightPanel
+            insight={row.audienceInsight}
+            commentsFetchedAt={row.commentsFetchedAt}
+            platform={row.platform}
+            busy={cmtBusy}
+            onFetch={handleFetchComments}
+            error={cmtError}
+          />
 
           {row.transcript && <TranscriptBlock transcript={row.transcript} />}
         </>
