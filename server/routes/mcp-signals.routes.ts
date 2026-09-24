@@ -1250,7 +1250,7 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
   if (name === "google_trends_scan") {
     const geo = typeof args.geo === "string" && /^[A-Za-z]{2}$/.test(args.geo) ? args.geo.toUpperCase() : "VN";
     const limit = Math.min(50, Math.max(1, Number(args.limit) || 20));
-    const { fetchGoogleTrends, trendToSummary } = await import("../services/google-trends");
+    const { fetchGoogleTrends, trendToSummary, trendToMeta } = await import("../services/google-trends");
     const items = await fetchGoogleTrends(geo, limit);
 
     let inserted = 0;
@@ -1274,6 +1274,7 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
         publishedDate: t.publishedAt ? new Date(t.publishedAt) : new Date(),
         status: "new",
         scoreJson: {},
+        sourceMetaJson: trendToMeta(t, geo),
       });
       inserted++;
     }

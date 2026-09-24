@@ -112,19 +112,29 @@ export async function fetchGoogleTrends(geo = "VN", limit = 20): Promise<GoogleT
   return parseTrendsRss(xml).slice(0, Math.max(1, limit));
 }
 
-/** Gộp trend và mấy tin kèm theo thành một đoạn tóm tắt để lưu vào Xu hướng. */
+/**
+ * Một dòng tóm tắt ngắn để hiện trong danh sách.
+ *
+ * Cố ý KHÔNG nhồi danh sách tin vào đây: tin có tiêu đề và đường dẫn riêng, nhồi
+ * vào một chuỗi thì giao diện chỉ in ra được một khối chữ dày đặc kèm đường dẫn
+ * trần. Phần đó đi vào sourceMetaJson để dựng được từng dòng bấm được.
+ */
 export function trendToSummary(item: GoogleTrendItem): string {
-  const parts: string[] = [];
-  if (item.approxTraffic) parts.push(`Khoảng ${item.approxTraffic} lượt tìm kiếm.`);
-  if (item.news.length) {
-    parts.push("Tin liên quan:");
-    for (const n of item.news.slice(0, 3)) {
-      parts.push(`- ${n.title}${n.source ? ` (${n.source})` : ""}: ${n.url}`);
-    }
-  } else {
+  const traffic = item.approxTraffic ? `Khoảng ${item.approxTraffic} lượt tìm kiếm` : "Đang được tìm kiếm nhiều";
+  if (item.news.length === 0) {
     // Nói rõ thay vì để trống: người đọc cần biết đây là từ khoá trần, chưa có
     // câu chuyện đi kèm để bắt trend.
-    parts.push("Google chưa gắn tin nào cho từ khoá này — cần tự tìm hiểu chuyện gì đang xảy ra.");
+    return `${traffic}. Google chưa gắn tin nào — cần tự tìm hiểu chuyện gì đang xảy ra.`;
   }
-  return parts.join("\n");
+  return `${traffic}. ${item.news.length} tin liên quan, đứng đầu: ${item.news[0].title}`;
+}
+
+/** Phần dữ liệu có cấu trúc để giao diện dựng lại cho tử tế. */
+export function trendToMeta(item: GoogleTrendItem, geo: string) {
+  return {
+    approxTraffic: item.approxTraffic,
+    news: item.news.slice(0, 5),
+    pictureUrl: item.pictureUrl,
+    geo,
+  };
 }

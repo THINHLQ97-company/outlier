@@ -35,6 +35,17 @@ export type NewUser = typeof users.$inferInsert;
 //   (reasoning = lý do Claude chấm điểm — chỉ có khi chấm qua MCP).
 // clusterId/clusterLabel: gom tin trùng/liên quan thành 1 cụm (Claude dedup qua MCP).
 // suggestionJson: góc hài Claude gợi ý { scene, characters[], dialogue[], note }.
+// Dữ liệu gốc kèm theo một tín hiệu, tuỳ nguồn mà có gì.
+export interface SignalSourceMeta {
+  /** Google Trends: lượng tìm kiếm ước lượng, dạng chữ ("1000+"). */
+  approxTraffic?: string;
+  /** Tin báo chí đi kèm — chỗ biết chuyện gì đang thật sự xảy ra. */
+  news?: { title: string; url: string; source?: string }[];
+  pictureUrl?: string;
+  /** Mã quốc gia của bảng xếp hạng, vd "VN". */
+  geo?: string;
+}
+
 export const signals = pgTable("signals", {
   id: uuid("id").primaryKey().defaultRandom(),
   source: text("source").notNull(),
@@ -49,6 +60,14 @@ export const signals = pgTable("signals", {
   clusterId: uuid("cluster_id"), // cụm dedup (Claude gom qua MCP)
   clusterLabel: text("cluster_label"), // nhãn cụm hiển thị
   suggestionJson: jsonb("suggestion_json").$type<Record<string, any>>().default({}), // góc hài gợi ý
+  /**
+   * Dữ liệu gốc của nguồn, giữ nguyên cấu trúc.
+   *
+   * Nhồi mọi thứ vào rawSummary thì hiển thị ra một khối chữ dày đặc, đọc không
+   * nổi. Giữ riêng ở đây để giao diện dựng được đúng thứ nó cần: lượng tìm
+   * kiếm là một con số, mỗi tin là một dòng bấm được.
+   */
+  sourceMetaJson: jsonb("source_meta_json").$type<SignalSourceMeta | null>(),
   createdBy: text("created_by"), // username, chỉ set khi source="manual"
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({

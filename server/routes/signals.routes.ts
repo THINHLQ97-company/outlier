@@ -1,7 +1,7 @@
 // THU + LỌC routes (FR1.x, FR2.x). List/manual-create/sync signals, suggest +
 // confirm rubric scoring, read/update the active rubric version.
 import type { Express } from "express";
-import { and, desc, eq, gte } from "drizzle-orm";
+import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import { getDb, isDbConfigured } from "../db/client";
 import { signals, rubricVersions } from "../db/schema";
 import { requireAuth, getAuthUser } from "../auth-mw";
@@ -133,6 +133,41 @@ export function registerSignalRoutes(app: Express) {
     }
   });
 
+  // Xoá một xu hướng. Cần có vì danh sách sẽ lẫn dữ liệu mẫu, từ khoá không hợp,
+  // hoặc thứ quét nhầm — không có nút xoá thì chúng nằm đó mãi.
+  app.delete("/api/signals/:id", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const { id } = req.params;
+    if (!UUID_RE.test(id)) return res.status(400).json({ error: "Mã không hợp lệ." });
+    try {
+      const [row] = await getDb().delete(signals).where(eq(signals.id, id)).returning({ id: signals.id });
+      if (!row) return res.status(404).json({ error: "Không tìm thấy." });
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("delete signal:", e?.message || e);
+      res.status(500).json({ error: "Không xoá được." });
+    }
+  });
+
+  // Dọn hàng loạt theo nguồn — dùng để bỏ dữ liệu mẫu còn sót.
+  app.post("/api/signals/purge", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const sources = Array.isArray(req.body?.sources)
+      ? req.body.sources.map((x: any) => String(x).trim()).filter(Boolean)
+      : [];
+    if (sources.length === 0) return res.status(400).json({ error: "Cần nêu rõ nguồn cần dọn." });
+    try {
+      const rows = await getDb()
+        .delete(signals)
+        .where(inArray(signals.source, sources))
+        .returning({ id: signals.id });
+      res.json({ deleted: rows.length, sources });
+    } catch (e: any) {
+      console.error("purge signals:", e?.message || e);
+      res.status(500).json({ error: "Không dọn được." });
+    }
+  });
+
   // ===== Quét Google Trends =====
   // Nguồn trend duy nhất vừa thật, vừa miễn phí, vừa không cần đăng ký gì.
   // Tách khỏi /sync vì hai thứ khác hẳn nhau: /sync đi hỏi các MCP nội bộ, còn
@@ -142,7 +177,7 @@ export function registerSignalRoutes(app: Express) {
     const geo = typeof req.body?.geo === "string" && /^[A-Za-z]{2}$/.test(req.body.geo) ? req.body.geo.toUpperCase() : "VN";
     const limit = Math.min(50, Math.max(1, Number(req.body?.limit) || 20));
     try {
-      const { fetchGoogleTrends, trendToSummary } = await import("../services/google-trends");
+      const { fetchGoogleTrends, trendToSummary, trendToMeta } = await import("../services/google-trends");
       const items = await fetchGoogleTrends(geo, limit);
 
       const db = getDb();
@@ -169,6 +204,7 @@ export function registerSignalRoutes(app: Express) {
           publishedDate: t.publishedAt ? new Date(t.publishedAt) : new Date(),
           status: "new",
           scoreJson: {},
+          sourceMetaJson: trendToMeta(t, geo),
         });
         inserted++;
       }

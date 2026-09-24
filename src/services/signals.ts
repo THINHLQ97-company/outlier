@@ -112,3 +112,19 @@ export async function scanGoogleTrends(geo = "VN", limit = 20): Promise<GoogleTr
   if (!res.ok) return asError(res, "Không quét được Google Trends.");
   return res.json();
 }
+
+export async function deleteSignal(id: string): Promise<void> {
+  const res = await fetch(`/api/signals/${id}`, { method: "DELETE", headers: authHeaders(false) });
+  if (!res.ok) return asError(res, "Không xoá được.");
+}
+
+/** Dọn hàng loạt theo nguồn — dùng để bỏ dữ liệu mẫu còn sót lại. */
+export async function purgeSignals(sources: string[]): Promise<{ deleted: number }> {
+  const res = await fetch("/api/signals/purge", {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ sources }),
+  });
+  if (!res.ok) return asError(res, "Không dọn được.");
+  return res.json();
+}

@@ -7,7 +7,7 @@ export interface AuthUser {
 
 // ===== Domain types — mirror server/db/schema.ts (camelCase over the wire) =====
 
-export type SignalSource = "market_radar" | "group_insights" | "manual" | "claude_research";
+export type SignalSource = "market_radar" | "group_insights" | "manual" | "claude_research" | "google_trends";
 export type SignalStatus = "new" | "scored" | "queued" | "idea_bank" | "rejected";
 export type AxisKey = "ai" | "ke_toan" | "hosting";
 
@@ -48,8 +48,18 @@ export interface Signal {
   clusterId?: string | null; // cụm dedup (Claude gom qua MCP)
   clusterLabel?: string | null; // nhãn cụm
   suggestionJson?: SignalSuggestion; // góc hài Claude gợi ý
+  /** Dữ liệu gốc của nguồn, giữ nguyên cấu trúc để hiển thị cho tử tế. */
+  sourceMetaJson?: SignalSourceMeta | null;
   createdBy: string | null;
   createdAt: string;
+}
+
+/** Mirror server/db/schema.ts (SignalSourceMeta). */
+export interface SignalSourceMeta {
+  approxTraffic?: string;
+  news?: { title: string; url: string; source?: string }[];
+  pictureUrl?: string;
+  geo?: string;
 }
 
 export interface RubricVersion {

@@ -1,6 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { parseTrendsRss, trendToSummary } from "../services/google-trends";
+import { parseTrendsRss, trendToSummary, trendToMeta } from "../services/google-trends";
 
 // Mẫu rút gọn từ phản hồi thật của trends.google.com/trending/rss?geo=VN
 const SAMPLE = `<?xml version="1.0" encoding="UTF-8"?>
@@ -57,9 +57,23 @@ describe("google-trends", () => {
     assert.match(summary, /chưa gắn tin nào/);
   });
 
-  test("tóm tắt nêu tối đa 3 tin kèm nguồn", () => {
+  test("tóm tắt là MỘT dòng ngắn, không nhét đường dẫn vào", () => {
+    // Đường dẫn đi vào sourceMetaJson để giao diện dựng thành dòng bấm được;
+    // nhồi vào chuỗi thì chỉ in ra được một khối chữ dày đặc.
     const summary = trendToSummary(parseTrendsRss(SAMPLE)[0]);
-    assert.match(summary, /Doanh nhân & câu chuyện mới \(Báo Một\): https:\/\/bao\.vn\/bai-1/);
+    assert.match(summary, /Khoảng 1000\+ lượt tìm kiếm/);
+    assert.match(summary, /2 tin liên quan/);
+    assert.ok(!summary.includes("http"), "tóm tắt không được chứa đường dẫn");
+    assert.ok(!summary.includes("\n"), "tóm tắt phải nằm trên một dòng");
+  });
+
+  test("phần dữ liệu có cấu trúc giữ đủ tin, tối đa 5, kèm mã nước", () => {
+    const meta = trendToMeta(parseTrendsRss(SAMPLE)[0], "VN");
+    assert.equal(meta.geo, "VN");
+    assert.equal(meta.approxTraffic, "1000+");
+    assert.equal(meta.news.length, 2);
+    assert.equal(meta.news[0].url, "https://bao.vn/bai-1");
+    assert.ok(meta.news.length <= 5);
   });
 
   test("XML rỗng hoặc hỏng trả về mảng rỗng, không ném lỗi", () => {

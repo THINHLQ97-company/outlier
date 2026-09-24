@@ -183,6 +183,13 @@
       "when": 1790072354518,
       "tag": "0025_clumsy_red_hulk",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1790223482677,
+      "tag": "0026_talented_blade",
+      "breakpoints": true
     }
   ]
 }

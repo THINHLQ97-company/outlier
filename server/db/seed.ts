@@ -282,7 +282,9 @@ async function seedAdminUser() {
 export async function seedAll(): Promise<void> {
   await seedCharacters();
   await seedRubric();
-  await seedDemoSignals();
+  // Cố ý KHÔNG seed tín hiệu mẫu nữa: giờ đã có nguồn thật miễn phí (Google
+  // Trends), nên dữ liệu mẫu chỉ làm rối danh sách và khiến người dùng tưởng
+  // công cụ đang quét được thứ gì đó. Hàm vẫn giữ để chạy tay khi cần demo.
   await seedStyles();
   await seedAdminUser();
 }

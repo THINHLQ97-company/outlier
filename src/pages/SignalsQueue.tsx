@@ -1,15 +1,19 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { RefreshCw, Plus, Loader2, X, ExternalLink, AlertTriangle, Wand2, Sparkles, TrendingUp } from "lucide-react";
-import { listSignals, syncSignals, createManualSignal, scanGoogleTrends } from "../services/signals";
+import { RefreshCw, Plus, Loader2, X, ExternalLink, AlertTriangle, Wand2, Sparkles, TrendingUp, Trash2, Eraser } from "lucide-react";
+import { listSignals, syncSignals, createManualSignal, scanGoogleTrends, deleteSignal, purgeSignals } from "../services/signals";
 import type { Signal } from "../types";
 import { AXES, type AxisKey } from "../../shared/engine-data";
+import GoogleTrendsMark from "../components/GoogleTrendsMark";
+import TrendNewsList from "../components/TrendNewsList";
 
 const SOURCE_LABEL: Record<Signal["source"], string> = {
   market_radar: "Market Radar",
   group_insights: "Group Insights",
   manual: "Nhập tay",
   claude_research: "Claude tìm",
+  // Nguồn này có nhãn riêng kèm dấu nhận diện, chuỗi ở đây chỉ dùng khi cần tên trần.
+  google_trends: "Google Trends",
 };
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
@@ -88,6 +92,26 @@ export default function SignalsQueue() {
     }
   }
 
+  async function handleDelete(id: string) {
+    try {
+      await deleteSignal(id);
+      setSignals((prev) => prev.filter((x) => x.id !== id));
+    } catch (e: any) {
+      setError(e?.message || "Không xoá được.");
+    }
+  }
+
+  async function handlePurgeDemo() {
+    if (!confirm("Xoá toàn bộ dữ liệu mẫu (Market Radar, Group Insights)? Xu hướng thật vẫn giữ nguyên.")) return;
+    try {
+      const r = await purgeSignals(["market_radar", "group_insights"]);
+      setWarnings([`Đã xoá ${r.deleted} mục dữ liệu mẫu.`]);
+      await reload();
+    } catch (e: any) {
+      setError(e?.message || "Không dọn được.");
+    }
+  }
+
   async function handleSync() {
     setSyncing(true);
     setError(null);
@@ -103,6 +127,10 @@ export default function SignalsQueue() {
     }
   }
 
+  // Dữ liệu mẫu đến từ hai nguồn MCP nội bộ đang tắt — nếu còn thì chúng chỉ là
+  // rác làm rối danh sách.
+  const hasDemoData = signals.some((s) => s.source === "market_radar" || s.source === "group_insights");
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -114,6 +142,11 @@ export default function SignalsQueue() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {hasDemoData && (
+            <button type="button" onClick={handlePurgeDemo} className="ds-btn ds-btn-ghost" title="Xoá dữ liệu mẫu còn sót">
+              <Eraser className="w-4 h-4" aria-hidden="true" /> Dọn dữ liệu mẫu
+            </button>
+          )}
           <button onClick={() => setShowManualForm(true)} className="ds-btn">
             <Plus className="w-4 h-4" aria-hidden="true" /> Thêm xu hướng tay
           </button>
@@ -173,7 +206,13 @@ export default function SignalsQueue() {
             <div key={s.id} className="ds-card">
             <div className="ds-card-body flex flex-col gap-2">
               <div className="flex items-center gap-2 flex-wrap mb-1">
-                <span className="ds-badge">{SOURCE_LABEL[s.source] || s.source}</span>
+                {s.source === "google_trends" ? (
+                  <span className="ds-badge inline-flex items-center gap-1">
+                    <GoogleTrendsMark className="w-3 h-3" /> Google Trends
+                  </span>
+                ) : (
+                  <span className="ds-badge">{SOURCE_LABEL[s.source] || s.source}</span>
+                )}
                 {s.status && STATUS_META[s.status] && (
                   <span className={`ds-badge ${STATUS_META[s.status].cls}`}>
                     {STATUS_META[s.status].label}
@@ -185,11 +224,19 @@ export default function SignalsQueue() {
                     🧩 {s.clusterLabel}
                   </span>
                 )}
-                {s.radar && <span className="text-[11px] text-stone-400">{s.radar}</span>}
+                {s.radar && s.source !== "google_trends" && (
+                  <span className="text-[11px] text-stone-400">{s.radar}</span>
+                )}
                 {s.truc && <span className="text-[11px] text-storm-600">{AXES[s.truc as AxisKey]?.label || s.truc}</span>}
               </div>
               <h3 className="text-sm font-semibold text-stone-800">{s.title}</h3>
-              <p className="text-sm text-stone-500 mt-0.5">{s.rawSummary}</p>
+              {/* Nguồn có dữ liệu cấu trúc thì dựng riêng; còn lại vẫn là một
+                  đoạn chữ như cũ. */}
+              {s.sourceMetaJson ? (
+                <TrendNewsList meta={s.sourceMetaJson} />
+              ) : (
+                <p className="text-sm text-stone-500 mt-0.5">{s.rawSummary}</p>
+              )}
 
               {/* Lý do chấm điểm (Claude) */}
               {s.scoreJson?.reasoning && (
@@ -229,13 +276,24 @@ export default function SignalsQueue() {
                     </a>
                   )}
                 </div>
-                <button
-                  onClick={() => navigate(buildStudioLink(s))}
-                  className="ds-btn ds-btn-primary ds-btn-sm shrink-0"
-                  title={s.suggestionJson?.scene ? "Mở Sáng tạo với góc hài + nhân vật + thoại điền sẵn" : "Mở trang Sáng tạo với mô tả bối cảnh điền sẵn từ tín hiệu này"}
-                >
-                  <Wand2 className="w-3.5 h-3.5" aria-hidden="true" /> Đưa sang Sáng tạo
-                </button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(s.id)}
+                    className="text-xs font-medium text-red-600 hover:bg-red-50 px-2 py-1.5 rounded-lg transition-colors"
+                    title="Xoá xu hướng này"
+                    aria-label="Xoá xu hướng này"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                  </button>
+                  <button
+                    onClick={() => navigate(buildStudioLink(s))}
+                    className="ds-btn ds-btn-primary ds-btn-sm"
+                    title={s.suggestionJson?.scene ? "Mở Sáng tạo với góc hài + nhân vật + thoại điền sẵn" : "Mở trang Sáng tạo với mô tả bối cảnh điền sẵn từ tín hiệu này"}
+                  >
+                    <Wand2 className="w-3.5 h-3.5" aria-hidden="true" /> Đưa sang Sáng tạo
+                  </button>
+                </div>
               </div>
             </div>
             </div>
