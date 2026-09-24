@@ -1,4 +1,4 @@
-import { ExternalLink, Search, Newspaper } from "lucide-react";
+import { ExternalLink, Search, Newspaper, Clock } from "lucide-react";
 import GoogleTrendsMark from "./GoogleTrendsMark";
 import type { SignalSourceMeta } from "../types";
 
@@ -42,7 +42,7 @@ export function parseLegacySummary(raw: string): SignalSourceMeta | null {
   return { approxTraffic: traffic, news };
 }
 
-export default function TrendNewsList({ meta }: { meta: SignalSourceMeta }) {
+export default function TrendNewsList({ meta, scannedAt }: { meta: SignalSourceMeta; scannedAt?: string }) {
   const news = meta.news || [];
 
   return (
@@ -53,6 +53,16 @@ export default function TrendNewsList({ meta }: { meta: SignalSourceMeta }) {
           Google Trends
           {meta.geo && <span className="text-stone-400">· {meta.geo}</span>}
         </span>
+
+        {/* Thời điểm quét: Google cập nhật danh sách theo giờ, nên hai lần quét
+            cách nhau vài tiếng ra kết quả khác nhau là bình thường. Không hiện
+            mốc thời gian thì người dùng tưởng công cụ chạy lung tung. */}
+        {scannedAt && (
+          <span className="inline-flex items-center gap-1 text-[11px] text-stone-400">
+            <Clock className="w-3 h-3" aria-hidden="true" />
+            quét {scannedAt}
+          </span>
+        )}
 
         {meta.approxTraffic && (
           <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-storm-700 bg-storm-50 border border-storm-200 rounded-full px-2.5 py-1">

@@ -37,6 +37,18 @@ function buildStudioLink(s: Signal): string {
   return `/studio?scene=${encodeURIComponent(`${s.title}. ${s.rawSummary}`)}`;
 }
 
+/** Đọc lượt tìm kiếm của một mục, 0 nếu nguồn không có con số này. */
+function trafficOf(s: Signal): number {
+  const raw = s.sourceMetaJson?.approxTraffic || parseLegacySummary(s.rawSummary)?.approxTraffic;
+  if (!raw) return 0;
+  const m = /([\d.,]+)\s*([KMBN])?/i.exec(raw.replace(/\s/g, ""));
+  if (!m) return 0;
+  const suffix = (m[2] || "").toUpperCase();
+  const n = Number(suffix ? m[1].replace(/,/g, ".") : m[1].replace(/[,.]/g, ""));
+  if (!Number.isFinite(n)) return 0;
+  return n * ({ K: 1e3, N: 1e3, M: 1e6, B: 1e9 }[suffix] || 1);
+}
+
 function fmtDate(iso: string) {
   const d = new Date(iso);
   return isNaN(d.getTime()) ? "" : d.toLocaleDateString("vi-VN");
@@ -51,6 +63,9 @@ export default function SignalsQueue() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [scanningTrends, setScanningTrends] = useState(false);
+  // Mặc định theo độ nóng: người dùng vào đây để tìm cái đang được quan tâm
+  // nhất, không phải để xem cái nào vừa quét về.
+  const [sortBy, setSortBy] = useState<"hot" | "new">("hot");
   const [error, setError] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [showManualForm, setShowManualForm] = useState(false);
@@ -132,6 +147,17 @@ export default function SignalsQueue() {
   // rác làm rối danh sách.
   const hasDemoData = signals.some((s) => s.source === "market_radar" || s.source === "group_insights");
 
+  // Sắp lại ngay trước khi hiển thị. Sắp lúc quét là vô nghĩa vì danh sách đọc
+  // từ cơ sở dữ liệu theo thứ tự khác.
+  const sorted = [...signals].sort((a, b) => {
+    if (sortBy === "hot") {
+      const d = trafficOf(b) - trafficOf(a);
+      if (d !== 0) return d;
+    }
+    return new Date(b.publishedDate).getTime() - new Date(a.publishedDate).getTime();
+  });
+  const hasTraffic = signals.some((s) => trafficOf(s) > 0);
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -143,6 +169,25 @@ export default function SignalsQueue() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {hasTraffic && (
+            <div className="flex items-center gap-1 text-xs">
+              <span className="text-stone-400">Sắp theo</span>
+              {([
+                ["hot", "Độ nóng"],
+                ["new", "Mới nhất"],
+              ] as const).map(([k, label]) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setSortBy(k)}
+                  aria-pressed={sortBy === k}
+                  className={`ds-badge ${sortBy === k ? "ds-badge-info" : "hover:bg-stone-100"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           {hasDemoData && (
             <button type="button" onClick={handlePurgeDemo} className="ds-btn ds-btn-ghost" title="Xoá dữ liệu mẫu còn sót">
               <Eraser className="w-4 h-4" aria-hidden="true" /> Dọn dữ liệu mẫu
@@ -203,7 +248,7 @@ export default function SignalsQueue() {
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          {signals.map((s) => (
+          {sorted.map((s) => (
             <div key={s.id} className="ds-card">
             <div className="ds-card-body flex flex-col gap-2">
               <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -238,7 +283,12 @@ export default function SignalsQueue() {
                 // để không phải chờ quét lại mới thấy giao diện mới.
                 const meta = s.sourceMetaJson || (s.source === "google_trends" ? parseLegacySummary(s.rawSummary) : null);
                 return meta ? (
-                  <TrendNewsList meta={meta} />
+                  <TrendNewsList
+                    meta={meta}
+                    scannedAt={new Date(s.createdAt).toLocaleString("vi-VN", {
+                      day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+                    })}
+                  />
                 ) : (
                   <p className="text-sm text-stone-500 mt-0.5">{s.rawSummary}</p>
                 );
