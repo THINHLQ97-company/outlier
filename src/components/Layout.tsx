@@ -1,6 +1,7 @@
 import { type ReactNode, useState } from "react";
 import { NavLink } from "react-router-dom";
 import {
+  Plug,
   Wallet,
   LogOut,
   Radar,
@@ -66,7 +67,10 @@ const NAV_GROUPS: NavGroup[] = [
 // bao nhiêu, không phải chỉ quản trị viên.
 const SYSTEM_GROUP: NavGroup = {
   label: "Hệ thống",
-  items: [{ to: "/costs", label: "Chi phí", icon: Wallet }],
+  items: [
+    { to: "/connect", label: "Kết nối Claude", icon: Plug },
+    { to: "/costs", label: "Chi phí", icon: Wallet },
+  ],
 };
 
 const ADMIN_ITEM: NavItem = { to: "/admin/users", label: "Quản trị", icon: ShieldCheck };
