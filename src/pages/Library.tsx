@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Loader2,
@@ -45,38 +45,60 @@ import { useAppContext } from "../AppContext";
 import { AXES } from "../../shared/engine-data";
 import ConfirmDialog from "../components/ConfirmDialog";
 import type { GalleryPost, PostStatus, AxisKey, CharacterRow, CharacterKind, StyleRow, AssetKind, RagExample, RagProfile } from "../types";
+import { PostsTab, ImagesTab, VideosTab } from "../components/LibraryContentTabs";
 
-const TABS = [
-  { key: "gallery", label: "Ảnh" },
+// Hai nhóm tab khác hẳn nhau: nhóm đầu là THÀNH PHẨM (đem đi dùng được ngay),
+// nhóm sau là NGUYÊN LIỆU (dùng để làm ra thành phẩm). Trộn chung một hàng thì
+// người dùng phải tự đoán cái nào là cái nào.
+const CONTENT_TABS = [
+  { key: "posts", label: "Bài viết" },
+  { key: "images", label: "Hình ảnh" },
+  { key: "videos", label: "Video" },
+] as const;
+
+const RESOURCE_TABS = [
+  { key: "gallery", label: "Ảnh meme cũ" },
   { key: "characters", label: "Nhân vật" },
   { key: "styles", label: "Phong cách" },
   { key: "rag", label: "RAG (ảnh đã thích)" },
 ] as const;
+
+const TABS = [...CONTENT_TABS, ...RESOURCE_TABS];
 type TabKey = (typeof TABS)[number]["key"];
 
 // Thư viện — 4 tab: Ảnh (bài đã tạo, pipeline + Studio), Nhân vật (dàn nhân vật
 // cố định), Phong cách (thư viện phong cách vẽ), RAG (kho ảnh đã thích + hồ sơ gu).
 export default function Library() {
-  const [tab, setTab] = useState<TabKey>("gallery");
+  const [tab, setTab] = useState<TabKey>("posts");
   return (
     <div className="flex flex-col gap-4">
       <div>
         <h1 className="text-lg font-bold text-stone-800 font-display">Thư viện</h1>
-        <p className="text-sm text-stone-500">Ảnh đã tạo, dàn nhân vật, phong cách vẽ và kho RAG (ảnh đã thích).</p>
+        <p className="text-sm text-stone-500">
+          Thành phẩm đã làm ra (bài viết, hình ảnh, video) và nguyên liệu để làm ra chúng.
+        </p>
       </div>
-      <div className="flex gap-1 border-b border-stone-200">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              tab === t.key ? "border-storm-600 text-storm-700" : "border-transparent text-stone-500 hover:text-stone-700"
-            }`}
-          >
-            {t.label}
-          </button>
+      <div className="flex gap-1 border-b border-stone-200 overflow-x-auto">
+        {TABS.map((t, i) => (
+          <Fragment key={t.key}>
+            {i === CONTENT_TABS.length && (
+              <span className="w-px bg-stone-200 my-2 mx-2 shrink-0" aria-hidden="true" />
+            )}
+            <button
+              type="button"
+              onClick={() => setTab(t.key)}
+              className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap ${
+                tab === t.key ? "border-storm-600 text-storm-700" : "border-transparent text-stone-500 hover:text-stone-700"
+              }`}
+            >
+              {t.label}
+            </button>
+          </Fragment>
         ))}
       </div>
+      {tab === "posts" && <PostsTab />}
+      {tab === "images" && <ImagesTab />}
+      {tab === "videos" && <VideosTab />}
       {tab === "gallery" && <GalleryTab />}
       {tab === "characters" && <CharactersTab />}
       {tab === "styles" && <StylesTab />}
