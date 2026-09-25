@@ -16,6 +16,7 @@ import { extractBrandProfile, type SourceDoc } from "../services/brand-extract";
 import { computeSignalStatus } from "../services/rubric-scoring";
 import { RUBRIC_DEFAULT_THRESHOLDS, CHARACTERS } from "../../shared/engine-data";
 import { verifyAccessToken, baseUrl, type McpPrincipal } from "../mcp/oauth";
+import { signedFileUrl } from "../services/file-link";
 
 const PROTOCOL_VERSION = "2024-11-05";
 // Tên này là thứ người dùng thấy trong danh sách connector của Claude. Giữ
@@ -412,6 +413,11 @@ const TOOLS = [
       properties: {
         url: { type: "string", description: "Link video" },
         radar_item_id: { type: "string", description: "Hoặc mã bài từ radar_results / channel_items" },
+        allow_paid: {
+          type: "boolean",
+          description:
+            "Đồng ý trả phí để lấy bài từ Facebook/TikTok/Instagram (khoảng 0.01 USD/bài). Để trống thì lần gọi đầu chỉ BÁO GIÁ rồi dừng; gọi lại với allow_paid=true để chạy thật.",
+        },
         count: { type: "number", description: "Số khung, mặc định 6, tối đa 12" },
         include_transcript: { type: "boolean", description: "Kèm lời thoại có mốc giây (mặc định có)" },
       },
@@ -836,7 +842,20 @@ async function getActiveThresholds(db: any): Promise<{ queue_min: number; idea_b
 }
 
 // Xử lý 1 tool call → trả object payload (đã unwrap khỏi content).
-async function callTool(name: string, args: any, principal: McpPrincipal): Promise<any> {
+async function callTool(name: string, args: any, principal: McpPrincipal, base = ""): Promise<any> {
+  // Đường dẫn ảnh trả cho Claude phải MỞ ĐƯỢC khi bấm: người dùng bấm là mở tab
+  // mới, không có phiên đăng nhập. Link ký có hạn giải đúng việc đó mà không
+  // phải mở công khai toàn bộ kho ảnh.
+  const signedUrlFor = (internalUrl: string | null | undefined): string => {
+    if (!internalUrl) return "";
+    try {
+      return base ? signedFileUrl(base, internalUrl) : internalUrl;
+    } catch {
+      // Thiếu AUTH_SECRET thì không ký được — trả link thường còn hơn nổ.
+      return internalUrl;
+    }
+  };
+
   const db = getDb();
 
   if (name === "daily_brief") {
@@ -1012,8 +1031,9 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
     if (key) {
       const buf = await storage.get(key).catch(() => null);
       if (buf) {
+        const { contentTypeForKey } = await import("../storage");
         __mcpContent = [
-          imageBlock(buf.toString("base64"), "image/png", `ảnh mẫu ${existing.name}`),
+          imageBlock(buf.toString("base64"), contentTypeForKey(key), `ảnh mẫu ${existing.name}`),
           {
             type: "text",
             text: `Đã vẽ ảnh mẫu cho ${existing.name}. Từ giờ mọi bài có nhân vật này đều vẽ theo ảnh này.`,
@@ -1021,7 +1041,12 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
         ];
       }
     }
-    return { id: existing.id, name: existing.name, reference_image_url: out.referenceImageUrl, ...(__mcpContent ? { __mcpContent } : {}) };
+    return {
+      id: existing.id,
+      name: existing.name,
+      reference_image_url: signedUrlFor(out.referenceImageUrl),
+      ...(__mcpContent ? { __mcpContent } : {}),
+    };
   }
 
   if (name === "signals_add") {
@@ -1250,10 +1275,23 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
                 radarItemId: UUID_RE.test(args.radar_item_id || "") ? args.radar_item_id : null })
       .returning({ id: deconstructions.id, status: deconstructions.status });
 
+    // Bài Facebook/TikTok/Instagram phải lấy qua dịch vụ có phí. Trước đây MCP
+    // luôn chạy ở chế độ KHÔNG trả phí, nên mọi lần Claude bóc bài Facebook đều
+    // dừng giữa chừng và bắt người dùng vào web bấm tay — vô lý khi chính Claude
+    // là bên chọn bài đáng bóc.
+    const allowPaid = args.allow_paid === true;
     const { runDeconstructForMcp } = await import("./deconstruct.routes");
-    void runDeconstructForMcp(row.id, url);
+    void runDeconstructForMcp(row.id, url, allowPaid);
 
-    return { ...row, note: "Đang chạy nền, mất khoảng 1-3 phút. Gọi deconstruct_get với id này để xem kết quả." };
+    return {
+      ...row,
+      allow_paid: allowPaid,
+      note: allowPaid
+        ? "Đang chạy nền (có tính phí), mất khoảng 1-3 phút. Gọi deconstruct_get với id này để xem kết quả."
+        : "Đang chạy nền, mất khoảng 1-3 phút. Gọi deconstruct_get với id này. " +
+          "Nếu bài thuộc Facebook/TikTok/Instagram thì nó sẽ dừng lại và BÁO GIÁ — " +
+          "gọi lại deconstruct_start với allow_paid=true để chạy thật.",
+    };
   }
 
   if (name === "deconstruct_get") {
@@ -1265,6 +1303,12 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
       note:
         row.status === "ready"
           ? "Mọi mốc thời gian đã được đối chiếu với độ dài video thật; mốc nằm ngoài video đã bị loại. 'formula' mô tả CÁCH TRIỂN KHAI để học theo — không được chép lại câu chữ của bài gốc."
+          : row.status === "error" && row.needsPaid
+          ? // Dừng vì cần trả phí, không phải hỏng. Nói rõ giá và cách chạy tiếp,
+            // để Claude khỏi báo "phân tích thất bại" khi thật ra chỉ đang chờ
+            // một quyết định chi tiền.
+            `Bài này phải lấy qua dịch vụ có phí (khoảng ${row.estimatedCostUsd || "0.01"} USD). ` +
+            "Chưa tốn đồng nào. Muốn chạy thì gọi lại deconstruct_start với cùng url/radar_item_id và allow_paid=true."
           : row.status === "error"
           ? "Phân tích không thành công — xem errorMessage."
           : "Đang chạy, chờ khoảng 30 giây rồi gọi lại.",
@@ -1676,22 +1720,27 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
 
     // Trả ảnh về dạng Claude xem được, không chỉ đường dẫn: người dùng hỏi "vẽ
     // giúp" thì muốn thấy ngay kết quả chứ không phải mở link.
-    const { storage, internalKeyFromUrl } = await import("../storage");
+    const { storage, internalKeyFromUrl, contentTypeForKey } = await import("../storage");
     const key = internalKeyFromUrl(out.image.url);
+    const link = signedUrlFor(out.image.url);
     let __mcpContent: any[] | undefined;
     if (key) {
       const buf = await storage.get(key).catch(() => null);
       if (buf) {
+        // mimeType phải khớp ĐÚNG file. Trước đây ghi cứng image/png trong khi
+        // ảnh lưu dạng .jpg — khai sai kiểu thì client bỏ luôn khối ảnh, và
+        // người dùng chỉ còn thấy một đường link.
         __mcpContent = [
-          imageBlock(buf.toString("base64"), "image/png", "ảnh vừa vẽ"),
-          {
-            type: "text",
-            text: `Đã vẽ xong. Ảnh: ${out.image.url}\nMô tả đã dùng: ${out.description}`,
-          },
+          imageBlock(buf.toString("base64"), contentTypeForKey(key), "ảnh vừa vẽ"),
+          { type: "text", text: `Đã vẽ xong. Xem ảnh: ${link}\nMô tả đã dùng: ${out.description}` },
         ];
       }
     }
-    return { image: out.image, description: out.description, ...(__mcpContent ? { __mcpContent } : {}) };
+    return {
+      image: { ...out.image, url: link },
+      description: out.description,
+      ...(__mcpContent ? { __mcpContent } : {}),
+    };
   }
 
   if (name === "remake_publish") {
@@ -2166,7 +2215,7 @@ export function registerMcpSignalsRoutes(app: Express) {
         );
       }
       try {
-        const payload = await callTool(toolName, args, principal);
+        const payload = await callTool(toolName, args, principal, baseUrl(req));
         return res.json(rpcResult(id, toolContent(payload)));
       } catch (e: any) {
         return res.json(rpcResult(id, { ...textContent({ error: e?.message || String(e) }), isError: true }));

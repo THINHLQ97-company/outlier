@@ -4,9 +4,22 @@
 import type { Express } from "express";
 import { storage, contentTypeForKey } from "../storage";
 import { requireAuth } from "../auth-mw";
+import { verifyFileLink } from "../services/file-link";
 
 export function registerFileRoutes(app: Express) {
-  app.get("/api/files/*", requireAuth, async (req, res) => {
+  // Hai đường vào: phiên đăng nhập (ảnh hiện trong app), hoặc link đã ký (ảnh
+  // Claude trả vào khung chat — bấm vào là mở tab mới, không có phiên).
+  const authOrSignedLink: any = (req: any, res: any, next: any) => {
+    const key = (req.params as any)[0] as string;
+    if (key && (req.query.sig || req.query.exp)) {
+      const check = verifyFileLink(key, req.query.exp, req.query.sig);
+      if (check.ok) return next();
+      return res.status(403).json({ error: `Không xem được ảnh: ${check.reason}.` });
+    }
+    return requireAuth(req, res, next);
+  };
+
+  app.get("/api/files/*", authOrSignedLink, async (req, res) => {
     const key = (req.params as any)[0] as string;
     if (!key) return res.status(400).json({ error: "Thiếu key." });
     try {

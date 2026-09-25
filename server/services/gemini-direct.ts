@@ -16,8 +16,8 @@
 // tinh thần "không crash toàn app" (CLAUDE.md mục 3).
 export class GeminiError extends Error {}
 
-const TEXT_MODEL = "gemini-3.1-pro-preview";
-const IMAGE_MODEL = "gemini-3.1-flash-image-preview";
+const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-3.1-pro-preview";
+const IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image-preview";
 
 function getApiKey(): string {
   const key = process.env.GEMINI_API_KEY;
@@ -45,6 +45,13 @@ function normalizeGeminiError(e: any): GeminiError {
 // Lưu ý: số chiều vector khác bản cũ, nên các vector RAG cũ (nếu có) cần dựng lại
 // bằng "Cập nhật hồ sơ" ở mục Thư viện.
 const EMBED_MODEL = process.env.GEMINI_EMBED_MODEL || "gemini-embedding-001";
+
+/**
+ * Mô hình đang dùng — đưa ra ngoài để đối chiếu với danh sách Google trả về
+ * (/api/admin/gemini-models). Đổi mô hình bằng biến môi trường, không phải sửa
+ * mã: khi Google ra bản mới thì chỉ cần đổi env rồi triển khai lại.
+ */
+export const CURRENT_MODELS = { text: TEXT_MODEL, image: IMAGE_MODEL, embed: EMBED_MODEL };
 
 // Sinh embedding (vector) cho 1 đoạn text — dùng cho RAG (truy hồi ảnh đã thích
 // giống nhất). Lỗi/thiếu key → throw GeminiError (caller tự bỏ qua RAG).

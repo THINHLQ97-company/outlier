@@ -42,6 +42,38 @@ export function registerUserRoutes(app: Express) {
   // lặng (ngày về 0, số bình luận trống) mà không có lỗi nào. Endpoint này đọc
   // lại kết quả ĐÃ LƯU nên không tốn thêm tiền, và chỉ trả về TÊN trường cùng
   // kiểu dữ liệu — không trả nội dung, để không lộ gì.
+  // GET /api/admin/gemini-models — hỏi thẳng Google xem có mô hình nào mới hơn
+  // mô hình đang dùng không.
+  //
+  // Vì sao là một endpoint chứ không phải một câu trả lời cố định: danh sách mô
+  // hình đổi liên tục, và bất kỳ ai (kể cả AI) nói "cái này mới nhất" theo trí
+  // nhớ đều có thể đã lạc hậu. Hỏi API thì biết chắc.
+  app.get("/api/admin/gemini-models", requireAuth, requireAdmin, async (_req, res) => {
+    const key = (process.env.GEMINI_API_KEY || "").trim();
+    if (!key) return res.status(400).json({ error: "Chưa cấu hình GEMINI_API_KEY." });
+    try {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}&pageSize=200`);
+      const body: any = await r.json().catch(() => ({}));
+      if (!r.ok) return res.status(502).json({ error: body?.error?.message || `Google trả ${r.status}` });
+
+      const all = (body?.models || []).map((m: any) => ({
+        name: String(m.name || "").replace(/^models\//, ""),
+        displayName: m.displayName,
+        methods: m.supportedGenerationMethods || [],
+      }));
+      const { CURRENT_MODELS } = await import("../services/gemini-direct");
+      res.json({
+        dangDung: CURRENT_MODELS,
+        sinhAnh: all.filter((m: any) => /image/i.test(m.name)),
+        sinhChu: all.filter((m: any) => !/image|embedding|aqa/i.test(m.name)),
+        tongSo: all.length,
+      });
+    } catch (e: any) {
+      console.error("gemini models:", e?.message || e);
+      res.status(502).json({ error: "Không hỏi được danh sách mô hình." });
+    }
+  });
+
   app.get("/api/admin/scan-fields", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { apifyCache } = await import("../db/schema");
