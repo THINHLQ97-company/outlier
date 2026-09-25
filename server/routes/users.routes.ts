@@ -49,9 +49,17 @@ export function registerUserRoutes(app: Express) {
       const prefix = typeof req.query.platform === "string" ? req.query.platform : "";
       const picked = rows.filter((r) => !prefix || r.cacheKey.startsWith(prefix));
 
+      // Soi BẢN THÔ của actor, không soi bản đã chuẩn hoá của mình.
+      //
+      // Sai lầm cũ: đọc payload rồi thấy có "comments"/"shares" và kết luận ánh
+      // xạ đã đúng — nhưng đó là tên trường CỦA MÌNH, vì cache chỉ lưu bản đã
+      // chuẩn hoá. Nhìn vào gương rồi bảo đã đối chiếu với thực tế.
       const shape: Record<string, { type: string; sample?: string }> = {};
+      let rawSeen = 0;
       for (const r of picked.slice(0, 20)) {
-        for (const [k, v] of Object.entries(r.payload || {})) {
+        const raw = (r.payload as any)?.raw;
+        if (raw) rawSeen++;
+        for (const [k, v] of Object.entries(raw || (r.payload as any)?.m || r.payload || {})) {
           if (shape[k]) continue;
           const type = Array.isArray(v) ? `array(${v.length})` : v === null ? "null" : typeof v;
           // Chỉ lấy mẫu với số và chuỗi ngắn — đủ để nhận ra trường nào là gì.
@@ -64,6 +72,12 @@ export function registerUserRoutes(app: Express) {
       res.json({
         cacheKeys: picked.slice(0, 5).map((r) => r.cacheKey),
         rowsInspected: Math.min(picked.length, 20),
+        rowsWithRawPayload: rawSeen,
+        source: rawSeen > 0 ? "raw" : "normalized",
+        note:
+          rawSeen > 0
+            ? "Đây là tên trường THẬT của actor."
+            : "Cache này lưu từ trước khi hệ thống giữ bản thô, nên đây chỉ là tên trường của mình — KHÔNG dùng để kết luận actor trả về gì. Quét lại một lần là có bản thô.",
         fields: shape,
       });
     } catch (e: any) {

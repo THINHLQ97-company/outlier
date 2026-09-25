@@ -79,16 +79,54 @@ export function limitForRefresh(opts: {
  * là bắt họ trả tiền lần hai cho lỗi của mình — trong khi kết quả gốc vẫn còn
  * nguyên trong bộ nhớ đệm.
  */
-export async function repairChannelFromCache(channelId: string): Promise<{ checked: number; fixed: number }> {
+export interface RepairResult {
+  checked: number;
+  fixed: number;
+  /** Bài lấy lại được từ dataset của lượt chạy đã trả tiền (miễn phí). */
+  fromRuns: number;
+  note?: string;
+}
+
+/**
+ * Vá số liệu thiếu mà KHÔNG quét lại (không tốn thêm tiền).
+ *
+ * Hai nguồn, theo thứ tự rẻ dần về độ chắc:
+ *   1. Bản thô trong cache — có từ bản này trở đi.
+ *   2. Dataset của những lượt chạy Apify gần đây — ĐÃ trả tiền rồi, đọc lại
+ *      miễn phí. Đây là chỗ cứu được dữ liệu cũ đã cache trước khi biết giữ
+ *      bản thô.
+ *
+ * Bản cache cũ chỉ có dữ liệu ĐÃ chuẩn hoá, nên chuẩn hoá lại nó không thể sinh
+ * ra trường mà lần đầu đã đọc hụt — đó là lý do bấm nút mà số bình luận vẫn
+ * trống. Nguồn (2) mới là thứ vá được.
+ */
+export async function repairChannelFromCache(channelId: string): Promise<RepairResult> {
   const db = getDb();
   const [chan] = await db.select().from(watchedChannels).where(eq(watchedChannels.id, channelId));
-  if (!chan) return { checked: 0, fixed: 0 };
+  if (!chan) return { checked: 0, fixed: 0, fromRuns: 0 };
 
   const items = await db.select().from(radarItems).where(eq(radarItems.channelKey, chan.channelKey || ""));
-  if (items.length === 0) return { checked: 0, fixed: 0 };
+  if (items.length === 0) return { checked: 0, fixed: 0, fromRuns: 0 };
 
   const { apifyCache } = await import("../db/schema");
-  const { normalize } = await import("../services/apify");
+  const { normalize, cachedRaw, actorFor } = await import("../services/apify");
+
+  const needsWork = items.filter((it) => it.comments == null || it.shares == null || !it.coverUrl);
+
+  // Lấy lại từ dataset của những lượt chạy đã trả tiền. Miễn phí, và là nguồn
+  // DUY NHẤT cứu được những bài cache trước khi hệ thống biết giữ bản thô.
+  const rawByUrl = new Map<string, any>();
+  let fromRuns = 0;
+  const actor = actorFor(chan.platform); // null = nền tảng không qua Apify (Douyin)
+  if (needsWork.length > 0 && actor) {
+    try {
+      const { recentRunItems } = await import("../services/apify-runs");
+      for (const r of await recentRunItems(actor)) rawByUrl.set(r.url, r.raw);
+      fromRuns = rawByUrl.size;
+    } catch (e: any) {
+      console.warn("[repair] Không đọc được dataset lượt chạy cũ:", e?.message || e);
+    }
+  }
 
   let fixed = 0;
   for (const it of items) {
@@ -96,13 +134,17 @@ export async function repairChannelFromCache(channelId: string): Promise<{ check
     const missing = it.comments == null || it.shares == null || !it.coverUrl;
     if (!missing) continue;
 
-    const [hit] = await db
-      .select()
-      .from(apifyCache)
-      .where(eq(apifyCache.cacheKey, `${chan.platform}:item:${it.url}`));
-    if (!hit?.payload) continue;
-
-    const m = normalize(hit.payload, chan.platform);
+    // Ưu tiên bản thô (đọc lại được đầy đủ), rồi mới tới cache đã chuẩn hoá.
+    const raw = rawByUrl.get(it.url) || (await cachedRaw(chan.platform, it.url));
+    let m = raw ? normalize(raw, chan.platform) : null;
+    if (!m) {
+      const [hit] = await db
+        .select()
+        .from(apifyCache)
+        .where(eq(apifyCache.cacheKey, `${chan.platform}:item:${it.url}`));
+      if (!hit?.payload) continue;
+      m = normalize((hit.payload as any)?.m ?? hit.payload, chan.platform);
+    }
     if (!m) continue;
 
     await db
@@ -119,7 +161,15 @@ export async function repairChannelFromCache(channelId: string): Promise<{ check
     fixed++;
   }
 
-  return { checked: items.length, fixed };
+  const note =
+    fixed === 0 && needsWork.length > 0
+      ? fromRuns === 0
+        ? "Không vá được bài nào: dữ liệu thô của lần quét cũ không còn (Apify đã dọn dataset, và bản cache cũ chỉ lưu số liệu đã đọc được). " +
+          "Muốn có số bình luận/chia sẻ cho các bài này thì phải quét lại — lần quét mới sẽ giữ cả bản thô nên về sau sửa được miễn phí."
+        : `Đọc lại được ${fromRuns} bài từ lượt quét đã trả tiền, nhưng không bài nào khớp với ${needsWork.length} bài đang thiếu số liệu.`
+      : undefined;
+
+  return { checked: items.length, fixed, fromRuns, note };
 }
 
 export async function refreshChannelInBackground(channelId: string, limit?: number) {
@@ -416,10 +466,15 @@ export function registerChannelRoutes(app: Express) {
         ...out,
         note:
           out.fixed > 0
-            ? `Đã sửa ${out.fixed}/${out.checked} bài bằng dữ liệu đã lưu — không tốn đồng nào.`
+            ? `Đã sửa ${out.fixed}/${out.checked} bài bằng dữ liệu đã trả tiền từ trước — không tốn thêm đồng nào.` +
+              (out.fromRuns > 0 ? ` (Đọc lại ${out.fromRuns} bài từ dataset lượt quét cũ.)` : "")
             : out.checked === 0
             ? "Chưa có bài nào để sửa."
-            : "Không tìm thấy dữ liệu cũ trong bộ nhớ đệm (có thể đã quá 7 ngày). Muốn đủ số liệu thì phải quét lại, và lần đó tốn tiền.",
+            : // Nói đúng lý do thay vì đổ cho "hết hạn bộ nhớ đệm": phần lớn
+              // trường hợp là bản cache cũ chỉ lưu số liệu ĐÃ đọc được, nên
+              // chuẩn hoá lại không sinh thêm được gì.
+              out.note ||
+              "Không tìm thấy dữ liệu cũ để vá. Muốn đủ số liệu thì phải quét lại, và lần đó tốn tiền.",
       });
     } catch (e: any) {
       console.error("repair channel:", e?.message || e);

@@ -122,25 +122,65 @@ export async function resultsUsedToday(): Promise<number> {
   return rows[0]?.n ?? 0;
 }
 
-async function readCache(keys: string[]): Promise<Map<string, ApifyMetrics>> {
-  const out = new Map<string, ApifyMetrics>();
+/**
+ * Cache giữ CẢ bản đã chuẩn hoá LẪN dữ liệu thô của actor.
+ *
+ * Trước đây chỉ giữ bản chuẩn hoá, và đó là một mất mát âm thầm: khi ánh xạ tên
+ * trường sai (actor đổi tên, hoặc ta đoán sai từ đầu), số liệu thành null vĩnh
+ * viễn — sửa lại ánh xạ cũng không cứu được, vì thứ chưa từng đọc ra thì không
+ * có trong cache. Muốn có lại phải quét lại, tức là trả tiền lần nữa cho dữ
+ * liệu đã mua rồi.
+ *
+ * Giữ bản thô thì ánh xạ sai vẫn sửa được miễn phí, và còn xem được actor thật
+ * sự trả về những trường gì thay vì đoán.
+ */
+interface CacheEntry {
+  m: ApifyMetrics;
+  raw?: any;
+}
+
+/** Đọc cache, chấp nhận cả bản cũ (chỉ có phần đã chuẩn hoá, không có thô). */
+function unpack(payload: any): CacheEntry | null {
+  if (!payload || typeof payload !== "object") return null;
+  if (payload.m && typeof payload.m === "object") return payload as CacheEntry;
+  return { m: payload as ApifyMetrics }; // bản cũ
+}
+
+async function readCacheEntries(keys: string[]): Promise<Map<string, CacheEntry>> {
+  const out = new Map<string, CacheEntry>();
   if (!isDbConfigured() || keys.length === 0 || cacheDays() === 0) return out;
   const since = new Date(Date.now() - cacheDays() * 86_400_000);
   const rows = await getDb()
     .select()
     .from(apifyCache)
     .where(and(inArray(apifyCache.cacheKey, keys), gte(apifyCache.fetchedAt, since)));
-  for (const r of rows) out.set(r.cacheKey, r.payload as ApifyMetrics);
+  for (const r of rows) {
+    const e = unpack(r.payload);
+    if (e) out.set(r.cacheKey, e);
+  }
   return out;
 }
 
-async function writeCache(entries: { key: string; value: ApifyMetrics }[]) {
+async function readCache(keys: string[]): Promise<Map<string, ApifyMetrics>> {
+  const out = new Map<string, ApifyMetrics>();
+  for (const [k, e] of await readCacheEntries(keys)) out.set(k, e.m);
+  return out;
+}
+
+/** Đọc dữ liệu thô đã cache cho một url (null = bản cache cũ, không có thô). */
+export async function cachedRaw(platform: string, url: string): Promise<any | null> {
+  const entries = await readCacheEntries([`${platform}:item:${url}`]);
+  return entries.get(`${platform}:item:${url}`)?.raw ?? null;
+}
+
+async function writeCache(entries: { key: string; value: ApifyMetrics; raw?: any }[]) {
   if (!isDbConfigured() || entries.length === 0) return;
   for (const e of entries) {
+    const payload: CacheEntry = { m: e.value, ...(e.raw ? { raw: e.raw } : {}) };
     await getDb()
       .insert(apifyCache)
-      .values({ cacheKey: e.key, payload: e.value as any, fetchedAt: new Date() })
-      .onConflictDoUpdate({ target: apifyCache.cacheKey, set: { payload: e.value as any, fetchedAt: new Date() } })
+      .values({ cacheKey: e.key, payload: payload as any, fetchedAt: new Date() })
+      .onConflictDoUpdate({ target: apifyCache.cacheKey, set: { payload: payload as any, fetchedAt: new Date() } })
       .catch(() => {});
   }
 }
@@ -171,11 +211,38 @@ async function runActorSync(actorId: string, input: Record<string, any>): Promis
 }
 
 /** Đọc số từ nhiều tên trường khác nhau giữa các actor. */
+/**
+ * Đọc một con số từ dữ liệu actor, chấp nhận vài kiểu đóng gói khác nhau.
+ *
+ * Cạm bẫy đã vấp: `Number(null)` và `Number("")` đều ra 0, nên bản cũ biến
+ * trường RỖNG thành "0 bình luận" — tệ hơn hẳn việc để trống, vì con số 0 trông
+ * như đã biết chắc. Giờ chỉ nhận số thật và chuỗi số thật.
+ *
+ * Một số actor gói số trong object (`{ count: 12 }`); đọc `count`/`total` là
+ * đọc đúng thứ nó ghi, không phải suy đoán.
+ */
 function pick(o: any, names: string[]): number | undefined {
   for (const n of names) {
     const v = o?.[n];
-    const num = typeof v === "number" ? v : Number(v);
-    if (Number.isFinite(num) && num >= 0) return num;
+
+    if (typeof v === "number") {
+      if (Number.isFinite(v) && v >= 0) return v;
+      continue;
+    }
+
+    if (typeof v === "string") {
+      const trimmed = v.trim();
+      if (!trimmed) continue;
+      // "1,234" / "1 234" là cách vài actor trả số đã định dạng.
+      const num = Number(trimmed.replace(/[,\s]/g, ""));
+      if (Number.isFinite(num) && num >= 0) return num;
+      continue;
+    }
+
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      const inner = pick(v, ["count", "total", "totalCount", "value"]);
+      if (inner != null) return inner;
+    }
   }
   return undefined;
 }
@@ -359,15 +426,16 @@ export async function enrichMetrics(
     await recordUsage({ actorId: actor, itemCount: raws.length, kind: "enrich", note: `enrich ${platform}` });
   }
 
-  const fresh: { key: string; value: ApifyMetrics }[] = [];
+  const fresh: { key: string; value: ApifyMetrics; raw?: any }[] = [];
   for (const r of raws) {
     const m = normalize(r, platform);
     if (!m) continue;
     metrics.push(m);
     // Quét cả kênh trả về nhiều bài từ MỘT url đầu vào — cache theo từng bài
-    // để lần sau tra cứu lẻ dùng lại được.
-    if (!opts.asProfile) fresh.push({ key: keyOf(m.url), value: m });
-    else fresh.push({ key: `${platform}:item:${m.url}`, value: m });
+    // để lần sau tra cứu lẻ dùng lại được. Kèm bản thô để còn sửa được ánh xạ
+    // về sau mà không phải trả tiền quét lại.
+    if (!opts.asProfile) fresh.push({ key: keyOf(m.url), value: m, raw: r });
+    else fresh.push({ key: `${platform}:item:${m.url}`, value: m, raw: r });
   }
   await writeCache(fresh);
 
