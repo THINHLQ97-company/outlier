@@ -68,9 +68,18 @@ PHÂN BIỆT HAI THỨ HAY LẪN
 
 Còn một luồng cũ vẫn dùng được: signals_score chấm tin theo rubric (rubric_get để biết ngưỡng), signals_suggest_angle gợi ý góc hài với dàn nhân vật cố định (characters_list).`;
 
-const READONLY_TOOLS = new Set(["daily_brief", "signals_list", "signals_get", "rubric_get", "characters_list", "brands_list", "brand_profile_get", "brand_brief", "radar_jobs_list", "radar_results", "deconstruct_get", "remake_get", "channels_list", "channel_items", "video_frames", "video_projects_list", "video_get"]);
+// Tool chỉ đọc — không đòi quyền ghi. PHẢI khớp với annotations.readOnlyHint của
+// từng tool; có test chặn lệch (mcp-tool-perms.test.ts), vì xếp sai nhóm thì tool
+// đọc bị chặn vô cớ và người dùng thấy "không có quyền" ở chỗ chẳng ghi gì.
+const READONLY_TOOLS = new Set(["access_check", "styles_list", "style_brand_material", "daily_brief", "signals_list", "signals_get", "rubric_get", "characters_list", "brands_list", "brand_profile_get", "brand_brief", "radar_jobs_list", "radar_results", "deconstruct_get", "remake_get", "channels_list", "channel_items", "video_frames", "video_projects_list", "video_get"]);
 
 const TOOLS = [
+  {
+    name: "access_check",
+    description: "Kiểm tài khoản đang kết nối là ai và được làm gì: có quyền ghi không, tool nào chạy được, tool nào bị chặn. Gọi tool này khi một tool báo không có quyền, hoặc khi không rõ vì sao gọi tool mà không ra kết quả.",
+    annotations: { title: "Kiểm quyền của tôi", readOnlyHint: true },
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
   {
     name: "daily_brief",
     description: "TOÀN CẢNH trong một lần gọi — nên gọi ĐẦU TIÊN mỗi phiên làm việc, nhất là phiên chạy định kỳ. Trả về: xu hướng mới chưa xử lý, bài hay điểm cao chưa đem đi bóc, bản bóc chưa đọc bình luận, bản viết xong chưa đăng, kênh lâu chưa quét, và danh sách việc nên làm tiếp đã xếp theo thứ tự rẻ trước tốn tiền sau. Tool này KHÔNG tự quét gì nên luôn miễn phí.",
@@ -726,6 +735,25 @@ const textContent = (obj: any) => ({ content: [{ type: "text", text: typeof obj 
  * cách duy nhất để Claude TỰ NHÌN khung hình video thay vì đọc mô tả do một
  * model khác viết hộ. Tool nào cần vậy thì đặt `__mcpContent` trong kết quả.
  */
+/**
+ * Trần dung lượng ảnh trả kèm. Base64 phình 4/3 so với ảnh gốc, và một phản hồi
+ * quá lớn bị client bỏ luôn — người dùng thấy đúng hiện tượng "gọi tool mà không
+ * ra gì". Thà bỏ ảnh mà giữ được phần chữ.
+ */
+const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+
+/** Khối ảnh cho MCP, hoặc một dòng chữ giải thích nếu ảnh quá lớn. */
+export function imageBlock(base64: string, mimeType: string, label: string): any {
+  const bytes = Math.floor((base64.length * 3) / 4);
+  if (bytes > MAX_IMAGE_BYTES) {
+    return {
+      type: "text",
+      text: `(${label}: ảnh ${(bytes / 1048576).toFixed(1)}MB, quá lớn để gửi kèm — mở trong công cụ để xem.)`,
+    };
+  }
+  return { type: "image", data: base64, mimeType };
+}
+
 function toolContent(payload: any) {
   if (payload && Array.isArray(payload.__mcpContent)) return { content: payload.__mcpContent };
   return textContent(payload);
@@ -755,6 +783,23 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
   if (name === "daily_brief") {
     const { buildDailyBrief } = await import("../services/daily-brief");
     return await buildDailyBrief(principal.username);
+  }
+
+  if (name === "access_check") {
+    const write = canEdit(principal);
+    const blocked = TOOLS.map((t) => t.name).filter((n) => !READONLY_TOOLS.has(n));
+    return {
+      username: principal.username,
+      role: principal.role,
+      permissions: principal.perms,
+      can_read: true,
+      can_write: write,
+      writable_tools: write ? "tất cả" : [],
+      blocked_tools: write ? [] : blocked,
+      note: write
+        ? "Đủ quyền ghi: tạo/sửa được hồ sơ thương hiệu, phong cách, bản bóc, bản viết, và nối trang."
+        : "CHỈ ĐỌC. Mọi tool tạo/sửa sẽ bị chặn — nhờ quản trị viên cấp quyền 'signals-edit' ở menu Người dùng rồi kết nối lại MCP (quyền ghim vào token lúc đăng nhập).",
+    };
   }
 
   if (name === "signals_list") {
@@ -1217,7 +1262,7 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
     }];
     for (const f of out.frames) {
       content.push({ type: "text", text: `— giây ${f.atSec} —` });
-      content.push({ type: "image", data: f.base64, mimeType: f.mimeType });
+      content.push(imageBlock(f.base64, f.mimeType, `khung giây ${f.atSec}`));
     }
     content.push({
       type: "text",
@@ -1463,8 +1508,11 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
       const buf = await storage.get(key).catch(() => null);
       if (buf) {
         __mcpContent = [
-          { type: "image", data: buf.toString("base64"), mimeType: "image/png" },
-          { type: "text", text: `Đã vẽ xong. Mô tả đã dùng: ${out.description}` },
+          imageBlock(buf.toString("base64"), "image/png", "ảnh vừa vẽ"),
+          {
+            type: "text",
+            text: `Đã vẽ xong. Ảnh: ${out.image.url}\nMô tả đã dùng: ${out.description}`,
+          },
         ];
       }
     }
@@ -1922,7 +1970,25 @@ export function registerMcpSignalsRoutes(app: Express) {
       const args = params?.arguments || {};
       if (!TOOLS.some((t) => t.name === toolName)) return res.json(rpcError(id, -32601, `Unknown tool: ${toolName}`));
       if (!READONLY_TOOLS.has(toolName) && !canEdit(principal)) {
-        return res.json(rpcError(id, -32000, "Cần quyền 'signals-edit' để ghi."));
+        // Trả dạng isError thay vì rpcError: lỗi tầng giao thức bị client hiểu là
+        // sự cố kết nối và thường không hiện cho người dùng thấy — đúng hiện
+        // tượng "gọi tool mà không ra kết quả gì". Dạng này Claude đọc được và
+        // nói lại được là thiếu quyền gì, ai cấp.
+        return res.json(
+          rpcResult(id, {
+            ...textContent({
+              error: `Tài khoản "${principal.username}" không có quyền ghi nên không chạy được "${toolName}".`,
+              your_role: principal.role,
+              your_permissions: principal.perms,
+              missing_permission: "signals-edit",
+              how_to_fix:
+                "Nhờ quản trị viên mở menu Người dùng trong công cụ và cấp quyền 'signals-edit' cho tài khoản này, " +
+                "rồi kết nối lại MCP để lấy token mới (quyền được ghim vào token lúc đăng nhập).",
+              readable_tools: [...READONLY_TOOLS],
+            }),
+            isError: true,
+          })
+        );
       }
       try {
         const payload = await callTool(toolName, args, principal);
