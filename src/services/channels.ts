@@ -90,6 +90,8 @@ export async function getChannelItems(id: string): Promise<WatchedChannelDetail>
 export interface PatchChannelInput {
   note?: string;
   isActive?: boolean;
+  /** Nhập tay số người theo dõi (null = xoá). Gắn xuống mọi bài rồi chấm lại. */
+  followerCount?: number | null;
 }
 
 export async function patchChannel(id: string, input: PatchChannelInput): Promise<WatchedChannel> {

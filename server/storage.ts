@@ -181,6 +181,24 @@ export function internalKeyFromUrl(url: string | null | undefined): string | nul
   return m ? m[1] : null;
 }
 
+/**
+ * Bản cài đặt này có phục vụ được ảnh ở url đó không.
+ *
+ * Ba kiểu "không": trỏ vào file nội bộ đã mất, trỏ ra máy chủ cũ (đường dẫn
+ * kiểu cũ như /uploads/... hoặc http tới host cũ), hoặc rỗng. Cả ba đều cho ra
+ * một ô ảnh vỡ như nhau, nên đối xử như nhau: coi là ảnh đã mất, và cho dọn.
+ *
+ * Phân biệt được điều này mới hết cảnh "ảnh hỏng mà không ai xoá được": trước
+ * đây chỉ kiểm file nội bộ, nên đường dẫn kiểu cũ bị coi là vẫn tốt.
+ */
+export async function imageIsServable(url: string | null | undefined): Promise<boolean> {
+  if (!url) return false;
+  if (url.startsWith("data:")) return true;
+  const key = internalKeyFromUrl(url);
+  if (!key) return false; // đường dẫn ngoài/kiểu cũ — deployment này không phục vụ được
+  return storage.exists(key);
+}
+
 // Đọc ảnh reference (referenceImageUrl trỏ vào storage nội bộ) thành inline data
 // { mimeType, data(base64) } — đúng shape @google/genai cần cho image-to-image.
 // URL ngoài / thiếu / lỗi đọc → null (bỏ qua, không chặn sinh ảnh). Dùng để

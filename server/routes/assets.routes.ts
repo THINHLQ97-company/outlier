@@ -5,7 +5,7 @@ import { and, desc, eq, or } from "drizzle-orm";
 import { getDb, isDbConfigured } from "../db/client";
 import { assets } from "../db/schema";
 import { requireAuth, getAuthUser } from "../auth-mw";
-import { storage, newKey, parseDataUrl, internalKeyFromUrl } from "../storage";
+import { storage, newKey, parseDataUrl, internalKeyFromUrl, imageIsServable } from "../storage";
 import { isActiveAdmin } from "./studio.routes";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -30,8 +30,7 @@ async function deleteInternalImageIfAny(url: string | null | undefined) {
 // volume). Trước đây chỉ hiện ra một ô ảnh vỡ, không nói vì sao và không xoá
 // được — nhất là khi asset của người khác chia sẻ cả nhóm.
 async function withFlags(row: any, me: string) {
-  const key = internalKeyFromUrl(row.imageUrl);
-  const imageMissing = key ? !(await storage.exists(key)) : false;
+  const imageMissing = !(await imageIsServable(row.imageUrl));
   return { ...row, isMine: row.owner === me, imageMissing };
 }
 
@@ -135,8 +134,7 @@ export function registerAssetRoutes(app: Express) {
         // Ảnh đã mất thì dòng dữ liệu chỉ còn là rác: không xem được, không vẽ
         // được, và người thấy nó thường không phải người tạo ra nó. Bắt đi tìm
         // chủ cũ để dọn rác là bắt làm một việc vô nghĩa.
-        const key = internalKeyFromUrl(existing.imageUrl);
-        const imageMissing = key ? !(await storage.exists(key)) : false;
+        const imageMissing = !(await imageIsServable(existing.imageUrl));
         const isAdmin = await isActiveAdmin(me);
         if (!isAdmin && !imageMissing) {
           return res.status(403).json({

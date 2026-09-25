@@ -79,6 +79,25 @@ export function limitForRefresh(opts: {
  * là bắt họ trả tiền lần hai cho lỗi của mình — trong khi kết quả gốc vẫn còn
  * nguyên trong bộ nhớ đệm.
  */
+/** Gắn số người theo dõi của kênh xuống mọi bài của kênh, rồi chấm điểm lại. */
+export async function applyFollowersToItems(channelId: string, followers: number | null): Promise<number> {
+  const db = getDb();
+  const rows = await db
+    .select({ id: radarItems.id, jobId: radarItems.jobId })
+    .from(radarItems)
+    .innerJoin(radarJobs, eq(radarItems.jobId, radarJobs.id))
+    .where(eq(radarJobs.watchedChannelId, channelId));
+  if (rows.length === 0) return 0;
+
+  for (const r of rows) {
+    await db.update(radarItems).set({ followerCount: followers }).where(eq(radarItems.id, r.id));
+  }
+  for (const jid of [...new Set(rows.map((r) => r.jobId))]) {
+    await rescoreRadarJob(jid).catch(() => {});
+  }
+  return rows.length;
+}
+
 export interface RepairResult {
   checked: number;
   fixed: number;
@@ -252,6 +271,20 @@ export async function refreshChannelInBackground(channelId: string, limit?: numb
       platforms: [chan.platform], status: "scanning",
     }).returning();
 
+    // Facebook hiếm khi kèm số người theo dõi trong dữ liệu bài. Thử Graph —
+    // miễn phí, và được thì khỏi phải nhập tay.
+    let graphFollowers: number | null = null;
+    if (chan.platform === "facebook" && chan.followerCount == null) {
+      try {
+        const { fetchPublicPageFollowers } = await import("../services/fb-public-page");
+        const out = await fetchPublicPageFollowers(chan.channelUrl);
+        graphFollowers = out.followers;
+        if (!out.followers && out.reason) console.warn(`[channels] Người theo dõi qua Graph: ${out.reason}`);
+      } catch {
+        // Không lấy được thì thôi — đã có đường nhập tay.
+      }
+    }
+
     // Số người theo dõi của KÊNH — lấy từ bài nào có, hoặc từ lần quét trước.
     //
     // Phải biết trước khi chèn bài: việc chấm "vượt bao nhiêu lần mức thường
@@ -259,7 +292,7 @@ export async function refreshChannelInBackground(channelId: string, limit?: numb
     // "750 N theo dõi" ngay bên cạnh dòng "chưa có số người theo dõi để so
     // sánh" — biết mà không dùng được, vì để nhầm chỗ.
     const knownFollowers =
-      r.candidates.find((c) => c.followerCount != null)?.followerCount ?? chan.followerCount ?? null;
+      r.candidates.find((c) => c.followerCount != null)?.followerCount ?? chan.followerCount ?? graphFollowers;
 
     await db.insert(radarItems).values(r.candidates.map((c) => ({
       jobId: job.id, platform: c.platform, itemKey: c.itemKey, url: c.url,
@@ -299,7 +332,7 @@ export async function refreshChannelInBackground(channelId: string, limit?: numb
       // giữ nó lại thì danh sách mãi hiện đường dẫn thay vì tên trang.
       channelName: first?.channelName ?? chan.channelName ?? null,
       channelAvatarUrl: (withAvatar as any)?.channelAvatarUrl ?? chan.channelAvatarUrl ?? null,
-      followerCount: first?.followerCount ?? chan.followerCount ?? null,
+      followerCount: first?.followerCount ?? chan.followerCount ?? graphFollowers,
       updatedAt: new Date(),
     }).where(eq(watchedChannels.id, channelId));
   } catch (e: any) {
@@ -514,7 +547,31 @@ export function registerChannelRoutes(app: Express) {
       const patch: Record<string, any> = { updatedAt: new Date() };
       if (typeof req.body?.note === "string") patch.note = req.body.note.trim() || null;
       if (typeof req.body?.isActive === "boolean") patch.isActive = req.body.isActive;
+
+      // Nhập tay số người theo dõi.
+      //
+      // Cần đường này vì với trang của NGƯỜI KHÁC, Meta chỉ cho đọc số công khai
+      // nếu ứng dụng đã được duyệt "Page Public Content Access", còn Apify thì
+      // không phải lúc nào cũng trả về. Không có số này thì việc chấm "vượt mấy
+      // lần mức thường ngày" mất một trục — mà người dùng chỉ cần nhìn trang là
+      // đọc được con số đó trong hai giây.
+      let followersChanged = false;
+      if (req.body?.followerCount !== undefined) {
+        const raw = req.body.followerCount;
+        const n = raw === null || raw === "" ? null : Number(String(raw).replace(/[.,\s]/g, ""));
+        if (n !== null && (!Number.isFinite(n) || n < 0)) {
+          return res.status(400).json({ error: "Số người theo dõi không hợp lệ." });
+        }
+        patch.followerCount = n;
+        followersChanged = true;
+      }
+
       const [row] = await getDb().update(watchedChannels).set(patch).where(eq(watchedChannels.id, id)).returning();
+
+      // Gắn xuống từng bài rồi chấm lại — để trong kênh mà không xuống bài thì
+      // đúng lỗi cũ: biết số mà không dùng được.
+      if (followersChanged) await applyFollowersToItems(id, row.followerCount ?? null);
+
       res.json(row);
     } catch (e: any) {
       console.error("channel patch:", e?.message || e);

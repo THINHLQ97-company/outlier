@@ -253,12 +253,89 @@ function pick(o: any, names: string[]): number | undefined {
 //                         authorMeta.fans, createTimeISO
 //   YouTube (streamers):  viewCount, likes, commentsCount, numberOfSubscribers,
 //                         channelId, channelName, date
+/**
+ * Dò một con số theo Ý NGHĨA thay vì theo tên trường định sẵn.
+ *
+ * Vì sao cần: mỗi actor (và mỗi loại bài — ảnh đơn, album, video, bài chia sẻ)
+ * đặt tên và lồng dữ liệu một kiểu. Liệt kê tên trường thì luôn hụt một kiểu
+ * nào đó, và mỗi lần hụt là một lần người dùng thấy dấu "—" mà không hiểu vì
+ * sao. Dò theo nghĩa thì actor đổi tên vẫn đọc được.
+ *
+ * Giữ hai ràng buộc để không vơ nhầm:
+ *   - chỉ nhận khoá mà TÊN nói đúng thứ đang tìm (vd chứa "comment");
+ *   - đi nông (mặc định 3 tầng) và bỏ qua mảng object, vì số nằm trong mảng
+ *     thường là số của TỪNG phần tử con, không phải của bài.
+ */
+function deepFindCount(obj: any, nameRe: RegExp, depth = 3): number | undefined {
+  if (!obj || typeof obj !== "object" || depth < 0) return undefined;
+
+  // Ưu tiên tầng nông nhất: khoá ở ngay cấp này đáng tin hơn khoá lồng sâu.
+  for (const [k, v] of Object.entries(obj)) {
+    if (!nameRe.test(k)) continue;
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0) return v;
+    if (typeof v === "string") {
+      const n = Number(v.trim().replace(/[,\s]/g, ""));
+      if (v.trim() && Number.isFinite(n) && n >= 0) return n;
+    }
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      const inner = pick(v, ["count", "total", "totalCount", "total_count", "value"]);
+      if (inner != null) return inner;
+    }
+  }
+
+  for (const v of Object.values(obj)) {
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      const found = deepFindCount(v, nameRe, depth - 1);
+      if (found != null) return found;
+    }
+  }
+  return undefined;
+}
+
+const IMAGE_URL_RE = /^https?:\/\/[^\s]+/i;
+const IMAGE_KEY_RE = /(thumbnail|image|photo|picture|cover|preview|src|uri|media)/i;
+
+/**
+ * Dò ảnh đại diện của bài ở bất kỳ chỗ nào trong dữ liệu thô.
+ *
+ * Bài ảnh đơn, album nhiều ảnh, bài chia sẻ lại, bài video — mỗi loại đặt ảnh
+ * một chỗ khác nhau. Đó là lý do một số bài hiện ô ảnh vỡ trong khi bài khác
+ * bình thường: không phải không có ảnh, mà là ảnh nằm ở nhánh chưa dò tới.
+ */
+function deepFindImage(obj: any, depth = 4): string | undefined {
+  if (!obj || typeof obj !== "object" || depth < 0) return undefined;
+
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v === "string" && IMAGE_KEY_RE.test(k) && IMAGE_URL_RE.test(v)) return v;
+  }
+  for (const v of Object.values(obj)) {
+    if (Array.isArray(v)) {
+      for (const item of v) {
+        if (typeof item === "string" && IMAGE_URL_RE.test(item)) return item;
+        const found = deepFindImage(item, depth - 1);
+        if (found) return found;
+      }
+    } else if (v && typeof v === "object") {
+      const found = deepFindImage(v, depth - 1);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
+
 /** Lấy ảnh đầu tiên tìm được trong đống media mà actor trả về. */
 function firstImage(raw: any): string | undefined {
   const direct =
     raw?.thumbnailUrl ?? raw?.thumbnail ?? raw?.imageUrl ?? raw?.image ?? raw?.displayUrl ??
     raw?.coverUrl ?? raw?.cover ?? raw?.previewImage;
   if (typeof direct === "string" && direct.startsWith("http")) return direct;
+
+  // Ảnh có thể nằm trong attachments của bài ảnh/album/bài chia sẻ lại.
+  const attach = raw?.attachments?.data ?? raw?.attachments ?? raw?.photos ?? null;
+  if (attach) {
+    const found = deepFindImage(attach);
+    if (found) return found;
+  }
 
   // Facebook nhét ảnh vào mảng media với vài kiểu lồng nhau khác nhau.
   const media = Array.isArray(raw?.media) ? raw.media : Array.isArray(raw?.images) ? raw.images : [];
@@ -268,7 +345,9 @@ function firstImage(raw: any): string | undefined {
       m?.thumbnail ?? m?.image?.uri ?? m?.photo_image?.uri ?? m?.url ?? m?.src;
     if (typeof u === "string" && u.startsWith("http")) return u;
   }
-  return undefined;
+  // Hết đường liệt kê thì dò khắp dữ liệu — thà tìm ra ảnh nằm ở nhánh lạ còn
+  // hơn hiện ô ảnh vỡ.
+  return deepFindImage(raw);
 }
 
 /**
@@ -291,11 +370,18 @@ export function normalize(raw: any, platform: string): ApifyMetrics | null {
     likes: pick(raw, ["diggCount", "likesCount", "likeCount", "likes"]),
     // Facebook trả `comments`/`shares` là SỐ, nhưng vài actor khác trả MẢNG —
     // pick() chỉ nhận số nên mảng bị bỏ qua, đúng ý.
-    comments: pick(raw, ["commentCount", "commentsCount", "comments", "commentsCount"]),
-    shares: pick(raw, ["shareCount", "sharesCount", "shares", "sharesCount"]),
+    // Tên trường quen trước, dò theo nghĩa sau — loại bài khác nhau (ảnh, album,
+    // video, chia sẻ lại) đặt số bình luận ở những chỗ khác nhau.
+    comments:
+      pick(raw, ["commentCount", "commentsCount", "comments", "comment_count"]) ??
+      deepFindCount(raw, /comment/i),
+    shares:
+      pick(raw, ["shareCount", "sharesCount", "shares", "share_count", "reshareCount"]) ??
+      deepFindCount(raw, /(share|reshare)/i),
     followerCount:
       pick(author, ["fans", "followers", "followersCount", "subscriberCount"]) ??
-      pick(raw, ["numberOfSubscribers", "followersCount", "subscriberCount", "channelTotalSubscribers"]),
+      pick(raw, ["numberOfSubscribers", "followersCount", "subscriberCount", "channelTotalSubscribers", "pageFollowers", "pageLikes", "likesCount"]) ??
+      deepFindCount(raw, /(follower|subscriber|fan_count|pageLikes)/i),
     channelKey:
       (author?.id && String(author.id)) ||
       (raw?.channelId && String(raw.channelId)) ||

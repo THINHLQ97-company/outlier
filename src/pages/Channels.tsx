@@ -31,6 +31,7 @@ import {
   DuplicateChannelError,
   type AddChannelInput,
   repairChannel,
+  patchChannel,
 } from "../services/channels";
 import ConfirmDialog from "../components/ConfirmDialog";
 import type { WatchedChannel, WatchedChannelDetail, RadarItem, RadarConfidence, RadarMetricsSource } from "../types";
@@ -559,6 +560,84 @@ function AddChannelForm({
   );
 }
 
+function FollowerCountRow({
+  detail,
+  onSaved,
+}: {
+  detail: WatchedChannelDetail;
+  onSaved: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(detail.followerCount != null ? String(detail.followerCount) : "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      const raw = value.trim();
+      // Nhận cả "750000", "750.000" và "750,000" — người ta chép số từ Facebook
+      // về thì hay dính dấu phân cách.
+      await patchChannel(detail.id, { followerCount: raw ? Number(raw.replace(/[.,\s]/g, "")) : null });
+      setEditing(false);
+      onSaved();
+    } catch (e: any) {
+      setError(e?.message || "Không lưu được.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <div className="flex items-center gap-2 mt-2 text-xs text-stone-500">
+        <Users className="w-3.5 h-3.5 text-stone-400" aria-hidden="true" />
+        {detail.followerCount != null ? (
+          <span>
+            <b className="text-stone-700">{numberFmt.format(detail.followerCount)}</b> người theo dõi
+          </span>
+        ) : (
+          <span className="text-amber-700">
+            Chưa biết số người theo dõi — thiếu số này thì không chấm được bài vượt bao nhiêu lần mức thường ngày.
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="font-medium text-storm-700 hover:underline"
+        >
+          {detail.followerCount != null ? "Sửa" : "Nhập số"}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 mt-2 flex-wrap">
+      <label htmlFor={`fol-${detail.id}`} className="text-xs font-medium text-stone-600">
+        Số người theo dõi
+      </label>
+      <input
+        id={`fol-${detail.id}`}
+        className="ds-input w-40 text-xs"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="vd 750000"
+        autoFocus
+      />
+      <button type="button" onClick={save} disabled={saving} className="ds-btn ds-btn-primary ds-btn-sm">
+        {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> : null} Lưu
+      </button>
+      <button type="button" onClick={() => setEditing(false)} className="ds-btn ds-btn-ghost ds-btn-sm">
+        Huỷ
+      </button>
+      <span className="text-[11px] text-stone-400">Mở trang gốc, chép con số ở mục "người theo dõi" vào đây.</span>
+      {error && <span className="text-[11px] text-red-600">{error}</span>}
+    </div>
+  );
+}
+
 function ChannelDetailPanel({
   detail,
   watching,
@@ -692,6 +771,13 @@ function ChannelDetailPanel({
             </button>
           </div>
         )}
+
+        {/* Nhập tay số người theo dõi.
+            Với trang của người khác, Meta chỉ cho đọc số công khai khi ứng dụng
+            đã được duyệt quyền riêng, còn Apify thì không phải lúc nào cũng trả
+            về. Thiếu số này thì việc chấm "vượt mấy lần mức thường ngày" mất một
+            trục — mà nhìn trang là đọc được trong hai giây. */}
+        <FollowerCountRow detail={detail} onSaved={() => onRefreshed?.()} />
 
         {detail.lastNewCount > 0 && !watching && (
           <div className="ds-alert mt-2" style={{ background: "var(--ds-primary-light)", borderColor: "var(--ds-primary-mute)", color: "var(--ds-primary)" }}>

@@ -85,3 +85,52 @@ describe("pick — trường rỗng KHÔNG được thành số 0", () => {
     assert.equal(m.comments, undefined);
   });
 });
+
+describe("dò theo nghĩa — loại bài lạ vẫn đọc được số liệu và ảnh", () => {
+  test("bài ảnh/album: ảnh nằm trong attachments vẫn lấy được thumbnail", () => {
+    // Đúng ca người dùng gặp: bài ảnh hiện ô vỡ trong khi bài khác bình thường.
+    const albumPost = {
+      url: "https://facebook.com/dilamcogivui/posts/9",
+      text: "[GÓC THẮC MẮC] SAO KFC KHÔNG RA GÀ GIÒN CHẤM SỐT GRAVY?",
+      likes: 1000,
+      attachments: {
+        data: [{ media: { image: { src: "https://scontent.fbcdn.net/kfc.jpg" } }, type: "album" }],
+      },
+    };
+    const m = normalize(albumPost, "facebook")!;
+    assert.equal(m.coverUrl, "https://scontent.fbcdn.net/kfc.jpg");
+  });
+
+  test("số bình luận lồng trong object đếm vẫn ra", () => {
+    const m = normalize(
+      { url: "u", likes: 5, comments_count: { total_count: 42 }, reshareCount: 3 },
+      "facebook",
+    )!;
+    assert.equal(m.comments, 42);
+    assert.equal(m.shares, 3);
+  });
+
+  test("tên trường lạ nhưng đúng nghĩa thì vẫn đọc ra", () => {
+    const m = normalize({ url: "u", topLevelCommentCount: 17 }, "facebook")!;
+    assert.equal(m.comments, 17);
+  });
+
+  test("KHÔNG vơ số từ mảng con — đó là số của từng phần tử, không phải của bài", () => {
+    const m = normalize(
+      { url: "u", comments: null, topComments: [{ commentCount: 99 }, { commentCount: 5 }] },
+      "facebook",
+    )!;
+    assert.equal(m.comments, undefined, "thà để trống còn hơn lấy nhầm số của một bình luận con");
+  });
+
+  test("người theo dõi của trang đọc được khi actor để ở cấp bài", () => {
+    const m = normalize({ url: "u", pageFollowers: 750000 }, "facebook")!;
+    assert.equal(m.followerCount, 750000);
+  });
+
+  test("không có gì thì vẫn để trống, không bịa", () => {
+    const m = normalize({ url: "u", text: "chỉ có chữ" }, "facebook")!;
+    assert.equal(m.comments, undefined);
+    assert.equal(m.coverUrl, undefined);
+  });
+});

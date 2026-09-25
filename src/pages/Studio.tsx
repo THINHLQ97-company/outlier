@@ -59,6 +59,10 @@ const KIND_LABEL: Record<AssetKind, string> = {
 // thẳng trong Thư viện (không còn khâu gửi duyệt).
 export default function Studio() {
   const { isAdmin } = useAppContext();
+  // Ảnh tải hỏng ngay trên trình duyệt — bằng chứng chắc hơn mọi suy đoán phía
+  // máy chủ (đường dẫn kiểu cũ, file mất, host chết đều ra cùng một ô vỡ).
+  // Có nó thì nút xoá luôn xuất hiện đúng lúc cần.
+  const [brokenAssetIds, setBrokenAssetIds] = useState<string[]>([]);
   // ----- cột trái: nhân vật + ảnh tham chiếu -----
   const [characters, setCharacters] = useState<CharacterRow[]>([]);
   const [selectedCharacterIds, setSelectedCharacterIds] = useState<string[]>([]);
@@ -520,6 +524,7 @@ export default function Studio() {
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                   {assets.map((a) => {
                     const selected = selectedAssetIds.includes(a.id);
+                    const broken = a.imageMissing || brokenAssetIds.includes(a.id);
                     return (
                       <div
                         key={a.id}
@@ -534,7 +539,7 @@ export default function Studio() {
                           title={`${a.name} — ${KIND_LABEL[a.kind]}${a.kind === "meme_template" ? " (đính làm ảnh mẫu bố cục)" : ""}`}
                           className="block w-full text-left"
                         >
-                          {a.imageMissing ? (
+                          {broken ? (
                             // Ô ảnh vỡ không nói được gì. Nói thẳng là file đã
                             // mất, và bên dưới cho xoá.
                             <div className="w-full h-20 bg-stone-100 flex flex-col items-center justify-center gap-0.5 text-stone-400">
@@ -546,6 +551,9 @@ export default function Studio() {
                               src={imageDisplayUrl(a.imageUrl) || undefined}
                               alt={a.name}
                               className="w-full h-20 object-cover bg-stone-100"
+                              onError={() =>
+                                setBrokenAssetIds((prev) => (prev.includes(a.id) ? prev : [...prev, a.id]))
+                              }
                             />
                           )}
                           {selected && (
@@ -561,7 +569,7 @@ export default function Studio() {
                         {/* Ảnh đã mất thì ai thấy cũng dọn được: nó không xem
                             được, không vẽ được, và người thấy thường không phải
                             người đã tải lên. */}
-                        {(a.isMine || isAdmin || a.imageMissing) && (
+                        {(a.isMine || isAdmin || broken) && (
                           <button
                             type="button"
                             onClick={() => handleDeleteAsset(a.id)}
