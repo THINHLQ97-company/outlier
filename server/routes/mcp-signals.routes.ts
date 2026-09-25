@@ -14,7 +14,7 @@ import { normalizeStyleJson, missingKeyStyleFields } from "../../shared/style-fi
 import { ingestUrl, ingestRawText } from "../services/brand-ingest";
 import { extractBrandProfile, type SourceDoc } from "../services/brand-extract";
 import { computeSignalStatus } from "../services/rubric-scoring";
-import { RUBRIC_DEFAULT_THRESHOLDS } from "../../shared/engine-data";
+import { RUBRIC_DEFAULT_THRESHOLDS, CHARACTERS } from "../../shared/engine-data";
 import { verifyAccessToken, baseUrl, type McpPrincipal } from "../mcp/oauth";
 
 const PROTOCOL_VERSION = "2024-11-05";
@@ -71,6 +71,11 @@ Còn một luồng cũ vẫn dùng được: signals_score chấm tin theo rubri
 // Tool chỉ đọc — không đòi quyền ghi. PHẢI khớp với annotations.readOnlyHint của
 // từng tool; có test chặn lệch (mcp-tool-perms.test.ts), vì xếp sai nhóm thì tool
 // đọc bị chặn vô cớ và người dùng thấy "không có quyền" ở chỗ chẳng ghi gì.
+// Dàn nhân vật gốc của trang. Tính cách của họ là ràng buộc nghiệp vụ đã duyệt
+// (xem CLAUDE.md mục 1), không phải thứ để model chỉnh cho vừa một bài. Claude
+// được THÊM vai mới, không được sửa những vai này.
+const CORE_CHARACTER_NAMES = new Set(CHARACTERS.map((c) => c.name));
+
 const READONLY_TOOLS = new Set(["access_check", "styles_list", "style_brand_material", "daily_brief", "signals_list", "signals_get", "rubric_get", "characters_list", "brands_list", "brand_profile_get", "brand_brief", "radar_jobs_list", "radar_results", "deconstruct_get", "remake_get", "channels_list", "channel_items", "video_frames", "video_projects_list", "video_get"]);
 
 const TOOLS = [
@@ -79,6 +84,60 @@ const TOOLS = [
     description: "Kiểm tài khoản đang kết nối là ai và được làm gì: có quyền ghi không, tool nào chạy được, tool nào bị chặn. Gọi tool này khi một tool báo không có quyền, hoặc khi không rõ vì sao gọi tool mà không ra kết quả.",
     annotations: { title: "Kiểm quyền của tôi", readOnlyHint: true },
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  // --- Nhân vật ---
+  // Claude ĐƯỢC đề xuất và thêm nhân vật mới, nhưng KHÔNG được sửa dàn nhân vật
+  // gốc (Gàn, Gèn, Chị Bão, Sếp, 5 AI, Cơn Bão) — tính cách của họ là ràng buộc
+  // nghiệp vụ đã duyệt, không phải thứ để model chỉnh cho hợp bài.
+  {
+    name: "character_create",
+    description: "Thêm nhân vật mới vào dàn. Dùng khi phân tích cho thấy trang cần một vai chưa có (vd một nghề, một kiểu người đọc hay gặp). Phải mô tả ngoại hình đủ chi tiết để vẽ lại giống nhau qua các bài. KHÔNG dùng để sửa nhân vật đã có — nhân vật gốc là ràng buộc đã duyệt.",
+    annotations: { title: "Thêm nhân vật", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Tên nhân vật, ngắn gọn, tiếng Việt" },
+        prompt_description: {
+          type: "string",
+          description:
+            "Ngoại hình để vẽ: tuổi, dáng, kiểu tóc, trang phục, màu sắc, vật đặc trưng. Viết TIẾNG ANH vì đi thẳng vào prompt vẽ. Đây là thứ giữ nhân vật giống nhau qua các bài — mô tả chung chung thì mỗi bài ra một người.",
+        },
+        kind: { type: "string", enum: ["nguoi", "ai", "linh_vat"], description: "Loại nhân vật (mặc định nguoi)" },
+        personality: { type: "string", description: "Tính cách và vai trong truyện, tiếng Việt" },
+        catchphrase: { type: "string", description: "Câu cửa miệng, tiếng Việt" },
+        rationale: { type: "string", description: "Vì sao trang cần nhân vật này — dẫn chiếu phân tích có thật, đừng nói chung chung" },
+      },
+      required: ["name", "prompt_description"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "character_set",
+    description: "Sửa nhân vật do người dùng tự thêm: ngoại hình, tính cách, câu cửa miệng. KHÔNG sửa được dàn nhân vật gốc của trang — tính cách của họ đã được chủ trang duyệt và cố định.",
+    annotations: { title: "Sửa nhân vật", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: {
+        character_id: { type: "string", description: "Mã nhân vật (từ characters_list)" },
+        name: { type: "string" },
+        prompt_description: { type: "string", description: "Ngoại hình để vẽ, tiếng Anh" },
+        personality: { type: "string" },
+        catchphrase: { type: "string" },
+      },
+      required: ["character_id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "character_draw_reference",
+    description: "Vẽ ảnh mẫu cho một nhân vật từ mô tả ngoại hình của nó. Nhân vật CÓ ảnh mẫu thì mọi bài sau đều giữ đúng mặt và trang phục; không có thì chỉ tả bằng chữ và mỗi bài ra một kiểu. Tốn phí Gemini.",
+    annotations: { title: "Vẽ ảnh mẫu nhân vật", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: { character_id: { type: "string", description: "Mã nhân vật (từ characters_list)" } },
+      required: ["character_id"],
+      additionalProperties: false,
+    },
   },
   {
     name: "daily_brief",
@@ -844,9 +903,125 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
 
   if (name === "characters_list") {
     const rows = await db
-      .select({ id: charactersTable.id, name: charactersTable.name, kind: charactersTable.kind, personality: charactersTable.personality, catchphrase: charactersTable.catchphrase })
+      .select({
+        id: charactersTable.id,
+        name: charactersTable.name,
+        kind: charactersTable.kind,
+        personality: charactersTable.personality,
+        catchphrase: charactersTable.catchphrase,
+        promptDescription: charactersTable.promptDescription,
+        referenceImageUrl: charactersTable.referenceImageUrl,
+      })
       .from(charactersTable);
-    return { count: rows.length, characters: rows };
+    return {
+      count: rows.length,
+      characters: rows.map((r) => ({
+        ...r,
+        // Nói rõ ai không được sửa, để khỏi thử rồi bị từ chối.
+        is_core: CORE_CHARACTER_NAMES.has(r.name),
+        has_reference_image: !!r.referenceImageUrl,
+      })),
+      note:
+        "is_core=true là dàn nhân vật gốc của trang — tính cách đã được chủ trang duyệt, KHÔNG sửa. " +
+        "Nhân vật thiếu ảnh mẫu thì mỗi bài vẽ ra một kiểu; gọi character_draw_reference để có ảnh mẫu.",
+    };
+  }
+
+  if (name === "character_create") {
+    const nm = String(args.name || "").trim();
+    const desc = String(args.prompt_description || "").trim();
+    if (!nm) throw new Error("Cần tên nhân vật");
+    if (desc.length < 20) {
+      throw new Error(
+        "prompt_description quá ngắn để vẽ lại giống nhau. Tả tuổi, dáng, tóc, trang phục, màu sắc, vật đặc trưng.",
+      );
+    }
+    if (CORE_CHARACTER_NAMES.has(nm)) {
+      throw new Error(`"${nm}" trùng tên nhân vật gốc của trang. Đặt tên khác để khỏi lẫn khi vẽ.`);
+    }
+    const [dup] = await db.select().from(charactersTable).where(eq(charactersTable.name, nm));
+    if (dup) throw new Error(`Đã có nhân vật tên "${nm}" (mã ${dup.id}). Dùng character_set để sửa.`);
+
+    const kind = ["nguoi", "ai", "linh_vat"].includes(args.kind) ? args.kind : "nguoi";
+    const [row] = await db
+      .insert(charactersTable)
+      .values({
+        name: nm,
+        kind,
+        promptDescription: desc,
+        personality: typeof args.personality === "string" && args.personality.trim() ? args.personality.trim() : null,
+        catchphrase: typeof args.catchphrase === "string" && args.catchphrase.trim() ? args.catchphrase.trim() : null,
+      })
+      .returning();
+    return {
+      id: row.id,
+      name: row.name,
+      rationale: typeof args.rationale === "string" ? args.rationale : undefined,
+      note:
+        "Đã thêm vào Thư viện → Nhân vật. Chưa có ảnh mẫu nên mỗi bài sẽ vẽ ra một kiểu — " +
+        "gọi character_draw_reference để có ảnh mẫu cố định, rồi gán vào trang bằng fanpage_set_characters.",
+    };
+  }
+
+  if (name === "character_set") {
+    if (!UUID_RE.test(args.character_id || "")) throw new Error("character_id không hợp lệ");
+    const [existing] = await db.select().from(charactersTable).where(eq(charactersTable.id, args.character_id));
+    if (!existing) throw new Error("Không tìm thấy nhân vật");
+    if (CORE_CHARACTER_NAMES.has(existing.name)) {
+      throw new Error(
+        `"${existing.name}" thuộc dàn nhân vật gốc của trang — tính cách và ngoại hình đã được chủ trang duyệt ` +
+          "và cố định, không sửa qua MCP. Cần một vai khác thì tạo nhân vật mới bằng character_create.",
+      );
+    }
+
+    const patch: Record<string, any> = { updatedAt: new Date() };
+    if (typeof args.name === "string" && args.name.trim()) patch.name = args.name.trim();
+    if (typeof args.prompt_description === "string" && args.prompt_description.trim()) {
+      patch.promptDescription = args.prompt_description.trim();
+    }
+    if (typeof args.personality === "string") patch.personality = args.personality.trim() || null;
+    if (typeof args.catchphrase === "string") patch.catchphrase = args.catchphrase.trim() || null;
+    if (Object.keys(patch).length === 1) throw new Error("Không có gì để sửa");
+
+    const [row] = await db
+      .update(charactersTable)
+      .set(patch)
+      .where(eq(charactersTable.id, args.character_id))
+      .returning();
+    return {
+      id: row.id,
+      name: row.name,
+      note: patch.promptDescription
+        ? "Đã đổi ngoại hình. Ảnh mẫu cũ giờ không khớp mô tả nữa — vẽ lại bằng character_draw_reference."
+        : "Đã cập nhật.",
+    };
+  }
+
+  if (name === "character_draw_reference") {
+    if (!UUID_RE.test(args.character_id || "")) throw new Error("character_id không hợp lệ");
+    const [existing] = await db.select().from(charactersTable).where(eq(charactersTable.id, args.character_id));
+    if (!existing) throw new Error("Không tìm thấy nhân vật");
+
+    const { generateCharacterReference } = await import("../services/character-reference");
+    const out = await generateCharacterReference(existing as any);
+
+    // Trả ảnh về để Claude tự nhìn xem có đúng ý không, thay vì đoán qua mô tả.
+    let __mcpContent: any[] | undefined;
+    const { storage, internalKeyFromUrl } = await import("../storage");
+    const key = internalKeyFromUrl(out.referenceImageUrl);
+    if (key) {
+      const buf = await storage.get(key).catch(() => null);
+      if (buf) {
+        __mcpContent = [
+          imageBlock(buf.toString("base64"), "image/png", `ảnh mẫu ${existing.name}`),
+          {
+            type: "text",
+            text: `Đã vẽ ảnh mẫu cho ${existing.name}. Từ giờ mọi bài có nhân vật này đều vẽ theo ảnh này.`,
+          },
+        ];
+      }
+    }
+    return { id: existing.id, name: existing.name, reference_image_url: out.referenceImageUrl, ...(__mcpContent ? { __mcpContent } : {}) };
   }
 
   if (name === "signals_add") {

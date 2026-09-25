@@ -83,6 +83,9 @@ cài và không bao giờ lệch phiên bản. Xem `SERVER_INSTRUCTIONS` trong
 | `signals_score` | 🔴 Ghi | Chấm điểm 5 tiêu chí + lý do; tự route trạng thái | id, do_nong, do_cham, do_hop_truc, tuoi_tho, do_an_toan, dinh_nhom_cam?, reasoning? | SỬA `scoreJson` + `status` của 1 tín hiệu |
 | `signals_set_cluster` | 🔴 Ghi | Gom nhiều tin trùng/liên quan thành 1 cụm | ids[], label | SỬA `clusterId`+`clusterLabel` các tín hiệu |
 | `signals_suggest_angle` | 🔴 Ghi | Gợi ý góc hài (cảnh + nhân vật + thoại) | id, scene, characters?[], dialogue?[], note? | SỬA `suggestionJson` của 1 tín hiệu |
+| `character_create` | 🔴 Ghi | Thêm nhân vật mới vào dàn (Claude đề xuất từ phân tích); chặn trùng tên dàn gốc, bắt mô tả ngoại hình đủ để vẽ lại giống nhau | name, prompt_description, kind?, personality?, catchphrase?, rationale? | THÊM dòng `characters` |
+| `character_set` | 🔴 Ghi | Sửa nhân vật do người dùng thêm. **Từ chối sửa dàn nhân vật gốc** (Gàn/Gèn/Chị Bão/Sếp/5 AI/Cơn Bão — ràng buộc đã duyệt) | character_id, name?, prompt_description?, personality?, catchphrase? | SỬA 1 `characters` |
+| `character_draw_reference` | 🔴 Ghi | Vẽ ảnh mẫu cho nhân vật và trả ảnh về chat để tự xem | character_id | SỬA `referenceImageUrl` + tốn phí Gemini |
 | `access_check` | 🟢 Đọc | Tài khoản đang kết nối là ai, có quyền ghi không, tool nào bị chặn | — | Không đụng dữ liệu |
 | `meta_token_check` | 🔴 Ghi | Dò tình trạng token Meta mọi trang đã nối + tự gia hạn cái sắp hết (job nền đã tự làm 12 giờ/lượt) | — | SỬA `meta_token_*` của `brand_fanpages` |
 | `styles_list` | 🟢 Đọc | Liệt kê phong cách vẽ + mô tả nét vẽ từng trường + trường then chốt còn thiếu | — | ĐỌC bảng `styles` |

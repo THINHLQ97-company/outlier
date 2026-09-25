@@ -192,35 +192,17 @@ export function registerCharacterRoutes(app: Express) {
       const [existing] = await db.select().from(characters).where(eq(characters.id, id));
       if (!existing) return res.status(404).json({ error: "Không tìm thấy nhân vật." });
 
-      // Ảnh mẫu nhân vật: TÔN TRỌNG mô tả (một số nhân vật có ràng buộc đặc biệt,
-      // vd Sếp "KHÔNG bao giờ lộ mặt — chỉ bóng lưng/bàn tay"). KHÔNG ép front-facing.
-      const prompt = `${STYLE_PROMPT}
-
-Character reference sheet for a single character, plain neutral background, clean lines, no text.
-IMPORTANT: Follow the character description below EXACTLY, including any constraints. If the description says the face is never shown / only the back, silhouette or hands are shown, then DRAW IT THAT WAY (do not invent a face). Otherwise show a clear front/three-quarter view.
-
-${existing.name}: ${existing.promptDescription}`;
-
-      let dataUrl: string;
+      // Dùng chung service với tool MCP — hai chỗ vẽ theo hai prompt khác nhau
+      // thì ảnh mẫu tạo từ web và từ Claude sẽ không cùng một nét.
+      const { generateCharacterReference } = await import("../services/character-reference");
       try {
-        dataUrl = await generateImageGemini(prompt, undefined, "3:4");
+        await generateCharacterReference(existing as any);
       } catch (e: any) {
-        const message = e instanceof GeminiError ? e.message : "Sinh ảnh AI thất bại.";
+        const message = e instanceof GeminiError ? e.message : e?.message || "Sinh ảnh AI thất bại.";
         return res.status(502).json({ error: message });
       }
 
-      const parsed = parseDataUrl(dataUrl);
-      if (!parsed) return res.status(502).json({ error: "Gemini trả về ảnh không hợp lệ." });
-      const key = newKey("characters", parsed.ext);
-      await storage.put(key, parsed.buffer);
-      const referenceImageUrl = `/api/files/${key}`;
-
-      const [row] = await db
-        .update(characters)
-        .set({ referenceImageUrl, updatedAt: new Date() })
-        .where(eq(characters.id, id))
-        .returning();
-      await deleteInternalImageIfAny(existing.referenceImageUrl);
+      const [row] = await db.select().from(characters).where(eq(characters.id, id));
       res.json(row);
     } catch (e: any) {
       console.error("generate character reference:", e?.message || e);
