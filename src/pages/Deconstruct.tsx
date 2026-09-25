@@ -30,6 +30,7 @@ import {
   deleteDeconstruction,
   pollDeconstruction,
   analyzePostComments,
+  retryPaidDeconstruction,
 } from "../services/deconstruct";
 import ConfirmDialog from "../components/ConfirmDialog";
 import type { DeconstructionRow, DeconstructedStructure, RetentionBeat, DeconstructAnalysisMode } from "../types";
@@ -186,9 +187,10 @@ export default function Deconstruct() {
       setPaidBusy(true);
       setDetailError(null);
       try {
-        const created = await createDeconstruction({ url: row.sourceUrl, allowPaid: true });
+        // Chạy lại chính bản này, KHÔNG tạo bản mới.
+        await retryPaidDeconstruction(row.id);
         await reloadList();
-        setSelectedId(created.id);
+        setSelectedId(row.id);
       } catch (e) {
         setDetailError(e instanceof Error ? e.message : "Không phân tích được.");
       } finally {

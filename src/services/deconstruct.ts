@@ -161,3 +161,15 @@ export async function createDeconstructionFromImage(input: {
   if (!res.ok) return asError(res, "Không phân tích được ảnh.");
   return res.json();
 }
+
+// Chạy lại CHÍNH bản phân tích này ở chế độ có phí — không tạo bản mới.
+// Bản đang "Lỗi" vì cần trả phí không phải rác cần thay, nó chỉ đang chờ quyết
+// định chi tiền; tạo bản mới làm danh sách có hai dòng cùng một link.
+export async function retryPaidDeconstruction(id: string): Promise<DeconstructionRow> {
+  const res = await fetch(`/api/deconstructions/${id}/retry-paid`, {
+    method: "POST",
+    headers: authHeaders(false),
+  });
+  if (!res.ok) return asError(res, "Không chạy lại được.");
+  return res.json();
+}

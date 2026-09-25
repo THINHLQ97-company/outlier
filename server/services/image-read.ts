@@ -46,6 +46,17 @@ Quy tắc:
 
 /** Tải ảnh về dạng base64. Trả null nếu không lấy được — không ném lỗi. */
 async function fetchImageAsBase64(url: string): Promise<{ mimeType: string; data: string } | null> {
+  // Ảnh trong kho nội bộ phải đọc THẲNG từ kho, không fetch.
+  //
+  // Từ khi ảnh bài được giữ về máy, coverUrl là đường dẫn tương đối
+  // (/api/files/...) — fetch nó ở phía server là gọi vào hư không, và đó là lý
+  // do bóc bài ảnh bỗng ra "chưa đọc được nội dung trong ảnh" trong khi dán
+  // link thẳng thì vẫn chạy.
+  if (url.startsWith("/api/files/")) {
+    const { readImageAsInlineData } = await import("../storage");
+    return readImageAsInlineData(url);
+  }
+
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {

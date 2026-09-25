@@ -490,6 +490,42 @@ export function registerDeconstructRoutes(app: Express) {
     }
   });
 
+  // POST /api/deconstructions/:id/retry-paid — chạy lại CHÍNH bản này ở chế độ
+  // có phí.
+  //
+  // Trước đây nút "Phân tích có phí" gọi API tạo mới, nên mỗi lần bấm lại đẻ ra
+  // một bản nữa: danh sách có hai dòng cùng một link, một "Lỗi" một "Đang phân
+  // tích". Bản cũ không phải rác cần thay — nó chỉ đang chờ một quyết định chi
+  // tiền.
+  app.post("/api/deconstructions/:id/retry-paid", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const { id } = req.params;
+    if (!UUID_RE.test(id)) return res.status(400).json({ error: "Mã không hợp lệ." });
+    try {
+      const db = getDb();
+      const [row] = await db.select().from(deconstructions).where(eq(deconstructions.id, id));
+      if (!row) return res.status(404).json({ error: "Không tìm thấy bản phân tích." });
+      const username = getAuthUser(req)!;
+      if (row.owner !== username && !(await isActiveAdmin(username))) {
+        return res.status(403).json({ error: "Không có quyền với bản phân tích này." });
+      }
+      if (row.status === "downloading" || row.status === "analyzing") {
+        return res.status(409).json({ error: "Bản này đang chạy rồi." });
+      }
+
+      await db
+        .update(deconstructions)
+        .set({ status: "downloading", needsPaid: false, errorMessage: null, updatedAt: new Date() })
+        .where(eq(deconstructions.id, id));
+
+      res.json({ ...row, status: "downloading", needsPaid: false, errorMessage: null, polling: true });
+      void runDeconstructInBackground(row.id, row.sourceUrl, true);
+    } catch (e: any) {
+      console.error("deconstruct retry paid:", e?.message || e);
+      res.status(500).json({ error: "Không chạy lại được." });
+    }
+  });
+
   app.delete("/api/deconstructions/:id", requireAuth, async (req, res) => {
     if (dbDown(res)) return;
     const { id } = req.params;

@@ -69,12 +69,8 @@ export async function runRemakeInBackground(
       updatedAt: new Date(),
     }).where(eq(remakes.id, id));
 
-    // Bài gốc có ảnh thì bản viết lại cũng cần ảnh — vẽ luôn, đừng bắt người
-    // dùng bấm thêm một nút nữa cho một việc chắc chắn phải làm.
-    //
-    // Chỉ vẽ khi CHƯA có ảnh nào (sửa bài lần hai không vẽ đè, vì người dùng có
-    // thể đã chọn ảnh ưng ý rồi), và chỉ với bài đăng — kịch bản video đi theo
-    // luồng dựng cảnh riêng.
+    // Viết xong là vẽ luôn — đừng bắt bấm thêm một nút cho việc chắc chắn phải
+    // làm. Chỉ bài đăng; kịch bản video đi theo luồng dựng cảnh riêng.
     if (format === "post") {
       void autoDrawImage(id).catch((e: any) =>
         console.warn("[remake] Tự vẽ ảnh thất bại:", e?.message || e),
@@ -90,28 +86,29 @@ export async function runRemakeInBackground(
 }
 
 /**
- * Vẽ ảnh cho bản viết vừa xong, nếu bài gốc vốn có ảnh.
+ * Vẽ ảnh cho bản viết vừa xong.
  *
- * Không vẽ bừa cho mọi bài: bài gốc thuần chữ thì thêm ảnh là thêm một thứ
- * người dùng không xin. Căn cứ là bài gốc — có ảnh bìa hoặc đã đọc được nội
- * dung trong ảnh thì bản viết lại cũng cần ảnh.
+ * Viết lại một bài để đem đăng thì gần như luôn cần ảnh — bắt bấm thêm một nút
+ * cho việc chắc chắn phải làm là bắt làm thừa. Nên mặc định là VẼ, không hỏi.
+ *
+ * Bản trước tôi đặt thêm điều kiện "bài gốc có ảnh mới vẽ". Điều kiện đó sai ở
+ * chỗ: bài gốc thuần chữ không có nghĩa bản viết lại của mình cũng thuần chữ —
+ * trang của mình có nhân vật riêng và vẫn cần ảnh để đăng.
+ *
+ * Chỉ giữ đúng MỘT chặn: đã có ảnh rồi thì không vẽ đè, vì sửa bài lần hai
+ * không được xoá ảnh người dùng đã chọn.
  */
 async function autoDrawImage(remakeId: string): Promise<void> {
   const db = getDb();
   const [row] = await db.select().from(remakes).where(eq(remakes.id, remakeId));
   if (!row) return;
 
-  // Đã có ảnh thì thôi — sửa bài lần hai không vẽ đè lên ảnh người dùng đã chọn.
   const existing = Array.isArray(row.imagesJson) ? row.imagesJson : [];
   if (existing.length > 0) return;
 
-  const [decon] = await db.select().from(deconstructions).where(eq(deconstructions.id, row.deconstructionId));
-  const sourceHadImage = !!decon && (!!decon.thumbnailUrl || !!decon.imageReading || decon.contentKind === "image");
-  if (!sourceHadImage) return;
-
   const { generateRemakeImage } = await import("../services/remake-image");
   await generateRemakeImage({ remakeId });
-  console.log(`[remake] Đã tự vẽ ảnh cho bản viết ${remakeId} (bài gốc có ảnh).`);
+  console.log(`[remake] Đã tự vẽ ảnh cho bản viết ${remakeId}.`);
 }
 
 export function registerRemakeRoutes(app: Express) {
@@ -541,6 +538,44 @@ export function registerRemakeRoutes(app: Express) {
     } catch (e: any) {
       console.error("remake select image:", e?.message || e);
       res.status(500).json({ error: "Không chọn được ảnh." });
+    }
+  });
+
+  // DELETE /api/remakes/:id/images?url=... — xoá MỘT ảnh của bản viết.
+  //
+  // Thư viện ảnh trước đây chỉ xem và tải về, không xoá được: ảnh vẽ hỏng nằm
+  // lại mãi, và mỗi lần vẽ thêm phương án là kho lại dày lên. Xoá luôn cả file
+  // trong kho để không giữ rác.
+  app.delete("/api/remakes/:id/images", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const { id } = req.params;
+    if (!UUID_RE.test(id)) return res.status(400).json({ error: "Mã không hợp lệ." });
+    const url = typeof req.query.url === "string" ? req.query.url : "";
+    if (!url) return res.status(400).json({ error: "Thiếu đường dẫn ảnh." });
+
+    try {
+      const db = getDb();
+      const [row] = await db.select().from(remakes).where(eq(remakes.id, id));
+      if (!row) return res.status(404).json({ error: "Không tìm thấy bản viết." });
+      const me = getAuthUser(req)!;
+      if (row.owner !== me && !(await isActiveAdmin(me))) {
+        return res.status(403).json({ error: "Không có quyền với bản viết này." });
+      }
+
+      const images = ((row.imagesJson as any[]) || []).filter((img) => img?.url !== url);
+      const patch: Record<string, any> = { imagesJson: images, updatedAt: new Date() };
+      // Xoá đúng ảnh đang được chọn thì bỏ chọn, đừng để trỏ vào ảnh không còn.
+      if (row.selectedImageUrl === url) patch.selectedImageUrl = images[0]?.url ?? null;
+      await db.update(remakes).set(patch).where(eq(remakes.id, id));
+
+      const { storage, internalKeyFromUrl } = await import("../storage");
+      const key = internalKeyFromUrl(url);
+      if (key) await storage.delete(key).catch(() => {});
+
+      res.json({ ok: true, remaining: images.length });
+    } catch (e: any) {
+      console.error("delete remake image:", e?.message || e);
+      res.status(500).json({ error: "Xoá ảnh thất bại." });
     }
   });
 

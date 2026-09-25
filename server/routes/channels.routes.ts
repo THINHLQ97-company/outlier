@@ -334,17 +334,16 @@ export async function refreshChannelInBackground(channelId: string, limit?: numb
     const knownFollowers =
       r.candidates.find((c) => c.followerCount != null)?.followerCount ?? graphFollowers ?? chan.followerCount;
 
-    await db.insert(radarItems).values(r.candidates.map((c) => ({
-      jobId: job.id, platform: c.platform, itemKey: c.itemKey, url: c.url,
-      title: c.title ?? null, coverUrl: c.coverUrl ?? null, durationSec: c.durationSec ?? null,
-      publishedAt: c.publishedAt ? new Date(c.publishedAt) : null,
-      channelKey: c.channelKey ?? null, channelName: c.channelName ?? null,
-      followerCount: c.followerCount ?? knownFollowers,
-      views: c.views ?? null, likes: c.likes ?? null,
-      contentKind: (c as any).contentKind || "unknown",
-      metricsSource: (c as any).__fromApify ? "apify" : "scan",
-      isNew: newKeys.includes(c.itemKey),
-    })));
+    const { radarItemRow } = await import("../services/radar-item-row");
+    await db.insert(radarItems).values(
+      r.candidates.map((c) =>
+        radarItemRow(c as any, {
+          jobId: job.id,
+          knownFollowers,
+          isNew: newKeys.includes(c.itemKey),
+        }),
+      ),
+    );
 
     await rescoreRadarJob(job.id);
 

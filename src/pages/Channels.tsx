@@ -35,6 +35,7 @@ import {
 } from "../services/channels";
 import { imageDisplayUrl } from "../services/http";
 import ConfirmDialog from "../components/ConfirmDialog";
+import ImageLightbox from "../components/ImageLightbox";
 import type { WatchedChannel, WatchedChannelDetail, RadarItem, RadarConfidence, RadarMetricsSource } from "../types";
 import PlatformMark from "../components/PlatformMark";
 
@@ -816,6 +817,9 @@ function ChannelDetailPanel({
 
 function ChannelItemCard({ item }: { item: RadarItem }) {
   const navigate = useNavigate();
+  // Ảnh trong danh sách nhỏ bằng con tem, mà thứ quyết định bài có đáng remake
+  // hay không thường nằm ngay trong ảnh (chữ trên ảnh, bố cục, biểu cảm).
+  const [zoomImage, setZoomImage] = useState<string | null>(null);
   const score = item.outperformScore != null ? (item.outperformScore / 10).toFixed(1) : null;
   const conf = CONFIDENCE_META[item.confidence];
   const src = SOURCE_META[item.metricsSource];
@@ -833,7 +837,15 @@ function ChannelItemCard({ item }: { item: RadarItem }) {
           {/* Ảnh bài giờ được giữ trong kho nội bộ (/api/files) nên PHẢI đi qua
               imageDisplayUrl để kèm token — dùng thẳng coverUrl là 401, ra ô trống. */}
           {item.coverUrl ? (
-            <img src={imageDisplayUrl(item.coverUrl) || undefined} alt="" className="w-full h-full object-cover" loading="lazy" />
+            <button
+              type="button"
+              onClick={() => setZoomImage(item.coverUrl!)}
+              className="w-full h-full cursor-zoom-in"
+              title="Bấm để xem ảnh lớn"
+              aria-label="Xem ảnh lớn"
+            >
+              <img src={imageDisplayUrl(item.coverUrl) || undefined} alt="" className="w-full h-full object-cover" loading="lazy" />
+            </button>
           ) : (
             <ImageIcon className="w-6 h-6 text-stone-300" aria-hidden="true" />
           )}
@@ -918,6 +930,15 @@ function ChannelItemCard({ item }: { item: RadarItem }) {
           </p>
         )}
       </div>
+
+      {zoomImage && (
+        <ImageLightbox
+          url={zoomImage}
+          title={item.title}
+          sourceUrl={item.url}
+          onClose={() => setZoomImage(null)}
+        />
+      )}
     </div>
   );
 }

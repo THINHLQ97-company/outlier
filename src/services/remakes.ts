@@ -199,3 +199,12 @@ export async function editRemakeImage(
   if (!res.ok) return asError(res, "Không chỉnh được ảnh.");
   return res.json();
 }
+
+// Xoá MỘT ảnh của bản viết (xoá cả file trong kho).
+export async function deleteRemakeImage(remakeId: string, url: string): Promise<void> {
+  const res = await fetch(`/api/remakes/${remakeId}/images?url=${encodeURIComponent(url)}`, {
+    method: "DELETE",
+    headers: authHeaders(false),
+  });
+  if (!res.ok) return asError(res, "Xoá ảnh thất bại.");
+}

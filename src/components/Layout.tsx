@@ -59,9 +59,9 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/deconstruct", label: "Bóc cấu trúc", icon: Scissors },
       { to: "/remakes", label: "Remake bài & ảnh", icon: PenLine },
-      // Remake video còn dở. Vẫn để vào được (còn thử được), nhưng làm mờ và dán
-      // tem — menu trông y như mục đã xong là cách nhanh nhất để mất lòng tin.
-      { to: "/videos", label: "Remake video", icon: Clapperboard, wip: true },
+      // Remake video ĐÃ ẨN khỏi menu: chưa dùng được mà vẫn bày ra thì chỉ làm
+      // người dùng mất thời gian thử rồi thất vọng. Đường /videos vẫn chạy để
+      // không hỏng link cũ — bật lại ở đây khi tính năng ổn định.
       { to: "/studio", label: "Sáng tạo nhanh", icon: Wand2 },
     ],
   },

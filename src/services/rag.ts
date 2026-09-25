@@ -52,3 +52,30 @@ export async function rebuildRagProfile(): Promise<{ profileText: string | null;
   if (!res.ok) return asError(res, "Cập nhật hồ sơ RAG thất bại.");
   return res.json();
 }
+
+// --- Ảnh REMAKE (không thuộc bảng posts) ---
+// Ảnh của bản remake cũng là ảnh mình vẽ ra và cũng có gu; không cho tim thì
+// RAG học thiếu đúng phần nội dung đang làm chính.
+
+export async function favoriteRemakeImage(imageUrl: string, scene = "", isShared = false): Promise<void> {
+  const res = await fetch("/api/rag/favorite-image", {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ imageUrl, scene, isShared }),
+  });
+  if (!res.ok) return asError(res, "Thả tim thất bại.");
+}
+
+export async function unfavoriteRemakeImage(imageUrl: string): Promise<void> {
+  const res = await fetch(`/api/rag/by-image?url=${encodeURIComponent(imageUrl)}`, {
+    method: "DELETE",
+    headers: authHeaders(false),
+  });
+  if (!res.ok) return asError(res, "Bỏ tim thất bại.");
+}
+
+export async function getFavoriteImageUrls(): Promise<string[]> {
+  const res = await fetch("/api/rag/favorite-image-urls", { headers: authHeaders(false) });
+  if (!res.ok) return asError(res, "Không tải được danh sách đã thích.");
+  return res.json();
+}

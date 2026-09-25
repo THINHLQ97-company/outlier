@@ -93,6 +93,87 @@ export function registerRagRoutes(app: Express) {
     }
   });
 
+  // POST /api/rag/favorite-image — thả tim một ảnh REMAKE (không thuộc bảng posts).
+  //
+  // Đường /api/rag/favorite chỉ nhận postId, tức chỉ ảnh vẽ ở Sáng tạo. Nhưng
+  // ảnh của bản remake cũng là ảnh mình vẽ ra và cũng có gu — không cho tim thì
+  // RAG học thiếu đúng phần nội dung chính đang làm.
+  app.post("/api/rag/favorite-image", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const me = getAuthUser(req)!;
+    const imageUrl = typeof req.body?.imageUrl === "string" ? req.body.imageUrl.trim() : "";
+    const scene = typeof req.body?.scene === "string" ? req.body.scene.trim() : "";
+    const isShared = req.body?.isShared === true;
+    if (!imageUrl) return res.status(400).json({ error: "Thiếu đường dẫn ảnh." });
+
+    try {
+      const db = getDb();
+      // Cùng một ảnh thì không tim hai lần.
+      const [existing] = await db
+        .select()
+        .from(ragExamples)
+        .where(and(eq(ragExamples.owner, me), eq(ragExamples.imageUrl, imageUrl)));
+      if (existing) {
+        const [row] = await db
+          .update(ragExamples)
+          .set({ isShared })
+          .where(eq(ragExamples.id, existing.id))
+          .returning();
+        return res.json({ ...row, isMine: true });
+      }
+
+      const paramsJson: Record<string, any> = { source: "remake" };
+      let embedding: number[] | null = null;
+      try {
+        embedding = await embedTextGemini(ragExampleToText({ scene, paramsJson }));
+      } catch (e: any) {
+        console.warn(`[rag] embed khi thả tim ảnh remake lỗi (${e?.message || e}) — vẫn lưu.`);
+      }
+
+      const [row] = await db
+        .insert(ragExamples)
+        .values({ owner: me, isShared, postId: null, scene, paramsJson, imageUrl, embedding })
+        .returning();
+      res.status(201).json({ ...row, isMine: true });
+    } catch (e: any) {
+      console.error("rag favorite image:", e?.message || e);
+      res.status(500).json({ error: "Thả tim thất bại." });
+    }
+  });
+
+  // Bỏ tim theo ĐƯỜNG DẪN ẢNH — dùng cho ảnh remake (không có postId).
+  app.delete("/api/rag/by-image", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const me = getAuthUser(req)!;
+    const imageUrl = typeof req.query.url === "string" ? req.query.url : "";
+    if (!imageUrl) return res.status(400).json({ error: "Thiếu đường dẫn ảnh." });
+    try {
+      await getDb()
+        .delete(ragExamples)
+        .where(and(eq(ragExamples.owner, me), eq(ragExamples.imageUrl, imageUrl)));
+      res.json({ ok: true });
+    } catch (e: any) {
+      console.error("rag unfavorite image:", e?.message || e);
+      res.status(500).json({ error: "Bỏ tim thất bại." });
+    }
+  });
+
+  // Đường dẫn ảnh mình đã tim — để vẽ trạng thái tim cho ảnh remake.
+  app.get("/api/rag/favorite-image-urls", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const me = getAuthUser(req)!;
+    try {
+      const rows = await getDb()
+        .select({ imageUrl: ragExamples.imageUrl })
+        .from(ragExamples)
+        .where(eq(ragExamples.owner, me));
+      res.json(rows.map((r) => r.imageUrl).filter(Boolean));
+    } catch (e: any) {
+      console.error("rag favorite image urls:", e?.message || e);
+      res.status(500).json({ error: "Không tải được danh sách." });
+    }
+  });
+
   // Bỏ tim (ảnh của chính mình).
   app.delete("/api/rag/by-post/:postId", requireAuth, async (req, res) => {
     if (dbDown(res)) return;

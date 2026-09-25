@@ -334,7 +334,8 @@ export default function Remake() {
         </p>
       </div>
 
-      <RemakeModeSwitch current="post" />
+      {/* Nút chuyển sang "Remake video" đã bỏ: mục đó ẩn khỏi menu vì chưa dùng
+          được, để lại đường dẫn sang đó chỉ dẫn người dùng vào ngõ cụt. */}
 
       <NewRemakeForm
         brands={brands}
@@ -564,10 +565,10 @@ function NewRemakeForm({
             Dạng bài
           </label>
           <select id="rm-format" value={format} onChange={(e) => onFormatChange(e.target.value as RemakeFormat)} disabled={submitting} className="ds-select">
-            {/* Bài đăng đứng trước vì đó là việc chính; kịch bản video là nhánh
-                phụ và đang chưa ổn định. */}
+            {/* Chỉ còn bài đăng. Kịch bản video đã ẩn cùng menu Remake video —
+                bày ra một lựa chọn chưa dùng được chỉ tổ mất thời gian của người
+                dùng. Giá trị cũ vẫn đọc được nên bản viết cũ không hỏng. */}
             <option value="post">{FORMAT_LABEL.post}</option>
-            <option value="video_script">{FORMAT_LABEL.video_script} (đang phát triển)</option>
           </select>
         </div>
       </div>

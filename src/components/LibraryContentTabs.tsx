@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
-import { Loader2, ExternalLink, Download, FileText, Image as ImageIcon, Film, X } from "lucide-react";
+import { Loader2, ExternalLink, Download, FileText, Image as ImageIcon, Film, X, Heart, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { listRemakes } from "../services/remakes";
+import { listRemakes, deleteRemakeImage } from "../services/remakes";
+import { favoriteRemakeImage, unfavoriteRemakeImage, getFavoriteImageUrls } from "../services/rag";
 import { listVideos } from "../services/videos";
 import type { RemakeRow, VideoProject } from "../types";
 import { imageDisplayUrl } from "../services/http";
 import PostPreviewModal from "./PostPreviewModal";
+import ConfirmDialog from "./ConfirmDialog";
 
 // Ba thể loại nội dung đã làm ra, tách riêng vì mỗi thứ dùng vào việc khác nhau:
 // bài viết đem đăng, hình ảnh đem ghép, video đem tải lên.
@@ -104,8 +106,46 @@ export function ImagesTab() {
   const [zoom, setZoom] = useState<{ url: string; prompt: string; remakeId: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Tim: ảnh remake cũng là ảnh mình vẽ ra và cũng có gu — RAG cần học từ đây.
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const [busyUrl, setBusyUrl] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ url: string; remakeId: string } | null>(null);
+
+  async function toggleFavorite(img: { url: string; prompt: string }) {
+    setBusyUrl(img.url);
+    setError(null);
+    try {
+      if (favorites.includes(img.url)) {
+        await unfavoriteRemakeImage(img.url);
+        setFavorites((prev) => prev.filter((u) => u !== img.url));
+      } else {
+        await favoriteRemakeImage(img.url, img.prompt);
+        setFavorites((prev) => [...prev, img.url]);
+      }
+    } catch (e: any) {
+      setError(e?.message || "Không đổi được trạng thái thích.");
+    } finally {
+      setBusyUrl(null);
+    }
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    setBusyUrl(deleteTarget.url);
+    setError(null);
+    try {
+      await deleteRemakeImage(deleteTarget.remakeId, deleteTarget.url);
+      setItems((prev) => prev.filter((x) => x.url !== deleteTarget.url));
+      setDeleteTarget(null);
+    } catch (e: any) {
+      setError(e?.message || "Xoá ảnh thất bại.");
+    } finally {
+      setBusyUrl(null);
+    }
+  }
 
   useEffect(() => {
+    getFavoriteImageUrls().then(setFavorites).catch(() => {});
     listRemakes()
       .then((rows) => {
         const all = rows.flatMap((r) =>
@@ -147,18 +187,54 @@ export function ImagesTab() {
           </button>
           <div className="p-2">
             <p className="text-[11px] text-stone-500 line-clamp-2">{img.prompt}</p>
-            <div className="flex items-center justify-between gap-2 mt-1.5">
+            <div className="flex items-center justify-between gap-1 mt-1.5">
               <Link to={`/remakes?id=${img.remakeId}`} className="text-[11px] text-storm-600 hover:underline">
                 Mở bài
               </Link>
-              <a href={imageDisplayUrl(img.url) || img.url} download className="text-stone-400 hover:text-stone-700" title="Tải ảnh về" aria-label="Tải ảnh về">
-                <Download className="w-3.5 h-3.5" aria-hidden="true" />
-              </a>
+              <div className="flex items-center gap-0.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => toggleFavorite(img)}
+                  disabled={busyUrl === img.url}
+                  className={`p-1 rounded transition-colors disabled:opacity-50 ${
+                    favorites.includes(img.url) ? "text-red-500 hover:text-red-600" : "text-stone-400 hover:text-red-500"
+                  }`}
+                  title={favorites.includes(img.url) ? "Bỏ thích — RAG thôi học từ ảnh này" : "Thích — RAG học gu từ ảnh này"}
+                  aria-label={favorites.includes(img.url) ? "Bỏ thích ảnh" : "Thích ảnh"}
+                  aria-pressed={favorites.includes(img.url)}
+                >
+                  <Heart className={`w-3.5 h-3.5 ${favorites.includes(img.url) ? "fill-current" : ""}`} aria-hidden="true" />
+                </button>
+                <a href={imageDisplayUrl(img.url) || img.url} download className="text-stone-400 hover:text-stone-700 p-1" title="Tải ảnh về" aria-label="Tải ảnh về">
+                  <Download className="w-3.5 h-3.5" aria-hidden="true" />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setDeleteTarget({ url: img.url, remakeId: img.remakeId })}
+                  disabled={busyUrl === img.url}
+                  className="text-stone-400 hover:text-red-600 p-1 transition-colors disabled:opacity-50"
+                  title="Xoá ảnh này"
+                  aria-label="Xoá ảnh"
+                >
+                  <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                </button>
+              </div>
             </div>
           </div>
         </li>
       ))}
     </ul>
+
+    {error && <div role="alert" className="ds-alert ds-alert-danger mt-3">{error}</div>}
+
+    <ConfirmDialog
+      isOpen={!!deleteTarget}
+      title="Xoá ảnh?"
+      message="Xoá hẳn ảnh này khỏi bản viết và khỏi kho. Không thể hoàn tác."
+      confirmText={busyUrl === deleteTarget?.url ? "Đang xoá..." : "Xoá"}
+      onConfirm={handleDelete}
+      onCancel={() => setDeleteTarget(null)}
+    />
 
     {/* Xem lớn: ảnh 1/4 màn hình không đọc được chữ nằm trong ảnh. */}
     {zoom && (
