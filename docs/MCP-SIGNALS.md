@@ -83,6 +83,10 @@ cài và không bao giờ lệch phiên bản. Xem `SERVER_INSTRUCTIONS` trong
 | `signals_score` | 🔴 Ghi | Chấm điểm 5 tiêu chí + lý do; tự route trạng thái | id, do_nong, do_cham, do_hop_truc, tuoi_tho, do_an_toan, dinh_nhom_cam?, reasoning? | SỬA `scoreJson` + `status` của 1 tín hiệu |
 | `signals_set_cluster` | 🔴 Ghi | Gom nhiều tin trùng/liên quan thành 1 cụm | ids[], label | SỬA `clusterId`+`clusterLabel` các tín hiệu |
 | `signals_suggest_angle` | 🔴 Ghi | Gợi ý góc hài (cảnh + nhân vật + thoại) | id, scene, characters?[], dialogue?[], note? | SỬA `suggestionJson` của 1 tín hiệu |
+| `styles_list` | 🟢 Đọc | Liệt kê phong cách vẽ + mô tả nét vẽ từng trường + trường then chốt còn thiếu | — | ĐỌC bảng `styles` |
+| `style_brand_material` | 🟢 Đọc | Nguyên liệu để TỰ thiết kế nét vẽ: brief thương hiệu (bản cho việc vẽ) + bảng trường cần điền; cảnh báo nếu chưa khai `visualIdentity` | brand_id | ĐỌC `brands` + `brand_fanpages` |
+| `style_create` | 🔴 Ghi | Lưu phong cách vẽ mới (Claude tự viết bộ trường sau khi đọc `style_brand_material`) | name, fields, brand_id?, rationale?, is_shared? | THÊM dòng `styles` |
+| `style_set` | 🔴 Ghi | Bổ sung/sửa trường nét vẽ của phong cách đã có (gộp, không thay cả bộ) | style_id, name?, fields? | SỬA `styleJson`/`name` của 1 `styles` |
 | `brands_list` | 🟢 Đọc | Liệt kê hồ sơ thương hiệu + trạng thái bóc | — | ĐỌC bảng `brands` |
 | `brand_profile_get` | 🟢 Đọc | Đọc hồ sơ 1 thương hiệu **kèm câu trích nguồn từng mục**; trả `missing_fields` cho mục chưa có dữ liệu | brand_id | ĐỌC `brands` + `brand_sources` |
 | `brand_ingest` | 🔴 Ghi | Nạp tài liệu cho thương hiệu (link website hoặc dán nội dung) | brand_id, url? \| text? | THÊM dòng `brand_sources` |

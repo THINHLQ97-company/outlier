@@ -12,16 +12,20 @@
 import type { Express } from "express";
 import { and, desc, eq, or } from "drizzle-orm";
 import { getDb, isDbConfigured } from "../db/client";
-import { styles } from "../db/schema";
+import { styles, brands, brandFanpages } from "../db/schema";
 import { requireAuth, getAuthUser } from "../auth-mw";
 import { storage, newKey, parseDataUrl, internalKeyFromUrl, readImageAsInlineData } from "../storage";
 import { analyzeImageGemini, generateImageGemini, GeminiError } from "../services/gemini-direct";
 import { isActiveAdmin } from "./studio.routes";
+import { normalizeStyleJson, styleFieldGuide, STYLE_FIELD_SPECS } from "../../shared/style-fields";
+import { generateStyleFromBrand } from "../services/style-from-brand";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// Các khoá mô tả phong cách mà Gemini phân tích ảnh phải trả về.
-const STYLE_FIELDS = ["medium", "linework", "shading", "color_palette", "effects", "mood", "distinctive_traits"];
+// Các khoá mô tả phong cách mà Gemini phân tích ảnh phải trả về — lấy từ bộ
+// trường dùng chung (shared/style-fields.ts) để giao diện, MCP và chỗ phân tích
+// ảnh này không bao giờ lệch nhau.
+const STYLE_FIELDS = STYLE_FIELD_SPECS.map((f) => f.key);
 
 function dbDown(res: any): boolean {
   if (!isDbConfigured()) {
@@ -40,16 +44,18 @@ async function deleteInternalImageIfAny(url: string | null | undefined) {
 // rỗng, warning } (KHÔNG throw) để tạo phong cách vẫn thành công, người dùng bổ
 // sung mô tả sau.
 async function analyzeStyleImage(image: { mimeType: string; data: string }): Promise<{ styleJson: Record<string, any>; warning?: string }> {
-  const prompt = `You are an art director. Analyze the attached illustration and describe its DRAWING STYLE (not its content) as a compact JSON object with EXACTLY these string fields: ${STYLE_FIELDS.join(
-    ", "
-  )}. Each value is a short English phrase. "distinctive_traits" summarizes what makes this style recognizable. Return ONLY the JSON object.`;
+  // Mô tả phải đủ chi tiết để hoạ sĩ KHÁC vẽ lại được, không phải để người đọc
+  // hình dung — nên mỗi trường kèm đúng câu hỏi nó phải trả lời.
+  const prompt = `You are an art director. Analyze the attached illustration and describe its DRAWING STYLE (not its content) as a compact JSON object.
+
+Fill these keys (skip any key you genuinely cannot tell from the image — do NOT guess to fill the form):
+${styleFieldGuide()}
+
+Values in short English phrases. Keys marked [then chốt] matter most: another artist must be able to redraw in this style from your description alone. Return ONLY the JSON object.`;
   try {
     const text = await analyzeImageGemini(prompt, image);
     const parsed = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
-    const styleJson: Record<string, any> = {};
-    for (const f of STYLE_FIELDS) {
-      if (parsed && parsed[f] != null) styleJson[f] = parsed[f];
-    }
+    const styleJson = normalizeStyleJson(parsed);
     if (Object.keys(styleJson).length === 0) throw new Error("Phân tích không có trường hợp lệ.");
     return { styleJson };
   } catch (e: any) {
@@ -142,7 +148,9 @@ export function registerStyleRoutes(app: Express) {
       const patch: Record<string, any> = { updatedAt: new Date() };
       if (typeof name === "string" && name.trim()) patch.name = name.trim();
       if (typeof isShared === "boolean") patch.isShared = isShared;
-      if (styleJson && typeof styleJson === "object" && !Array.isArray(styleJson)) patch.styleJson = styleJson;
+      // Chuẩn hoá thay vì lưu thô: giao diện gửi ô trống, model gửi mảng cho
+      // trường chữ — lưu nguyên thì prompt vẽ nhận rác.
+      if (styleJson && typeof styleJson === "object" && !Array.isArray(styleJson)) patch.styleJson = normalizeStyleJson(styleJson);
 
       let oldUrlToClean: string | null = null;
       let warning: string | undefined;
@@ -276,6 +284,59 @@ Art style name: ${existing.name}. Single illustrated panel, clean composition. A
     } catch (e: any) {
       console.error("analyze style:", e?.message || e);
       res.status(500).json({ error: "Phân tích nét vẽ thất bại." });
+    }
+  });
+  // POST /api/styles/from-brand {brandId, name?, isShared?} — sinh nét vẽ TỪ HỒ SƠ
+  // THƯƠNG HIỆU (không cần ảnh mẫu) rồi lưu thành phong cách mới.
+  //
+  // Đây là đường vào cho trang chưa có ảnh nào đúng ý: trước đây bắt buộc phải
+  // tải lên một ảnh mẫu mới tạo được phong cách. Nét vẽ sinh một lần rồi dùng
+  // cho mọi ảnh sau đó — đó là chỗ "đồng nhất" đến từ.
+  app.post("/api/styles/from-brand", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const me = getAuthUser(req)!;
+    const { brandId, name, isShared } = req.body || {};
+    if (!UUID_RE.test(brandId || "")) return res.status(400).json({ error: "Thiếu hoặc sai mã thương hiệu." });
+    try {
+      const db = getDb();
+      const [brand] = await db.select().from(brands).where(eq(brands.id, brandId));
+      if (!brand) return res.status(404).json({ error: "Không tìm thấy thương hiệu." });
+      if (brand.owner !== me && !brand.isShared) return res.status(403).json({ error: "Bạn không có quyền với thương hiệu này." });
+      const pages = await db.select().from(brandFanpages).where(eq(brandFanpages.brandId, brandId));
+
+      let gen;
+      try {
+        gen = await generateStyleFromBrand(brand as any, pages as any);
+      } catch (e: any) {
+        const message = e instanceof GeminiError ? e.message : e?.message || "Sinh nét vẽ thất bại.";
+        return res.status(502).json({ error: message });
+      }
+
+      const [row] = await db
+        .insert(styles)
+        .values({
+          owner: me,
+          isShared: isShared !== false,
+          isDefault: false,
+          name: typeof name === "string" && name.trim() ? name.trim() : gen.name,
+          styleJson: gen.styleJson,
+          referenceImageUrl: null,
+        })
+        .returning();
+      res.status(201).json({
+        ...row,
+        isMine: true,
+        imageMissing: false,
+        rationale: gen.rationale,
+        // Nói thẳng nét vẽ này bám hồ sơ tới đâu — người dùng cần biết cái gì là
+        // màu trang đã chọn, cái gì là suy ra.
+        grounded: gen.grounded,
+        warning: gen.caveat,
+        missingKeyFields: gen.missingKeyFields,
+      });
+    } catch (e: any) {
+      console.error("style from brand:", e?.message || e);
+      res.status(500).json({ error: "Lỗi sinh nét vẽ từ thương hiệu." });
     }
   });
 }

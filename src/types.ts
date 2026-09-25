@@ -247,6 +247,17 @@ export interface StyleRow {
   updatedAt: string;
 }
 
+/** Kết quả sinh nét vẽ từ hồ sơ thương hiệu (POST /api/styles/from-brand). */
+export interface StyleFromBrandResult extends StyleRow {
+  /** Vì sao nét vẽ này khớp trang — model dẫn chiếu chi tiết trong hồ sơ. */
+  rationale: string | null;
+  /** true = bám nhận diện hình ảnh đã khai; false = suy ra từ tính cách/giọng nói. */
+  grounded: boolean;
+  warning?: string;
+  /** Trường then chốt model không quyết được — người dùng nên tự bổ sung. */
+  missingKeyFields: string[];
+}
+
 // ===== users — quản lý tài khoản (admin) =====
 export interface UserRow {
   id: string;

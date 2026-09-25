@@ -7,9 +7,10 @@
 // Endpoint: ALL /api/mcp-signals. GET (không JSON-RPC) → landing page hướng dẫn.
 import type { Express } from "express";
 import crypto from "crypto";
-import { and, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, or } from "drizzle-orm";
 import { getDb, isDbConfigured } from "../db/client";
-import { signals, rubricVersions, characters as charactersTable, brands, brandSources, radarJobs, radarItems, deconstructions, remakes, watchedChannels, brandFanpages, videoProjects, videoScenes } from "../db/schema";
+import { signals, rubricVersions, characters as charactersTable, brands, brandSources, radarJobs, radarItems, deconstructions, remakes, watchedChannels, brandFanpages, videoProjects, videoScenes, styles as stylesTable } from "../db/schema";
+import { normalizeStyleJson, missingKeyStyleFields } from "../../shared/style-fields";
 import { ingestUrl, ingestRawText } from "../services/brand-ingest";
 import { extractBrandProfile, type SourceDoc } from "../services/brand-extract";
 import { computeSignalStatus } from "../services/rubric-scoring";
@@ -654,6 +655,60 @@ const TOOLS = [
       additionalProperties: false,
     },
   },
+
+  // --- Phong cách vẽ ---
+  // Bộ tool này để Claude ĐỌC hồ sơ thương hiệu rồi TỰ thiết kế nét vẽ, thay vì
+  // bắt buộc phải có ảnh mẫu như trước. Claude là model sinh — không cần gọi
+  // Gemini ở giữa; nút trên web mới dùng Gemini (POST /api/styles/from-brand).
+  {
+    name: "styles_list",
+    description: "Liệt kê các phong cách vẽ trong Thư viện → Phong cách, kèm mô tả nét vẽ từng trường và các trường then chốt còn thiếu.",
+    annotations: { title: "Danh sách phong cách", readOnlyHint: true },
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "style_brand_material",
+    description: "Đọc hồ sơ thương hiệu dưới dạng NGUYÊN LIỆU để tự thiết kế nét vẽ, kèm bảng trường cần điền và câu hỏi từng trường phải trả lời. Gọi tool này TRƯỚC, tự viết bộ trường, rồi lưu bằng style_create. Trả về cả cảnh báo nếu thương hiệu chưa khai nhận diện hình ảnh.",
+    annotations: { title: "Nguyên liệu nét vẽ", readOnlyHint: true },
+    inputSchema: {
+      type: "object",
+      properties: { brand_id: { type: "string", description: "Mã thương hiệu (từ brands_list)" } },
+      required: ["brand_id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "style_create",
+    description: "Lưu một phong cách vẽ mới vào Thư viện → Phong cách. Dùng sau style_brand_material: tự viết các trường nét vẽ rồi ghi vào đây. Giá trị các trường viết TIẾNG ANH (prompt vẽ gửi cho model ảnh), tên phong cách tiếng Việt. Đừng điền trường mà bạn không quyết được — để thiếu còn hơn bịa.",
+    annotations: { title: "Tạo phong cách", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Tên phong cách, tiếng Việt, 2-5 từ" },
+        fields: { type: "object", description: "Bộ trường nét vẽ theo đúng khoá trong style_brand_material.field_guide", additionalProperties: true },
+        brand_id: { type: "string", description: "Thương hiệu đã dùng làm nguyên liệu (tuỳ chọn, để ghi chú)" },
+        rationale: { type: "string", description: "1-3 câu tiếng Việt: vì sao nét vẽ này khớp trang, dẫn chiếu chi tiết CÓ TRONG hồ sơ" },
+        is_shared: { type: "boolean", description: "Cho cả nhóm dùng (mặc định có)" },
+      },
+      required: ["name", "fields"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "style_set",
+    description: "Sửa một phong cách đã có: đổi tên hoặc bổ sung/ghi lại các trường nét vẽ. Trường gửi lên sẽ ghi đè trường cùng khoá, trường không gửi thì giữ nguyên. Dùng để bổ sung các trường then chốt còn thiếu mà styles_list báo.",
+    annotations: { title: "Sửa phong cách", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: {
+        style_id: { type: "string", description: "Mã phong cách (từ styles_list)" },
+        name: { type: "string", description: "Tên mới (tuỳ chọn)" },
+        fields: { type: "object", description: "Các trường nét vẽ cần ghi", additionalProperties: true },
+      },
+      required: ["style_id"],
+      additionalProperties: false,
+    },
+  },
 ];
 
 const rpcResult = (id: any, result: any) => ({ jsonrpc: "2.0", id, result });
@@ -1168,6 +1223,111 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
     });
 
     return { __mcpContent: content };
+  }
+
+  // --- Phong cách vẽ ---
+
+  if (name === "styles_list") {
+    const rows = await db
+      .select()
+      .from(stylesTable)
+      .where(or(eq(stylesTable.owner, principal.username), eq(stylesTable.isShared, true), eq(stylesTable.isDefault, true)))
+      .orderBy(desc(stylesTable.isDefault), desc(stylesTable.createdAt));
+    return {
+      count: rows.length,
+      styles: rows.map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        is_default: r.isDefault,
+        is_mine: r.owner === principal.username,
+        has_reference_image: !!r.referenceImageUrl,
+        fields: normalizeStyleJson(r.styleJson),
+        missing_key_fields: missingKeyStyleFields(r.styleJson).map((f) => `${f.key} (${f.label})`),
+      })),
+      hint: "Thiếu trường then chốt thì bổ sung bằng style_set — thiếu là vẽ lại lệch hẳn.",
+    };
+  }
+
+  if (name === "style_brand_material") {
+    if (!UUID_RE.test(args.brand_id || "")) throw new Error("brand_id không hợp lệ");
+    const [row] = await db.select().from(brands).where(eq(brands.id, args.brand_id));
+    if (!row) throw new Error("Không tìm thấy thương hiệu");
+    const pages = await db.select().from(brandFanpages).where(eq(brandFanpages.brandId, args.brand_id));
+    const { buildStyleBrief } = await import("../services/style-from-brand");
+    const { brief, grounded, caveat } = buildStyleBrief(row as any, pages as any);
+    const { styleFieldGuide } = await import("../../shared/style-fields");
+    return {
+      brand_id: row.id,
+      brand_name: row.name,
+      brand_brief: brief,
+      field_guide: styleFieldGuide(),
+      grounded,
+      warning: caveat,
+      instructions:
+        "Đọc brand_brief, tự thiết kế MỘT phong cách vẽ cho trang này rồi lưu bằng style_create. " +
+        "Cụ thể tới mức hoạ sĩ khác đọc xong vẽ lại được — tránh chữ chung chung như 'hiện đại', 'bắt mắt'. " +
+        "Nhất quán nội bộ (tô phẳng thì đừng đòi ánh sáng chuyển sắc mượt). " +
+        "Giá trị các trường viết TIẾNG ANH vì sẽ đi thẳng vào prompt vẽ; tên phong cách và rationale viết tiếng Việt. " +
+        "Trường nào không quyết được thì BỎ, đừng điền cho đủ.",
+    };
+  }
+
+  if (name === "style_create") {
+    const nm = String(args.name || "").trim();
+    if (!nm) throw new Error("Cần tên phong cách");
+    const fields = normalizeStyleJson(args.fields);
+    if (Object.keys(fields).length === 0) throw new Error("Chưa có trường nét vẽ nào hợp lệ trong 'fields'");
+    if (args.brand_id && !UUID_RE.test(args.brand_id)) throw new Error("brand_id không hợp lệ");
+    // rationale/brand_id đi cùng bộ trường để sau này còn biết nét vẽ này từ đâu ra.
+    const styleJson: Record<string, any> = { ...fields };
+    if (typeof args.rationale === "string" && args.rationale.trim()) styleJson.reference_note = args.rationale.trim();
+    const [row] = await db
+      .insert(stylesTable)
+      .values({
+        owner: principal.username,
+        isShared: args.is_shared !== false,
+        isDefault: false,
+        name: nm.slice(0, 80),
+        styleJson,
+        referenceImageUrl: null,
+      })
+      .returning();
+    const missing = missingKeyStyleFields(styleJson);
+    return {
+      id: row.id,
+      name: row.name,
+      fields: row.styleJson,
+      missing_key_fields: missing.map((f) => `${f.key} (${f.label})`),
+      note:
+        "Đã lưu vào Thư viện → Phong cách, chọn được ngay khi vẽ ảnh. " +
+        "Chưa có ảnh minh hoạ — bấm 'Vẽ minh hoạ' trên web để xem nét vẽ ra thế nào." +
+        (missing.length ? " Còn thiếu trường then chốt (xem missing_key_fields), bổ sung bằng style_set." : ""),
+    };
+  }
+
+  if (name === "style_set") {
+    if (!UUID_RE.test(args.style_id || "")) throw new Error("style_id không hợp lệ");
+    const [existing] = await db.select().from(stylesTable).where(eq(stylesTable.id, args.style_id));
+    if (!existing) throw new Error("Không tìm thấy phong cách");
+    if (existing.isDefault) throw new Error("Phong cách mặc định không sửa được qua MCP — tạo bản riêng bằng style_create");
+    if (existing.owner !== principal.username) throw new Error("Chỉ chủ sở hữu mới sửa được phong cách này");
+
+    const patch: Record<string, any> = { updatedAt: new Date() };
+    if (typeof args.name === "string" && args.name.trim()) patch.name = args.name.trim().slice(0, 80);
+    if (args.fields && typeof args.fields === "object" && !Array.isArray(args.fields)) {
+      // Gộp, không thay cả bộ: Claude thường chỉ bổ sung vài trường còn thiếu,
+      // thay cả bộ là mất những trường đã bóc từ ảnh mẫu.
+      patch.styleJson = normalizeStyleJson({ ...(existing.styleJson || {}), ...args.fields });
+    }
+    if (Object.keys(patch).length === 1) throw new Error("Không có gì để sửa — gửi name hoặc fields");
+
+    const [row] = await db.update(stylesTable).set(patch).where(eq(stylesTable.id, args.style_id)).returning();
+    return {
+      id: row.id,
+      name: row.name,
+      fields: row.styleJson,
+      missing_key_fields: missingKeyStyleFields(row.styleJson).map((f) => `${f.key} (${f.label})`),
+    };
   }
 
   if (name === "brand_create") {

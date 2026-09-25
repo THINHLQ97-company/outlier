@@ -125,9 +125,21 @@ export async function buildImageGenerationRequest(input: BuildImageInput): Promi
 
   const rules: string[] = [];
   if (input.style && Object.keys(input.style.styleJson || {}).length) {
+    const d = input.style.styleJson || {};
     rules.push(
-      `Render EXACTLY in the art style described in art_style.descriptor (linework, shading, color palette, texture and mood). Apply this style consistently to the whole image.`
+      `Render EXACTLY in the art style described in art_style.descriptor. Match every field given, especially line weight, rendering method, character proportions, face style and background treatment — those are what make two images look like the same page.`
     );
+    // "avoid" là câu phủ định, và phủ định lẫn trong JSON thì model bỏ qua —
+    // phải nhắc thành luật riêng. Đây là chỗ giữ cho ảnh không trôi về mặc định
+    // của model (bóng mềm, nền gradient, mắt kiểu anime).
+    const avoid = Array.isArray(d.avoid) ? d.avoid : d.avoid ? [String(d.avoid)] : [];
+    if (avoid.length) {
+      rules.push(`This art style must NOT contain: ${avoid.join("; ")}. Do not add them even if they would look better.`);
+    }
+    const palette = Array.isArray(d.color_palette) ? d.color_palette : [];
+    if (palette.length) {
+      rules.push(`Stay within this palette: ${palette.join(", ")}. Do not introduce other dominant colors.`);
+    }
   }
   for (const c of keptCharImgs) {
     rules.push(

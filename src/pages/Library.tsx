@@ -45,6 +45,9 @@ import {
   type CharacterInput,
 } from "../services/characters";
 import { listStyles, createStyle, updateStyle, deleteStyle, generateStyleReference, analyzeStyle } from "../services/styles";
+import StyleFieldsEditor from "../components/StyleFieldsEditor";
+import StyleFromBrandDialog from "../components/StyleFromBrandDialog";
+import { styleFieldLabel, missingKeyStyleFields, STYLE_FIELD_SPECS, STYLE_GROUPS } from "../../shared/style-fields";
 import { imageDisplayUrl } from "../services/http";
 import { useAppContext } from "../AppContext";
 import { AXES } from "../../shared/engine-data";
@@ -1011,6 +1014,7 @@ function StylesTab() {
   const [drawingAll, setDrawingAll] = useState(false);
   const [drawAllProgress, setDrawAllProgress] = useState<string | null>(null);
   const [drawAllResult, setDrawAllResult] = useState<string | null>(null);
+  const [fromBrandOpen, setFromBrandOpen] = useState(false);
 
   async function reload() {
     setLoading(true);
@@ -1106,8 +1110,16 @@ function StylesTab() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <p className="text-sm text-stone-500 max-w-md">
           Mỗi phong cách gồm 1 ảnh minh hoạ + mô tả nét vẽ — chọn được ở trang Sáng tạo để ảnh ra đúng phong cách mong muốn.
+          Tạo từ ảnh mẫu, hoặc để AI đọc hồ sơ Thương hiệu rồi tự thiết kế nét vẽ cho trang.
         </p>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setFromBrandOpen(true)}
+            className="flex items-center gap-1.5 text-sm font-medium text-storm-700 bg-storm-50 hover:bg-storm-100 px-3 py-2 rounded-lg transition-colors"
+            title="AI đọc hồ sơ Thương hiệu rồi thiết kế một bộ nét vẽ dùng chung cho mọi ảnh của trang — không cần ảnh mẫu."
+          >
+            <Sparkles className="w-4 h-4" aria-hidden="true" /> Sinh từ Thương hiệu
+          </button>
           <button
             onClick={handleGenerateAll}
             disabled={drawingAll || items.every((s) => !!s.referenceImageUrl && !s.imageMissing)}
@@ -1169,6 +1181,13 @@ function StylesTab() {
         </div>
       )}
 
+      {fromBrandOpen && (
+        <StyleFromBrandDialog
+          onClose={() => setFromBrandOpen(false)}
+          onCreated={(row) => setItems((prev) => [row, ...prev])}
+        />
+      )}
+
       {formTarget && (
         <StyleForm
           initial={formTarget === "new" ? null : formTarget}
@@ -1195,6 +1214,11 @@ function StylesTab() {
   );
 }
 
+/** Trường nét vẽ có thể là chuỗi hoặc mảng — hiện ra người đọc thì gộp lại. */
+function fieldText(v: unknown): string {
+  return Array.isArray(v) ? v.join(", ") : String(v ?? "");
+}
+
 function StyleCard({
   style: s,
   canManage,
@@ -1216,6 +1240,9 @@ function StyleCard({
   const img = !s.imageMissing ? imageDisplayUrl(s.referenceImageUrl) : null;
   const fields = Object.entries(s.styleJson || {});
   const hasImage = !!s.referenceImageUrl && !s.imageMissing;
+  // Trường then chốt còn thiếu: thiếu là mỗi lần vẽ ra một kiểu, nên nói ngay
+  // trên thẻ chứ không đợi người dùng mở ra mới thấy.
+  const missingKey = missingKeyStyleFields(s.styleJson);
 
   return (
     <div className="ds-card hover:border-storm-300 transition-colors">
@@ -1239,6 +1266,13 @@ function StyleCard({
         </p>
       )}
 
+      {fields.length > 0 && missingKey.length > 0 && (
+        <p className="text-[11px] leading-snug text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+          Thiếu {missingKey.length} trường then chốt ({missingKey.map((f) => f.label).join(", ")}) — vẽ lại dễ lệch. Bấm
+          Sửa để điền, hoặc Phân tích nét vẽ nếu đã có ảnh minh hoạ.
+        </p>
+      )}
+
       {fields.length > 0 && (
         <div>
           <button
@@ -1249,14 +1283,40 @@ function StyleCard({
             {expanded ? "Ẩn mô tả nét vẽ" : "Xem mô tả nét vẽ"}
           </button>
           {expanded && (
-            <dl className="text-xs text-stone-500 bg-stone-50 rounded-lg p-2 mt-1 flex flex-col gap-1">
-              {fields.map(([k, v]) => (
-                <div key={k} className="flex gap-1">
-                  <dt className="font-medium text-stone-600 shrink-0">{k}:</dt>
-                  <dd className="text-stone-500">{String(v)}</dd>
-                </div>
-              ))}
-            </dl>
+            <div className="text-xs bg-stone-50 rounded-lg p-2 mt-1 flex flex-col gap-2">
+              {STYLE_GROUPS.map((group) => {
+                const keys = STYLE_FIELD_SPECS.filter((f) => f.group === group && s.styleJson?.[f.key] != null);
+                if (keys.length === 0) return null;
+                return (
+                  <div key={group}>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-stone-400">{group}</p>
+                    <dl className="flex flex-col gap-0.5 mt-0.5">
+                      {keys.map((f) => (
+                        <div key={f.key} className="flex gap-1">
+                          <dt className="font-medium text-stone-600 shrink-0">{f.label}:</dt>
+                          <dd className="text-stone-500">{fieldText(s.styleJson[f.key])}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                );
+              })}
+              {/* Khoá ngoài bộ chuẩn (phong cách cũ, hoặc Claude tự thêm qua MCP). */}
+              {(() => {
+                const extra = fields.filter(([k]) => !STYLE_FIELD_SPECS.some((f) => f.key === k));
+                if (extra.length === 0) return null;
+                return (
+                  <dl className="flex flex-col gap-0.5 pt-1 border-t border-stone-200">
+                    {extra.map(([k, v]) => (
+                      <div key={k} className="flex gap-1">
+                        <dt className="font-medium text-stone-600 shrink-0">{styleFieldLabel(k)}:</dt>
+                        <dd className="text-stone-500">{fieldText(v)}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                );
+              })()}
+            </div>
           )}
         </div>
       )}
@@ -1501,6 +1561,10 @@ function StyleForm({
   const [name, setName] = useState(initial?.name || "");
   const [isShared, setIsShared] = useState(initial?.isShared || false);
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
+  // Sửa tay bộ trường nét vẽ. AI phân tích ảnh đọc được cái NHÌN THẤY, không đọc
+  // được cái người chủ MUỐN — và trường then chốt AI bỏ trống thì phải điền được.
+  const [fields, setFields] = useState<Record<string, any>>(initial?.styleJson || {});
+  const [editFields, setEditFields] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
@@ -1528,7 +1592,14 @@ function StyleForm({
     setWarning(null);
     try {
       const row = initial
-        ? await updateStyle(initial.id, { name: name.trim(), isShared, imageDataUrl: imageDataUrl || undefined })
+        ? await updateStyle(initial.id, {
+            name: name.trim(),
+            isShared,
+            imageDataUrl: imageDataUrl || undefined,
+            // Chỉ gửi styleJson khi người dùng thật sự sửa: gửi kèm lúc đổi ảnh
+            // sẽ chặn việc server phân tích lại ảnh mới.
+            ...(editFields ? { styleJson: fields } : {}),
+          })
         : await createStyle({ name: name.trim(), isShared, imageDataUrl: imageDataUrl! });
       if ((row as any).warning) setWarning((row as any).warning);
       onSaved(row);
@@ -1602,6 +1673,32 @@ function StyleForm({
               )}
             </div>
           </div>
+          {/* Mô tả nét vẽ: mở ra khi cần chỉnh tay. Với phong cách mới thì bỏ
+              trống là đúng — server phân tích ảnh mẫu xong sẽ tự điền. */}
+          {initial && (
+            <div>
+              <button
+                type="button"
+                onClick={() => setEditFields((v) => !v)}
+                className="flex items-center gap-1 text-xs font-medium text-storm-700 hover:text-storm-800"
+                aria-expanded={editFields}
+              >
+                {editFields ? <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" /> : <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />}
+                {editFields ? "Ẩn mô tả nét vẽ" : "Sửa mô tả nét vẽ"}
+                {!editFields && missingKeyStyleFields(fields).length > 0 && (
+                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">
+                    thiếu {missingKeyStyleFields(fields).length} trường then chốt
+                  </span>
+                )}
+              </button>
+              {editFields && (
+                <div className="mt-2">
+                  <StyleFieldsEditor value={fields} onChange={setFields} />
+                </div>
+              )}
+            </div>
+          )}
+
           {warning && <div className="ds-alert ds-alert-warning">{warning}</div>}
           {error && <div role="alert" className="ds-alert ds-alert-danger">{error}</div>}
           <button
