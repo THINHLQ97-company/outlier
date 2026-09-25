@@ -250,11 +250,20 @@ export default function Videos() {
       <div>
         <h1 className="text-lg font-bold text-stone-800 font-display flex items-center gap-2">
           <Clapperboard className="w-5 h-5 text-storm-500" aria-hidden="true" /> Remake video
+          {/* Chưa ổn định. Nói thẳng ở đầu trang: người dùng gặp lỗi mà không
+              được báo trước sẽ tưởng cả công cụ hỏng, không phải riêng mục này. */}
+          <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+            đang phát triển
+          </span>
         </h1>
         <p className="text-sm text-stone-500">
           Biến một bản viết thành video: tách cảnh (miễn phí) → bạn sửa/duyệt từng cảnh → dựng hình bằng AI (tốn phí, cần xác
           nhận) → ghép thành video hoàn chỉnh (miễn phí). Bước này <strong>cần sẵn một bản Remake bài viết đã duyệt</strong> —
           chưa có thì quay lại bước trước.
+        </p>
+        <p className="ds-alert ds-alert-warning !text-xs mt-2">
+          Mục này chưa ổn định — dựng hình có thể lỗi hoặc ra kết quả chưa dùng được, và cách làm còn đổi. Dùng để thử
+          thì được, đừng dựa vào nó cho bài phải đăng.
         </p>
       </div>
 

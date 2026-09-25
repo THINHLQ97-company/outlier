@@ -21,7 +21,13 @@ import {
 } from "lucide-react";
 import { useAppContext } from "../AppContext";
 
-type NavItem = { to: string; label: string; icon: typeof Wand2 };
+type NavItem = {
+  to: string;
+  label: string;
+  icon: typeof Wand2;
+  /** Vào được nhưng chưa ổn định — làm mờ và dán tem để không ai tưởng đã xong. */
+  wip?: boolean;
+};
 type NavGroup = { label: string; items: NavItem[] };
 
 // Sidebar dọc, nhóm theo luồng công việc (yêu cầu chuyển đổi 2026-09-22 —
@@ -53,7 +59,9 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/deconstruct", label: "Bóc cấu trúc", icon: Scissors },
       { to: "/remakes", label: "Remake bài & ảnh", icon: PenLine },
-      { to: "/videos", label: "Remake video", icon: Clapperboard },
+      // Remake video còn dở. Vẫn để vào được (còn thử được), nhưng làm mờ và dán
+      // tem — menu trông y như mục đã xong là cách nhanh nhất để mất lòng tin.
+      { to: "/videos", label: "Remake video", icon: Clapperboard, wip: true },
       { to: "/studio", label: "Sáng tạo nhanh", icon: Wand2 },
     ],
   },
@@ -135,18 +143,25 @@ export default function Layout({ children }: { children: ReactNode }) {
           {groups.map((group) => (
             <div key={group.label} className="ds-nav">
               {showLabels && <div className="ds-nav-section">{group.label}</div>}
-              {group.items.map(({ to, label, icon: Icon }) => (
+              {group.items.map(({ to, label, icon: Icon, wip }) => (
                 <NavLink
                   key={to}
                   to={to}
                   onClick={() => setMobileOpen(false)}
-                  title={showLabels ? undefined : label}
+                  title={wip ? `${label} — đang phát triển, chưa ổn định` : showLabels ? undefined : label}
                   className={({ isActive }) =>
-                    `ds-nav-item${isActive ? " active" : ""}${showLabels ? "" : " justify-center px-0"}`
+                    `ds-nav-item${isActive ? " active" : ""}${showLabels ? "" : " justify-center px-0"}${
+                      wip ? " opacity-50" : ""
+                    }`
                   }
                 >
                   <Icon className="ds-nav-icon" aria-hidden="true" />
                   {showLabels && <span className="truncate">{label}</span>}
+                  {showLabels && wip && (
+                    <span className="ml-auto shrink-0 text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-white/10 text-indigo-200">
+                      đang làm
+                    </span>
+                  )}
                 </NavLink>
               ))}
             </div>
