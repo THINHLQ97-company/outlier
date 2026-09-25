@@ -159,3 +159,10 @@ export function pollChannel(id: string, opts: ChannelPollOptions): () => void {
     timer = null;
   };
 }
+
+/** Sửa số liệu bài cũ bằng dữ liệu đã lưu — miễn phí, không gọi dịch vụ nào. */
+export async function repairChannel(id: string): Promise<{ checked: number; fixed: number; note: string }> {
+  const res = await fetch(`/api/channels/${id}/repair`, { method: "POST", headers: authHeaders() });
+  if (!res.ok) return asError(res, "Không sửa được số liệu.");
+  return res.json();
+}

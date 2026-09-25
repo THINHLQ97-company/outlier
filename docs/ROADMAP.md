@@ -36,9 +36,10 @@ Cập nhật mỗi khi xong một phần. Ngày ghi là ngày hoàn thành.
 
 ## Còn thiếu
 
-### 1. YouTube: quét kênh miễn phí
-Đã dùng Data API v3 cho **bình luận**. Còn có thể thay Apify ở phần **quét kênh và
-lấy bài** — cùng API key đó. Cần đặt `YOUTUBE_API_KEY`.
+### 1. ~~YouTube: quét kênh miễn phí~~ — GHI NHẦM, đã miễn phí từ đầu
+YouTube quét kênh dùng yt-dlp, **không qua Apify**, không tốn tiền. Chỉ TikTok,
+Instagram và Facebook mới tính tiền. `YOUTUBE_API_KEY` chỉ cần cho **đọc bình
+luận** YouTube.
 
 ### 2. Remake video
 Để sau, theo đúng ý bạn.

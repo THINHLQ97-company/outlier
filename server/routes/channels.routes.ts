@@ -44,7 +44,85 @@ export function guessPlatform(url: string): string | null {
 }
 
 /** Làm mới một kênh: quét lại, đánh dấu bài mới, chấm điểm. */
-export async function refreshChannelInBackground(channelId: string, limit = DEFAULT_LIMIT) {
+/**
+ * Số bài nên xin khi làm mới.
+ *
+ * Lần đầu phải lấy nhiều để dựng mốc so sánh cho kênh. Nhưng những lần sau,
+ * kênh chỉ đăng thêm vài bài mỗi ngày — xin lại 20 bài là trả tiền cho 18 bài
+ * mình đã có. Apify tính tiền theo số kết quả nó trả về, nó không biết mình đã
+ * có gì.
+ *
+ * Quy tắc: lần đầu lấy đủ; sau đó lấy theo nhịp đăng thật của kênh, cộng biên
+ * an toàn để không sót bài nếu hôm đó họ đăng dồn.
+ */
+export function limitForRefresh(opts: {
+  scanCount: number;
+  lastScanAt: Date | null;
+  postsPerDay?: number | null;
+}): number {
+  if (opts.scanCount === 0 || !opts.lastScanAt) return DEFAULT_LIMIT;
+
+  const daysSince = Math.max(0.5, (Date.now() - opts.lastScanAt.getTime()) / 86_400_000);
+  // Chưa biết nhịp đăng thì đoán 2 bài/ngày — đủ rộng cho phần lớn trang.
+  const perDay = opts.postsPerDay && opts.postsPerDay > 0 ? opts.postsPerDay : 2;
+  const expected = Math.ceil(daysSince * perDay);
+
+  // Biên an toàn gấp đôi, tối thiểu 5 (xin 1-2 bài thì dễ sót), tối đa 20.
+  return Math.min(DEFAULT_LIMIT, Math.max(5, expected * 2));
+}
+
+/**
+ * Sửa lại số liệu các bài ĐÃ LƯU bằng dữ liệu trong bộ nhớ đệm — không tốn tiền.
+ *
+ * Vì sao cần: khi code đọc sai tên trường, dữ liệu rơi im lặng (số bình luận
+ * trống, ngày về 0) và nằm lại trong cơ sở dữ liệu mãi. Bắt người dùng quét lại
+ * là bắt họ trả tiền lần hai cho lỗi của mình — trong khi kết quả gốc vẫn còn
+ * nguyên trong bộ nhớ đệm.
+ */
+export async function repairChannelFromCache(channelId: string): Promise<{ checked: number; fixed: number }> {
+  const db = getDb();
+  const [chan] = await db.select().from(watchedChannels).where(eq(watchedChannels.id, channelId));
+  if (!chan) return { checked: 0, fixed: 0 };
+
+  const items = await db.select().from(radarItems).where(eq(radarItems.channelKey, chan.channelKey || ""));
+  if (items.length === 0) return { checked: 0, fixed: 0 };
+
+  const { apifyCache } = await import("../db/schema");
+  const { normalize } = await import("../services/apify");
+
+  let fixed = 0;
+  for (const it of items) {
+    // Chỉ đụng vào bài đang thiếu — không ghi đè dữ liệu đang đúng.
+    const missing = it.comments == null || it.shares == null || !it.coverUrl;
+    if (!missing) continue;
+
+    const [hit] = await db
+      .select()
+      .from(apifyCache)
+      .where(eq(apifyCache.cacheKey, `${chan.platform}:item:${it.url}`));
+    if (!hit?.payload) continue;
+
+    const m = normalize(hit.payload, chan.platform);
+    if (!m) continue;
+
+    await db
+      .update(radarItems)
+      .set({
+        comments: it.comments ?? m.comments ?? null,
+        shares: it.shares ?? m.shares ?? null,
+        likes: it.likes ?? m.likes ?? null,
+        views: it.views ?? m.views ?? null,
+        coverUrl: it.coverUrl ?? m.coverUrl ?? null,
+        publishedAt: it.publishedAt ?? (m.publishedAt ? new Date(m.publishedAt) : null),
+      })
+      .where(eq(radarItems.id, it.id));
+    fixed++;
+  }
+
+  return { checked: items.length, fixed };
+}
+
+export async function refreshChannelInBackground(channelId: string, limit?: number) {
   const db = getDb();
   try {
     const [chan] = await db.select().from(watchedChannels).where(eq(watchedChannels.id, channelId));
@@ -54,12 +132,23 @@ export async function refreshChannelInBackground(channelId: string, limit = DEFA
       .set({ scanStatus: "scanning", errorMessage: null, updatedAt: new Date() })
       .where(eq(watchedChannels.id, channelId));
 
-    let r = await scanCandidates(chan.platform, chan.channelUrl, "competitor", limit);
+    // Xin đúng số bài cần: lần đầu lấy đủ để dựng mốc, sau đó chỉ lấy phần có
+    // thể mới kể từ lần quét trước. Với kênh tính tiền, đây là khoản tiết kiệm
+    // lớn nhất — quét hàng ngày mà vẫn xin 20 bài là trả tiền cho 18 bài đã có.
+    const effectiveLimit =
+      limit ??
+      limitForRefresh({
+        scanCount: chan.scanCount || 0,
+        lastScanAt: chan.lastScanAt ? new Date(chan.lastScanAt) : null,
+        postsPerDay: null,
+      });
+
+    let r = await scanCandidates(chan.platform, chan.channelUrl, "competitor", effectiveLimit);
 
     // yt-dlp không lấy được kênh TikTok từ link @user. Nếu người dùng đã bật
     // dịch vụ có phí thì đi đường Apify — quét profile và lấy luôn số liệu đầy đủ.
     if (r.candidates.length === 0 && chan.useApify && isApifyConfigured()) {
-      const viaApify = await scanChannelViaApify(chan.platform, chan.channelUrl, limit);
+      const viaApify = await scanChannelViaApify(chan.platform, chan.channelUrl, effectiveLimit);
       if (viaApify.candidates.length) r = viaApify;
       else if (viaApify.warning) r = { candidates: [], warning: viaApify.warning };
     }
@@ -300,6 +389,28 @@ export function registerChannelRoutes(app: Express) {
     } catch (e: any) {
       console.error("channel patch:", e?.message || e);
       res.status(500).json({ error: "Không lưu được thay đổi." });
+    }
+  });
+
+  // Sửa lại số liệu bài cũ từ bộ nhớ đệm — MIỄN PHÍ, không gọi dịch vụ nào.
+  app.post("/api/channels/:id/repair", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const { id } = req.params;
+    if (!UUID_RE.test(id)) return res.status(400).json({ error: "Mã không hợp lệ." });
+    try {
+      const out = await repairChannelFromCache(id);
+      res.json({
+        ...out,
+        note:
+          out.fixed > 0
+            ? `Đã sửa ${out.fixed}/${out.checked} bài bằng dữ liệu đã lưu — không tốn đồng nào.`
+            : out.checked === 0
+            ? "Chưa có bài nào để sửa."
+            : "Không tìm thấy dữ liệu cũ trong bộ nhớ đệm (có thể đã quá 7 ngày). Muốn đủ số liệu thì phải quét lại, và lần đó tốn tiền.",
+      });
+    } catch (e: any) {
+      console.error("repair channel:", e?.message || e);
+      res.status(500).json({ error: "Không sửa được." });
     }
   });
 

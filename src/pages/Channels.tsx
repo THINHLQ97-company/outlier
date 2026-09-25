@@ -30,6 +30,7 @@ import {
   ChannelPaidRequiredError,
   DuplicateChannelError,
   type AddChannelInput,
+  repairChannel,
 } from "../services/channels";
 import ConfirmDialog from "../components/ConfirmDialog";
 import type { WatchedChannel, WatchedChannelDetail, RadarItem, RadarConfidence, RadarMetricsSource } from "../types";
@@ -565,6 +566,7 @@ function ChannelDetailPanel({
   watchTimedOut,
   onRefresh,
   onRequestDelete,
+  onRefreshed,
 }: {
   detail: WatchedChannelDetail;
   watching: boolean;
@@ -572,7 +574,9 @@ function ChannelDetailPanel({
   watchTimedOut: boolean;
   onRefresh: () => void;
   onRequestDelete: () => void;
+  onRefreshed?: () => void;
 }) {
+  const [repairing, setRepairing] = useState(false);
   // Lần lấy dữ liệu đầu tiên: nhãn "MỚI" chưa có nghĩa vì mọi bài đều mới.
   // Dùng số lần quét do backend đếm — đúng kể cả khi người dùng đổi máy.
   const isFirstScan = !!detail.lastScanAt && detail.scanCount <= 1 && !watching;
@@ -631,6 +635,29 @@ function ChannelDetailPanel({
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {/* Sửa từ dữ liệu đã lưu trước: miễn phí, và nhiều khi đủ để lấp
+                chỗ thiếu mà không phải quét lại. */}
+            <button
+              type="button"
+              onClick={async () => {
+                setRepairing(true);
+                try {
+                  const r = await repairChannel(detail.id);
+                  alert(r.note);
+                  onRefreshed?.();
+                } catch (e: any) {
+                  alert(e?.message || "Không sửa được số liệu.");
+                } finally {
+                  setRepairing(false);
+                }
+              }}
+              disabled={repairing || watching}
+              className="ds-btn ds-btn-ghost"
+              title="Lấp số liệu còn thiếu bằng dữ liệu đã lưu — không tốn tiền"
+            >
+              {repairing ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : null}
+              Sửa số liệu cũ
+            </button>
             <button onClick={onRefresh} disabled={watching} className="ds-btn ds-btn-primary">
               {watching ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="w-4 h-4" aria-hidden="true" />}
               {watching ? "Đang làm mới..." : "Làm mới"}
