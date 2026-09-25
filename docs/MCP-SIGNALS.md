@@ -84,7 +84,9 @@ cài và không bao giờ lệch phiên bản. Xem `SERVER_INSTRUCTIONS` trong
 | `signals_set_cluster` | 🔴 Ghi | Gom nhiều tin trùng/liên quan thành 1 cụm | ids[], label | SỬA `clusterId`+`clusterLabel` các tín hiệu |
 | `signals_suggest_angle` | 🔴 Ghi | Gợi ý góc hài (cảnh + nhân vật + thoại) | id, scene, characters?[], dialogue?[], note? | SỬA `suggestionJson` của 1 tín hiệu |
 | `character_create` | 🔴 Ghi | Thêm nhân vật mới vào dàn (Claude đề xuất từ phân tích); chặn trùng tên dàn gốc, bắt mô tả ngoại hình đủ để vẽ lại giống nhau | name, prompt_description, kind?, personality?, catchphrase?, rationale? | THÊM dòng `characters` |
-| `character_set` | 🔴 Ghi | Sửa nhân vật do người dùng thêm. **Từ chối sửa dàn nhân vật gốc** (Gàn/Gèn/Chị Bão/Sếp/5 AI/Cơn Bão — ràng buộc đã duyệt) | character_id, name?, prompt_description?, personality?, catchphrase? | SỬA 1 `characters` |
+| `character_set` | 🔴 Ghi | Sửa nhân vật. Dàn gốc: **ngoại hình sửa được**, còn tên/tính cách/câu cửa miệng cố định (ràng buộc đã duyệt) | character_id, name?, prompt_description?, personality?, catchphrase? | SỬA 1 `characters` |
+| `character_image_get` | 🟢 Đọc | Xem ảnh mẫu đang dùng của nhân vật (trả ảnh vào chat) + mô tả ngoại hình đang lưu | character_id | Không đụng dữ liệu |
+| `character_image_set` | 🔴 Ghi | **Thay** ảnh mẫu bằng ảnh có sẵn (ảnh cắt từ bài thật) — đường sửa khi ảnh mẫu trong thư viện sai nét | character_id, image_base64 | SỬA `referenceImageUrl` |
 | `character_draw_reference` | 🔴 Ghi | Vẽ ảnh mẫu cho nhân vật và trả ảnh về chat để tự xem | character_id | SỬA `referenceImageUrl` + tốn phí Gemini |
 | `access_check` | 🟢 Đọc | Tài khoản đang kết nối là ai, có quyền ghi không, tool nào bị chặn | — | Không đụng dữ liệu |
 | `meta_token_check` | 🔴 Ghi | Dò tình trạng token Meta mọi trang đã nối + tự gia hạn cái sắp hết (job nền đã tự làm 12 giờ/lượt) | — | SỬA `meta_token_*` của `brand_fanpages` |

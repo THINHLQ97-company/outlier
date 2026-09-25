@@ -46,9 +46,23 @@ describe("MCP — dàn nhân vật gốc được bảo vệ", () => {
     }
   });
 
-  test("character_set từ chối sửa nhân vật gốc", () => {
-    assert.match(src, /CORE_CHARACTER_NAMES\.has\(existing\.name\)/);
+  test("nhân vật gốc: khoá tên/tính cách/câu cửa miệng", () => {
+    assert.match(src, /lockedFields\.push\("personality"\)/);
+    assert.match(src, /lockedFields\.push\("catchphrase"\)/);
     assert.match(src, /không sửa qua MCP/);
+  });
+
+  test("nhưng NGOẠI HÌNH của nhân vật gốc thì sửa được", () => {
+    // Mô tả ngoại hình sai (găng trắng trong khi ảnh thật không có) là gốc của
+    // việc vẽ ra không giống trang — chặn lại thì mãi không sửa được.
+    assert.doesNotMatch(src, /lockedFields\.push\("prompt_description"\)/);
+    assert.match(src, /Ngoại hình \(prompt_description\) và ảnh mẫu thì sửa được/);
+  });
+
+  test("có đường THAY ảnh mẫu, không chỉ vẽ lại bằng AI", () => {
+    // Ảnh mẫu trong thư viện sai nét thì vẽ lại bằng AI không cứu được.
+    assert.match(src, /name: "character_image_set"/);
+    assert.match(src, /name: "character_image_get"/);
   });
 
   test("character_create chặn trùng tên nhân vật gốc", () => {

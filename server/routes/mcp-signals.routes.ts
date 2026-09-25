@@ -77,7 +77,7 @@ Còn một luồng cũ vẫn dùng được: signals_score chấm tin theo rubri
 // được THÊM vai mới, không được sửa những vai này.
 const CORE_CHARACTER_NAMES = new Set(CHARACTERS.map((c) => c.name));
 
-const READONLY_TOOLS = new Set(["access_check", "styles_list", "style_brand_material", "daily_brief", "signals_list", "signals_get", "rubric_get", "characters_list", "brands_list", "brand_profile_get", "brand_brief", "radar_jobs_list", "radar_results", "deconstruct_get", "remake_get", "channels_list", "channel_items", "video_frames", "video_projects_list", "video_get"]);
+const READONLY_TOOLS = new Set(["access_check", "character_image_get", "styles_list", "style_brand_material", "daily_brief", "signals_list", "signals_get", "rubric_get", "characters_list", "brands_list", "brand_profile_get", "brand_brief", "radar_jobs_list", "radar_results", "deconstruct_get", "remake_get", "channels_list", "channel_items", "video_frames", "video_projects_list", "video_get"]);
 
 const TOOLS = [
   {
@@ -114,7 +114,7 @@ const TOOLS = [
   },
   {
     name: "character_set",
-    description: "Sửa nhân vật do người dùng tự thêm: ngoại hình, tính cách, câu cửa miệng. KHÔNG sửa được dàn nhân vật gốc của trang — tính cách của họ đã được chủ trang duyệt và cố định.",
+    description: "Sửa nhân vật: ngoại hình (prompt_description), tính cách, câu cửa miệng. Với dàn nhân vật gốc của trang thì NGOẠI HÌNH sửa được (mô tả sai là gốc của việc vẽ ra không giống), còn tên/tính cách/câu cửa miệng đã được chủ trang duyệt nên cố định.",
     annotations: { title: "Sửa nhân vật", readOnlyHint: false },
     inputSchema: {
       type: "object",
@@ -126,6 +126,31 @@ const TOOLS = [
         catchphrase: { type: "string" },
       },
       required: ["character_id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "character_image_get",
+    description: "XEM ảnh mẫu hiện tại của một nhân vật — trả ảnh thẳng vào khung chat để tự nhìn, kèm mô tả ngoại hình đang lưu. Gọi tool này TRƯỚC khi kết luận vì sao nhân vật vẽ ra không giống: sai thường nằm ở ảnh mẫu hoặc ở mô tả, không phải ở lời tả cảnh.",
+    annotations: { title: "Xem ảnh mẫu nhân vật", readOnlyHint: true },
+    inputSchema: {
+      type: "object",
+      properties: { character_id: { type: "string", description: "Mã nhân vật (từ characters_list)" } },
+      required: ["character_id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "character_image_set",
+    description: "THAY ảnh mẫu của nhân vật bằng ảnh bạn có (ảnh cắt từ bài thật của trang là chuẩn nhất). Dùng khi ảnh mẫu trong thư viện sai nét — vẽ lại bằng AI không cứu được, vì mọi bài sau đều bám theo ảnh mẫu này. Ảnh nền trơn, nhân vật đứng rõ là tốt nhất.",
+    annotations: { title: "Thay ảnh mẫu nhân vật", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: {
+        character_id: { type: "string", description: "Mã nhân vật (từ characters_list)" },
+        image_base64: { type: "string", description: "Ảnh dạng data URL (data:image/png;base64,...) hoặc base64 thuần" },
+      },
+      required: ["character_id", "image_base64"],
       additionalProperties: false,
     },
   },
@@ -939,9 +964,11 @@ async function callTool(name: string, args: any, principal: McpPrincipal, base =
         // Nói rõ ai không được sửa, để khỏi thử rồi bị từ chối.
         is_core: CORE_CHARACTER_NAMES.has(r.name),
         has_reference_image: !!r.referenceImageUrl,
+        reference_image_url: r.referenceImageUrl ? signedUrlFor(r.referenceImageUrl) : undefined,
       })),
       note:
-        "is_core=true là dàn nhân vật gốc của trang — tính cách đã được chủ trang duyệt, KHÔNG sửa. " +
+        "is_core=true là dàn nhân vật gốc: tên/tính cách/câu cửa miệng cố định, nhưng NGOẠI HÌNH và ẢNH MẪU sửa được " +
+        "(character_set + character_image_set) — vẽ ra không giống thì sửa ở đó. " +
         "Nhân vật thiếu ảnh mẫu thì mỗi bài vẽ ra một kiểu; gọi character_draw_reference để có ảnh mẫu.",
     };
   }
@@ -986,20 +1013,34 @@ async function callTool(name: string, args: any, principal: McpPrincipal, base =
     if (!UUID_RE.test(args.character_id || "")) throw new Error("character_id không hợp lệ");
     const [existing] = await db.select().from(charactersTable).where(eq(charactersTable.id, args.character_id));
     if (!existing) throw new Error("Không tìm thấy nhân vật");
-    if (CORE_CHARACTER_NAMES.has(existing.name)) {
-      throw new Error(
-        `"${existing.name}" thuộc dàn nhân vật gốc của trang — tính cách và ngoại hình đã được chủ trang duyệt ` +
-          "và cố định, không sửa qua MCP. Cần một vai khác thì tạo nhân vật mới bằng character_create.",
-      );
+    // Ranh giới đúng chỗ: ràng buộc đã duyệt là TÍNH CÁCH và TÊN của dàn nhân
+    // vật gốc — thứ làm nên nhân vật. NGOẠI HÌNH thì khác: nó chỉ là mô tả để
+    // vẽ, và mô tả sai (vd ghi găng trắng trong khi ảnh thật không có) là lỗi
+    // cần sửa, chặn lại chỉ khiến mọi ảnh vẽ ra mãi không giống trang.
+    const isCore = CORE_CHARACTER_NAMES.has(existing.name);
+    if (isCore) {
+      const lockedFields: string[] = [];
+      if (typeof args.name === "string" && args.name.trim() && args.name.trim() !== existing.name) {
+        lockedFields.push("name");
+      }
+      if (typeof args.personality === "string") lockedFields.push("personality");
+      if (typeof args.catchphrase === "string") lockedFields.push("catchphrase");
+      if (lockedFields.length) {
+        throw new Error(
+          `"${existing.name}" thuộc dàn nhân vật gốc: tên, tính cách và câu cửa miệng đã được chủ trang duyệt và ` +
+            `cố định, không sửa qua MCP (đang cố sửa: ${lockedFields.join(", ")}). ` +
+            "Ngoại hình (prompt_description) và ảnh mẫu thì sửa được — đó là chỗ cần sửa khi vẽ ra không giống.",
+        );
+      }
     }
 
     const patch: Record<string, any> = { updatedAt: new Date() };
-    if (typeof args.name === "string" && args.name.trim()) patch.name = args.name.trim();
+    if (!isCore && typeof args.name === "string" && args.name.trim()) patch.name = args.name.trim();
     if (typeof args.prompt_description === "string" && args.prompt_description.trim()) {
       patch.promptDescription = args.prompt_description.trim();
     }
-    if (typeof args.personality === "string") patch.personality = args.personality.trim() || null;
-    if (typeof args.catchphrase === "string") patch.catchphrase = args.catchphrase.trim() || null;
+    if (!isCore && typeof args.personality === "string") patch.personality = args.personality.trim() || null;
+    if (!isCore && typeof args.catchphrase === "string") patch.catchphrase = args.catchphrase.trim() || null;
     if (Object.keys(patch).length === 1) throw new Error("Không có gì để sửa");
 
     const [row] = await db
@@ -1013,6 +1054,88 @@ async function callTool(name: string, args: any, principal: McpPrincipal, base =
       note: patch.promptDescription
         ? "Đã đổi ngoại hình. Ảnh mẫu cũ giờ không khớp mô tả nữa — vẽ lại bằng character_draw_reference."
         : "Đã cập nhật.",
+    };
+  }
+
+  if (name === "character_image_get") {
+    if (!UUID_RE.test(args.character_id || "")) throw new Error("character_id không hợp lệ");
+    const [c] = await db.select().from(charactersTable).where(eq(charactersTable.id, args.character_id));
+    if (!c) throw new Error("Không tìm thấy nhân vật");
+    if (!c.referenceImageUrl) {
+      return {
+        id: c.id,
+        name: c.name,
+        has_reference_image: false,
+        prompt_description: c.promptDescription,
+        note: "Nhân vật này CHƯA có ảnh mẫu — mỗi bài sẽ vẽ ra một kiểu. Đưa ảnh vào bằng character_image_set (ảnh cắt từ bài thật là chuẩn nhất), hoặc để AI vẽ bằng character_draw_reference.",
+      };
+    }
+
+    const { storage, internalKeyFromUrl, contentTypeForKey } = await import("../storage");
+    const key = internalKeyFromUrl(c.referenceImageUrl);
+    const buf = key ? await storage.get(key).catch(() => null) : null;
+    if (!buf) {
+      return {
+        id: c.id,
+        name: c.name,
+        has_reference_image: false,
+        note: "Có đường dẫn ảnh mẫu nhưng file không còn (mất khi chuyển máy chủ). Đưa ảnh mới vào bằng character_image_set.",
+      };
+    }
+
+    return {
+      id: c.id,
+      name: c.name,
+      prompt_description: c.promptDescription,
+      reference_image_url: signedUrlFor(c.referenceImageUrl),
+      __mcpContent: [
+        imageBlock(buf.toString("base64"), contentTypeForKey(key!), `ảnh mẫu ${c.name}`),
+        {
+          type: "text",
+          text:
+            `Đây là ảnh mẫu ĐANG DÙNG cho "${c.name}" — mọi bài vẽ có nhân vật này đều bám theo ảnh này.\n\n` +
+            `Mô tả ngoại hình đang lưu: ${c.promptDescription}\n\n` +
+            "Nếu ảnh này khác nét thật của trang, hoặc mô tả không khớp ảnh, thì đó là gốc của việc vẽ ra không giống — " +
+            "sửa bằng character_image_set (thay ảnh) và character_set (sửa mô tả).",
+        },
+      ],
+    };
+  }
+
+  if (name === "character_image_set") {
+    if (!UUID_RE.test(args.character_id || "")) throw new Error("character_id không hợp lệ");
+    const [c] = await db.select().from(charactersTable).where(eq(charactersTable.id, args.character_id));
+    if (!c) throw new Error("Không tìm thấy nhân vật");
+
+    const raw = String(args.image_base64 || "").trim();
+    if (!raw) throw new Error("Cần image_base64");
+    const dataUrl = raw.startsWith("data:") ? raw : `data:image/png;base64,${raw}`;
+
+    const { parseDataUrl, storage, newKey, internalKeyFromUrl } = await import("../storage");
+    const parsed = parseDataUrl(dataUrl);
+    if (!parsed) throw new Error("Ảnh không đọc được (cần data:image base64).");
+    if (parsed.buffer.length > 8 * 1024 * 1024) throw new Error("Ảnh lớn hơn 8MB.");
+
+    const key = newKey("characters", parsed.ext);
+    await storage.put(key, parsed.buffer);
+    const referenceImageUrl = `/api/files/${key}`;
+
+    await db
+      .update(charactersTable)
+      .set({ referenceImageUrl, updatedAt: new Date() })
+      .where(eq(charactersTable.id, args.character_id));
+
+    // Dọn ảnh cũ SAU khi ghi ảnh mới: hỏng giữa chừng thì vẫn còn ảnh cũ mà dùng.
+    const oldKey = internalKeyFromUrl(c.referenceImageUrl);
+    if (oldKey) await storage.delete(oldKey).catch(() => {});
+
+    return {
+      id: c.id,
+      name: c.name,
+      reference_image_url: signedUrlFor(referenceImageUrl),
+      note:
+        `Đã thay ảnh mẫu cho "${c.name}". Mọi bài vẽ từ giờ bám theo ảnh này. ` +
+        "Nhớ đối chiếu mô tả ngoại hình (prompt_description) cho khớp ảnh mới — mô tả sai sẽ kéo ngược lại ảnh mẫu.",
     };
   }
 
