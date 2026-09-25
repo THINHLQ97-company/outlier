@@ -130,6 +130,15 @@ export async function repairChannelFromCache(channelId: string): Promise<RepairR
 
   let fixed = 0;
   for (const it of items) {
+    // Số người theo dõi vá được ngay, không cần hỏi ai: kênh đã biết rồi.
+    if (it.followerCount == null && chan.followerCount != null) {
+      await db
+        .update(radarItems)
+        .set({ followerCount: chan.followerCount })
+        .where(eq(radarItems.id, it.id));
+      fixed++;
+    }
+
     // Chỉ đụng vào bài đang thiếu — không ghi đè dữ liệu đang đúng.
     const missing = it.comments == null || it.shares == null || !it.coverUrl;
     if (!missing) continue;
@@ -159,6 +168,14 @@ export async function repairChannelFromCache(channelId: string): Promise<RepairR
       })
       .where(eq(radarItems.id, it.id));
     fixed++;
+  }
+
+  // Vá số liệu xong mà không chấm lại thì điểm vẫn là điểm tính trên dữ liệu
+  // thiếu — người dùng thấy comment đổ về nhưng dòng "chưa có số bình luận để
+  // đánh giá mức độ chạm" vẫn nằm đó.
+  if (fixed > 0) {
+    const jobIds = [...new Set(items.map((it) => it.jobId))];
+    for (const jid of jobIds) await rescoreRadarJob(jid).catch(() => {});
   }
 
   const note =
@@ -235,12 +252,21 @@ export async function refreshChannelInBackground(channelId: string, limit?: numb
       platforms: [chan.platform], status: "scanning",
     }).returning();
 
+    // Số người theo dõi của KÊNH — lấy từ bài nào có, hoặc từ lần quét trước.
+    //
+    // Phải biết trước khi chèn bài: việc chấm "vượt bao nhiêu lần mức thường
+    // ngày" đọc số này ở TỪNG BÀI. Trước đây chỉ ghi vào kênh, nên trang hiện
+    // "750 N theo dõi" ngay bên cạnh dòng "chưa có số người theo dõi để so
+    // sánh" — biết mà không dùng được, vì để nhầm chỗ.
+    const knownFollowers =
+      r.candidates.find((c) => c.followerCount != null)?.followerCount ?? chan.followerCount ?? null;
+
     await db.insert(radarItems).values(r.candidates.map((c) => ({
       jobId: job.id, platform: c.platform, itemKey: c.itemKey, url: c.url,
       title: c.title ?? null, coverUrl: c.coverUrl ?? null, durationSec: c.durationSec ?? null,
       publishedAt: c.publishedAt ? new Date(c.publishedAt) : null,
       channelKey: c.channelKey ?? null, channelName: c.channelName ?? null,
-      followerCount: c.followerCount ?? null,
+      followerCount: c.followerCount ?? knownFollowers,
       views: c.views ?? null, likes: c.likes ?? null,
       contentKind: (c as any).contentKind || "unknown",
       metricsSource: (c as any).__fromApify ? "apify" : "scan",
@@ -420,12 +446,53 @@ export function registerChannelRoutes(app: Express) {
       if (chan.owner !== username && !(await isActiveAdmin(username))) {
         return res.status(403).json({ error: "Không có quyền xem kênh này." });
       }
-      if (!chan.lastJobId) return res.json({ ...chan, items: [] });
+      // Gom bài của MỌI lần quét kênh này, không chỉ lần gần nhất.
+      //
+      // Trước đây chỉ đọc lastJobId. Hồi mỗi lần quét đều xin 20 bài thì phiên
+      // mới nhất gần như chứa đủ, nên không ai thấy vấn đề. Từ khi chỉ xin bài
+      // MỚI HƠN lần quét trước (để khỏi trả tiền cho bài đã có), phiên mới chỉ
+      // có vài bài — và cả trang chỉ còn vài bài, trông như vừa xoá sạch bài cũ.
+      // Bài cũ chưa bao giờ mất, chỉ là không được đọc lên.
+      const rows = await getDb()
+        .select({ item: radarItems })
+        .from(radarItems)
+        .innerJoin(radarJobs, eq(radarItems.jobId, radarJobs.id))
+        .where(eq(radarJobs.watchedChannelId, id))
+        .orderBy(desc(radarItems.createdAt))
+        .limit(500);
 
-      const items = await getDb().select().from(radarItems)
-        .where(eq(radarItems.jobId, chan.lastJobId))
-        .orderBy(desc(radarItems.isNew), desc(radarItems.outperformScore))
-        .limit(100);
+      // Một bài có thể xuất hiện ở nhiều phiên (lần quét sau vẫn trả về nó).
+      // Giữ bản GIÀU dữ liệu nhất: bản có số liệu tính tiền hơn bản quét chay,
+      // và trong cùng hạng thì bản mới hơn.
+      const richness = (it: any) =>
+        (it.metricsSource === "apify" ? 4 : 0) +
+        (it.comments != null ? 2 : 0) +
+        (it.shares != null ? 1 : 0) +
+        (it.coverUrl ? 1 : 0);
+      const best = new Map<string, any>();
+      for (const { item } of rows) {
+        const key = item.itemKey || item.url;
+        const cur = best.get(key);
+        if (!cur) {
+          best.set(key, item);
+          continue;
+        }
+        // isNew giữ lại nếu BẤT KỲ bản nào từng được đánh dấu mới.
+        const merged = richness(item) > richness(cur) ? { ...item } : { ...cur };
+        merged.isNew = cur.isNew || item.isNew;
+        best.set(key, merged);
+      }
+
+      const items = [...best.values()]
+        .sort((a, b) => {
+          if (a.isNew !== b.isNew) return a.isNew ? -1 : 1;
+          const at = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
+          const bt = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
+          if (at !== bt) return bt - at;
+          return (b.outperformScore ?? 0) - (a.outperformScore ?? 0);
+        })
+        .slice(0, 100);
+
       res.json({ ...chan, items });
     } catch (e: any) {
       console.error("channel items:", e?.message || e);

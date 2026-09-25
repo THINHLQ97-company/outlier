@@ -17,6 +17,7 @@ import {
   Heart,
   Brain,
   UserRound,
+  ImageOff,
 } from "lucide-react";
 import { studioGenerate, suggestScenario, type ScenarioVariant } from "../services/studio";
 import { regenerateImages, selectImage, saveOverlay, getPost, editImage, revertImage } from "../services/posts";
@@ -28,6 +29,7 @@ import { imageDisplayUrl } from "../services/http";
 import type { PostRow, CharacterRow, AssetRow, AssetKind, StyleRow, DialogueLine } from "../types";
 import { PANEL_LAYOUTS, BACKGROUND_OPTIONS } from "../../shared/engine-data";
 import CharacterPicker from "../components/CharacterPicker";
+import { useAppContext } from "../AppContext";
 import TextOverlayEditor from "../components/TextOverlayEditor";
 import ImageRegionEditor from "../components/ImageRegionEditor";
 
@@ -56,6 +58,7 @@ const KIND_LABEL: Record<AssetKind, string> = {
 // ảnh: chọn 1 trong 2 biến thể → chỉnh chữ (TextOverlayEditor) → lưu, ảnh nằm
 // thẳng trong Thư viện (không còn khâu gửi duyệt).
 export default function Studio() {
+  const { isAdmin } = useAppContext();
   // ----- cột trái: nhân vật + ảnh tham chiếu -----
   const [characters, setCharacters] = useState<CharacterRow[]>([]);
   const [selectedCharacterIds, setSelectedCharacterIds] = useState<string[]>([]);
@@ -531,11 +534,20 @@ export default function Studio() {
                           title={`${a.name} — ${KIND_LABEL[a.kind]}${a.kind === "meme_template" ? " (đính làm ảnh mẫu bố cục)" : ""}`}
                           className="block w-full text-left"
                         >
-                          <img
-                            src={imageDisplayUrl(a.imageUrl) || undefined}
-                            alt={a.name}
-                            className="w-full h-20 object-cover bg-stone-100"
-                          />
+                          {a.imageMissing ? (
+                            // Ô ảnh vỡ không nói được gì. Nói thẳng là file đã
+                            // mất, và bên dưới cho xoá.
+                            <div className="w-full h-20 bg-stone-100 flex flex-col items-center justify-center gap-0.5 text-stone-400">
+                              <ImageOff className="w-4 h-4" aria-hidden="true" />
+                              <span className="text-[9px]">Ảnh đã mất</span>
+                            </div>
+                          ) : (
+                            <img
+                              src={imageDisplayUrl(a.imageUrl) || undefined}
+                              alt={a.name}
+                              className="w-full h-20 object-cover bg-stone-100"
+                            />
+                          )}
                           {selected && (
                             <span className="absolute top-1 right-1 bg-storm-600 text-white rounded-full p-0.5">
                               <Check className="w-3 h-3" aria-hidden="true" />
@@ -546,7 +558,10 @@ export default function Studio() {
                             <span className={`text-[9px] font-medium px-1 rounded ${KIND_BADGE[a.kind]}`}>{KIND_LABEL[a.kind]}</span>
                           </div>
                         </button>
-                        {a.isMine && (
+                        {/* Ảnh đã mất thì ai thấy cũng dọn được: nó không xem
+                            được, không vẽ được, và người thấy thường không phải
+                            người đã tải lên. */}
+                        {(a.isMine || isAdmin || a.imageMissing) && (
                           <button
                             type="button"
                             onClick={() => handleDeleteAsset(a.id)}

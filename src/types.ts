@@ -230,6 +230,8 @@ export interface AssetRow {
   createdAt: string;
   updatedAt: string;
   isMine: boolean; // server đính cờ: asset này thuộc user hiện tại (mới được sửa/xoá)
+  /** File ảnh đã mất (chuyển máy chủ, mất volume) — dòng dữ liệu còn nhưng vô dụng. */
+  imageMissing?: boolean;
 }
 
 // ===== styles — thư viện phong cách vẽ (ảnh tham chiếu + mô tả JSON) =====
