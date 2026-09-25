@@ -490,6 +490,57 @@ export function registerDeconstructRoutes(app: Express) {
     }
   });
 
+  // POST /api/deconstructions/from-trend — biến một xu hướng thành CÁCH TRIỂN
+  // KHAI, để nó đi đúng luồng như mọi nguồn khác (bóc → viết lại + điều hướng).
+  //
+  // Trước đây trend nhảy thẳng ra bài: không xem lại được công thức đã dùng,
+  // không sửa được nó, và không lái được góc bài.
+  app.post("/api/deconstructions/from-trend", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const title = String(req.body?.title || "").trim();
+    const summary = String(req.body?.summary || "").trim();
+    const sourceUrl = String(req.body?.sourceUrl || "").trim();
+    if (!title && !summary) return res.status(400).json({ error: "Cần tiêu đề hoặc nội dung xu hướng." });
+
+    try {
+      const db = getDb();
+      const [row] = await db
+        .insert(deconstructions)
+        .values({
+          owner: getAuthUser(req)!,
+          sourceUrl: sourceUrl || "trend://" + encodeURIComponent(title.slice(0, 60)),
+          platform: "trend",
+          contentKind: "post",
+          status: "analyzing",
+          title: title.slice(0, 200) || "Xu hướng",
+          bodyText: summary || null,
+        } as any)
+        .returning({ id: deconstructions.id });
+
+      res.status(201).json({ id: row.id, status: "analyzing", polling: true });
+
+      // Chạy nền: lên góc mất vài giây, giữ request mở là vô ích.
+      void (async () => {
+        const { structureFromTrend } = await import("../services/trend-structure");
+        const out = await structureFromTrend(title, summary);
+        await db
+          .update(deconstructions)
+          .set({
+            status: out.structure ? "ready" : "error",
+            structure: out.structure,
+            analysisMode: "transcript",
+            analyzedBy: "gemini",
+            errorMessage: out.warning || null,
+            updatedAt: new Date(),
+          } as any)
+          .where(eq(deconstructions.id, row.id));
+      })().catch((e: any) => console.error("from-trend:", e?.message || e));
+    } catch (e: any) {
+      console.error("deconstruct from trend:", e?.message || e);
+      res.status(500).json({ error: "Không lên góc được từ xu hướng này." });
+    }
+  });
+
   // POST /api/deconstructions/:id/retry-paid — chạy lại CHÍNH bản này ở chế độ
   // có phí.
   //

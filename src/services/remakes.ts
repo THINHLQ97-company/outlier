@@ -27,6 +27,8 @@ export interface CreateRemakeInput {
   brandId: string;
   deconstructionId: string;
   format: RemakeFormat;
+  /** Hướng nội dung do chủ trang đặt — thắng chủ đề của bài gốc. */
+  direction?: string;
 }
 
 // Trả về gần như ngay (status="pending") — viết chạy nền, nơi dùng phải tự

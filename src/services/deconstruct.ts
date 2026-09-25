@@ -173,3 +173,19 @@ export async function retryPaidDeconstruction(id: string): Promise<Deconstructio
   if (!res.ok) return asError(res, "Không chạy lại được.");
   return res.json();
 }
+
+// Biến một XU HƯỚNG thành cách triển khai, để nó đi đúng luồng bóc → viết lại
+// (và qua được chỗ điều hướng nội dung) thay vì nhảy thẳng ra bài.
+export async function deconstructFromTrend(input: {
+  title: string;
+  summary?: string;
+  sourceUrl?: string;
+}): Promise<{ id: string; status: string }> {
+  const res = await fetch("/api/deconstructions/from-trend", {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) return asError(res, "Không lên góc được từ xu hướng này.");
+  return res.json();
+}

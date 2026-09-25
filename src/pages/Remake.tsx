@@ -89,6 +89,9 @@ export default function Remake() {
   // Mặc định BÀI ĐĂNG: phần lớn việc ở đây là viết lại bài, còn kịch bản video
   // là nhánh phụ và đang chưa ổn định.
   const [formFormat, setFormFormat] = useState<RemakeFormat>("post");
+  // Hướng nội dung: giữ cách triển khai của bài gốc nhưng đổi nội dung sang thứ
+  // trang muốn nói. Thiếu ô này thì bản viết luôn bám nguyên chủ đề bài gốc.
+  const [formDirection, setFormDirection] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -255,7 +258,12 @@ export default function Remake() {
     setCreating(true);
     setCreateError(null);
     try {
-      const result = await createRemake({ brandId: formBrandId, deconstructionId: formDeconId, format: formFormat });
+      const result = await createRemake({
+        brandId: formBrandId,
+        deconstructionId: formDeconId,
+        format: formFormat,
+        direction: formDirection.trim() || undefined,
+      });
       const { polling, message, hint, ...row } = result;
       void polling;
       void message;
@@ -348,6 +356,8 @@ export default function Remake() {
         onDeconIdChange={setFormDeconId}
         format={formFormat}
         onFormatChange={setFormFormat}
+        direction={formDirection}
+        onDirectionChange={setFormDirection}
         submitting={creating}
         error={createError}
         onSubmit={handleCreate}
@@ -478,6 +488,8 @@ function NewRemakeForm({
   onDeconIdChange,
   format,
   onFormatChange,
+  direction,
+  onDirectionChange,
   submitting,
   error,
   onSubmit,
@@ -492,6 +504,8 @@ function NewRemakeForm({
   onDeconIdChange: (v: string) => void;
   format: RemakeFormat;
   onFormatChange: (v: RemakeFormat) => void;
+  direction: string;
+  onDirectionChange: (v: string) => void;
   submitting: boolean;
   error: string | null;
   onSubmit: (e: React.FormEvent) => void;
@@ -571,6 +585,28 @@ function NewRemakeForm({
             <option value="post">{FORMAT_LABEL.post}</option>
           </select>
         </div>
+      </div>
+
+      {/* Hướng nội dung: chỗ lái bài đi nơi khác mà vẫn giữ cách triển khai.
+          Thiếu nó thì bản viết luôn bám nguyên chủ đề bài gốc, kể cả khi chủ đề
+          đó không phải thứ trang muốn nói. */}
+      <div>
+        <label className="ds-label" htmlFor="rm-direction">
+          Hướng nội dung <span className="font-normal text-stone-400">(tuỳ chọn)</span>
+        </label>
+        <textarea
+          id="rm-direction"
+          rows={2}
+          className="ds-input w-full"
+          value={direction}
+          onChange={(e) => onDirectionChange(e.target.value)}
+          disabled={submitting}
+          placeholder='Muốn lái bài đi đâu? VD: "giữ bối cảnh vẽ chân dung nhưng nói sâu về kỹ thuật" · "đổi sang góc nhìn người mới vào nghề" · "hài hơn, bớt nghiêm túc"'
+        />
+        <p className="text-[11px] text-stone-400 mt-1">
+          Bỏ trống thì bám chủ đề bài gốc. Điền vào thì giữ CÁCH TRIỂN KHAI của bài gốc, còn nội dung đi theo hướng bạn
+          đặt.
+        </p>
       </div>
 
       <div>

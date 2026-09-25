@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { RefreshCw, Plus, Loader2, X, ExternalLink, AlertTriangle, Wand2, Sparkles, TrendingUp, Trash2, Eraser } from "lucide-react";
+import { deconstructFromTrend } from "../services/deconstruct";
+import { RefreshCw, Plus, Loader2, X, ExternalLink, AlertTriangle, Wand2, Sparkles, TrendingUp, Trash2, Eraser, Scissors } from "lucide-react";
 import { listSignals, syncSignals, createManualSignal, scanGoogleTrends, deleteSignal, purgeSignals } from "../services/signals";
 import type { Signal } from "../types";
 import { AXES, type AxisKey } from "../../shared/engine-data";
@@ -59,6 +60,25 @@ function fmtDate(iso: string) {
 // phần chấm điểm/rubric để trang này dễ dùng, không cần biết thuật ngữ nội bộ.
 export default function SignalsQueue() {
   const navigate = useNavigate();
+  // Trend đi qua bóc cấu trúc như mọi nguồn khác: có công thức xem lại được, và
+  // qua được chỗ điều hướng nội dung ở bước viết.
+  const [trendBusyId, setTrendBusyId] = useState<string | null>(null);
+
+  async function handleTrendToRemake(s: { id: string; title: string; rawSummary?: string | null; sourceUrl?: string | null }) {
+    setTrendBusyId(s.id);
+    try {
+      const out = await deconstructFromTrend({
+        title: s.title,
+        summary: s.rawSummary || undefined,
+        sourceUrl: s.sourceUrl || undefined,
+      });
+      navigate(`/deconstruct?id=${out.id}`);
+    } catch (e: any) {
+      window.alert(e?.message || "Không lên góc được từ xu hướng này.");
+    } finally {
+      setTrendBusyId(null);
+    }
+  }
   const [signals, setSignals] = useState<Signal[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -348,6 +368,21 @@ export default function SignalsQueue() {
                     title={s.suggestionJson?.scene ? "Mở Sáng tạo với góc hài + nhân vật + thoại điền sẵn" : "Mở trang Sáng tạo với mô tả bối cảnh điền sẵn từ tín hiệu này"}
                   >
                     <Wand2 className="w-3.5 h-3.5" aria-hidden="true" /> Đưa sang Sáng tạo
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleTrendToRemake(s)}
+                    disabled={trendBusyId === s.id}
+                    className="ds-btn ds-btn-primary ds-btn-sm"
+                    title="Lên góc tiếp cận từ trend này rồi sang viết bài cho thương hiệu — đi qua bước bóc cấu trúc như mọi nguồn khác"
+                  >
+                    {trendBusyId === s.id ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Scissors className="w-3.5 h-3.5" aria-hidden="true" />
+                    )}
+                    Bóc góc & viết bài
                   </button>
                 </div>
               </div>

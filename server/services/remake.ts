@@ -13,6 +13,16 @@ export interface BrandContext extends BrandGuard {
   name: string;
   audience?: BrandField<string> | null;
   toneOfVoice?: BrandField<string> | null;
+  /**
+   * Hồ sơ thương hiệu đầy đủ, dạng văn xuôi (buildBrandBrief).
+   *
+   * Vì sao thêm: phần mô tả cũ chỉ đưa 6 trường (bán gì, khách, giọng, xưng hô,
+   * công dụng, từ cấm) vào prompt — bỏ qua hẳn vai của trang, tính cách, ngữ
+   * vực, câu cửa miệng, mảng nội dung theo đuổi và BÀI MẪU đã duyệt. Đó chính
+   * là những thứ làm nên "giọng của trang", nên bản viết ra đúng nội dung mà
+   * sai chất.
+   */
+  brief?: string | null;
 }
 
 export type RemakeFormat = "video_script" | "post";
@@ -74,6 +84,7 @@ function buildPrompt(
   format: RemakeFormat,
   note?: string,
   audienceText?: string,
+  direction?: string,
 ): string {
   const kind = format === "post" ? "một bài đăng mạng xã hội" : "một kịch bản video ngắn (kèm mốc thời gian gợi ý)";
   return `Bạn viết nội dung cho thương hiệu dưới đây. Hãy viết ${kind} MỚI, đi theo CÁCH TRIỂN KHAI đã cho.
@@ -87,10 +98,13 @@ QUY TẮC BẮT BUỘC:
 6. Mục nào ghi "CHƯA CÓ DỮ LIỆU" thì không được tự bịa.
 ${audienceText ? `7. Bài gốc đã có người bàn tán — viết bám vào thứ HỌ QUAN TÂM, đừng chỉ bám nội dung bài gốc. Bài nói một đằng người đọc bàn một nẻo là chuyện thường, và thứ họ bàn mới là thứ đáng viết tiếp.` : ""}
 
-${describeBrand(brand)}
+${brand.brief?.trim() ? brand.brief : describeBrand(brand)}
+
+${brand.brief?.trim() ? "Bám sát hồ sơ trên: giọng, xưng hô, câu cửa miệng, mảng nội dung theo đuổi, và nhất là BÀI MẪU ĐÃ ĐƯỢC DUYỆT (nếu có) — viết sao cho đặt cạnh bài mẫu thì người đọc thấy cùng một người viết." : ""}
 
 ${describeFormula(structure)}
 ${audienceText ? `\n=== NGƯỜI ĐỌC BÀI GỐC QUAN TÂM GÌ ===\n${audienceText}` : ""}
+${direction?.trim() ? `\n=== HƯỚNG NỘI DUNG PHẢI THEO ===\n${direction.trim()}\n\nĐây là yêu cầu của chủ trang và nó THẮNG chủ đề của bài gốc. Giữ lại CÁCH TRIỂN KHAI (nhịp, thủ pháp mở, cách giữ chân, cách chốt) và bối cảnh nếu còn hợp, nhưng nội dung phải đi theo hướng này. Ví dụ: bài gốc kể chuyện vẽ chân dung, hướng yêu cầu là "nói sâu về kỹ thuật" thì viết về kỹ thuật vẽ chứ không kể lại câu chuyện.` : ""}
 ${note ? `\nYÊU CẦU CHỈNH SỬA THÊM: ${note}` : ""}
 
 Trả về DUY NHẤT phần nội dung đã viết, không giải thích, không mở đầu bằng "Đây là...".`;
@@ -105,12 +119,12 @@ export async function writeRemake(
   brand: BrandContext,
   structure: DeconstructedStructure,
   format: RemakeFormat,
-  opts: { sourceText?: string | null; note?: string; audienceText?: string } = {},
+  opts: { sourceText?: string | null; note?: string; audienceText?: string; direction?: string } = {},
 ): Promise<RemakeOutcome> {
   let draft: string;
   try {
     draft = (
-      await generateTextGemini(buildPrompt(brand, structure, format, opts.note, opts.audienceText), {
+      await generateTextGemini(buildPrompt(brand, structure, format, opts.note, opts.audienceText, opts.direction), {
         asPlainText: true,
       })
     ).trim();

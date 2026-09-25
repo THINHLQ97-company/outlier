@@ -23,6 +23,18 @@ function dbDown(res: any): boolean {
   return false;
 }
 
+/**
+ * Hồ sơ thương hiệu đầy đủ cho việc viết.
+ *
+ * Mọi đường vào (viết mới, sửa lại, MCP) đều phải đi qua đây — thiếu brief thì
+ * bản viết ra đúng nội dung nhưng sai giọng, và đó là lỗi khó thấy nhất.
+ */
+async function brandContextWithBrief(brand: any): Promise<BrandContext> {
+  const pages = await getDb().select().from(brandFanpages).where(eq(brandFanpages.brandId, brand.id));
+  const { buildBrandBrief } = await import("../services/brand-brief");
+  return { ...toBrandContext(brand), brief: buildBrandBrief(brand, pages as any, "writing") };
+}
+
 function toBrandContext(b: any): BrandContext {
   return {
     name: b.name,
@@ -41,10 +53,11 @@ export async function runRemakeInBackground(
   note?: string,
   previousDraft?: string | null,
   audienceText?: string,
+  direction?: string,
 ) {
   try {
     await getDb().update(remakes).set({ status: "writing", updatedAt: new Date() }).where(eq(remakes.id, id));
-    const r = await writeRemake(brand, structure, format, { sourceText, note, audienceText });
+    const r = await writeRemake(brand, structure, format, { sourceText, note, audienceText, direction });
 
     if (!r.draft) {
       await getDb().update(remakes)
@@ -225,10 +238,28 @@ export function registerRemakeRoutes(app: Express) {
       const { imageReadingToText } = await import("../services/image-read");
       const imageText = decon.imageReading ? imageReadingToText(decon.imageReading as any) : undefined;
 
+      // Hồ sơ đầy đủ, không phải vài trường lẻ: vai của trang, tính cách, ngữ
+      // vực, câu cửa miệng và bài mẫu đã duyệt mới là thứ làm nên giọng.
+      const brandCtx = await brandContextWithBrief(brand);
+
+      // Hướng nội dung do chủ trang đặt: giữ cách triển khai của bài gốc nhưng
+      // đổi nội dung sang hướng mình muốn (vd giữ bối cảnh vẽ chân dung nhưng
+      // nói sâu về kỹ thuật). Không có chỗ này thì bản viết luôn bám nguyên chủ
+      // đề bài gốc, kể cả khi chủ đề đó không phải thứ trang muốn nói.
+      let direction = typeof req.body?.direction === "string" ? req.body.direction.trim() : "";
+      // Bài từ XU HƯỚNG mà chủ trang chưa nêu hướng: mặc định hài và bám mảng
+      // nội dung của trang. Trend chỉ là cái cớ để nói chuyện của trang, viết
+      // nghiêm túc kiểu đưa tin là lạc hẳn giọng.
+      if (!direction && decon.platform === "trend") {
+        const { TREND_DEFAULT_DIRECTION } = await import("../services/trend-structure");
+        direction = TREND_DEFAULT_DIRECTION;
+      }
+
       void runRemakeInBackground(
-        row.id, toBrandContext(brand), decon.structure as DeconstructedStructure,
+        row.id, brandCtx, decon.structure as DeconstructedStructure,
         format, decon.transcript, undefined, undefined,
         [audienceText, imageText].filter(Boolean).join("\n\n") || undefined,
+        direction || undefined,
       );
     } catch (e: any) {
       console.error("remake create:", e?.message || e);
@@ -262,7 +293,7 @@ export function registerRemakeRoutes(app: Express) {
       res.json({ ...row, status: "writing", polling: true, message: "Đang chỉnh lại bản viết." });
 
       void runRemakeInBackground(
-        id, toBrandContext(brand), (decon?.structure || {}) as DeconstructedStructure,
+        id, await brandContextWithBrief(brand), (decon?.structure || {}) as DeconstructedStructure,
         row.format as RemakeFormat, decon?.transcript ?? null, note, row.draft,
       );
     } catch (e: any) {
