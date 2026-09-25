@@ -26,7 +26,7 @@ cho script và thử tay.
 **1. Không có biến môi trường nào được để trống.** Vibe Host đọc
 `.env.example`, đòi đủ mọi biến, và từ chối cả chuỗi rỗng lẫn khoảng trắng.
 Các tích hợp tuỳ chọn (Google SSO, Market Radar, Group Insights, Social
-backend, FB page) vì vậy phải điền sentinel:
+backend, FB page, Meta app) vì vậy phải điền sentinel:
 
 - biến thường → `off`
 - biến tên `*_URL` → `https://off.invalid/` (host bắt phải là URL hợp lệ;

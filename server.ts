@@ -44,6 +44,11 @@ const OPTIONAL_ENV_KEYS = [
   "SOCIAL_BACKEND_TOKEN",
   "FB_PAGE_ID",
   "FB_ACCESS_TOKEN",
+  // Chưa điền thì token Meta không tự gia hạn được (Meta đòi App Secret cho mọi
+  // bước). Phải nằm trong danh sách này để sentinel "off" được hiểu đúng là
+  // "chưa cấu hình", chứ không thành App Secret sai rồi báo lỗi lệch chỗ.
+  "META_APP_ID",
+  "META_APP_SECRET",
 ];
 // Host còn bắt các biến *_URL phải là URL hợp lệ, nên sentinel cho chúng là
 // https://off.invalid/ (.invalid là TLD dành riêng, RFC 2606 — không phân giải).
