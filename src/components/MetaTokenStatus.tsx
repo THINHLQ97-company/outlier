@@ -9,9 +9,9 @@ import { listMetaTokens, checkMetaTokens, type MetaTokenStatusRow } from "../ser
 // Giờ hệ thống tự nâng token lúc nối và tự gia hạn hằng ngày; khu này để người
 // dùng NHÌN THẤY điều đó đang xảy ra, thay vì phải tin.
 //
-// Vẫn nói thẳng khi không tự lo được: thiếu META_APP_ID/SECRET thì Meta không
-// cho gia hạn, và im lặng ở đây sẽ khiến người dùng tưởng mọi thứ ổn tới lúc
-// quét bài thất bại.
+// Vẫn nói thẳng khi không tự lo được: thiếu META_APP_SECRET thì Meta không cho
+// gia hạn, và im lặng ở đây sẽ khiến người dùng tưởng mọi thứ ổn tới lúc quét
+// bài thất bại. (App ID thì không cần khai — tự tra được từ token.)
 
 function StatusBadge({ row }: { row: MetaTokenStatusRow }) {
   if (row.neverExpires) {

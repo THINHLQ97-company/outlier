@@ -11,7 +11,7 @@ import { eq, isNotNull } from "drizzle-orm";
 import { getDb, isDbConfigured } from "../db/client";
 import { brandFanpages } from "../db/schema";
 import { encryptToken, decryptToken } from "./meta-token";
-import { metaAppCreds, checkAndRenew, WARN_WHEN_DAYS_LEFT, type TokenStatus } from "./meta-token-health";
+import { metaAppCreds, resolveMetaCreds, checkAndRenew, WARN_WHEN_DAYS_LEFT, type TokenStatus } from "./meta-token-health";
 
 export interface PageTokenReport {
   fanpageId: string;
@@ -40,19 +40,34 @@ export async function sweepMetaTokens(): Promise<TokenSweepResult> {
   if (!isDbConfigured()) {
     return { ran: false, ...empty, skippedReason: "Chưa cấu hình DATABASE_URL." };
   }
-  const creds = metaAppCreds();
+  const db = getDb();
+  const rows = await db.select().from(brandFanpages).where(isNotNull(brandFanpages.metaTokenEnc));
+
+  // App ID tra được từ chính token đã lưu, nên chỉ App Secret là bắt buộc.
+  // Giải mã trước vài token để có cái mà tra — cái đầu có thể đã chết.
+  const seedTokens: string[] = [];
+  for (const r of rows.slice(0, 5)) {
+    try {
+      if (r.metaUserTokenEnc) seedTokens.push(decryptToken(r.metaUserTokenEnc));
+      if (r.metaTokenEnc) seedTokens.push(decryptToken(r.metaTokenEnc));
+    } catch {
+      // Giải mã hỏng (AUTH_SECRET đổi) thì bỏ qua token này.
+    }
+  }
+
+  const creds = await resolveMetaCreds(seedTokens);
   if (!creds) {
+    const hasSecret = !!(process.env.META_APP_SECRET || "").trim();
     return {
       ran: false,
       ...empty,
-      skippedReason:
-        "Chưa cấu hình META_APP_ID / META_APP_SECRET — Meta đòi App Secret cho mọi bước gia hạn, " +
-        "nên không có hai biến này thì token phải dán tay.",
+      skippedReason: hasSecret
+        ? "Có META_APP_SECRET nhưng chưa xác định được App ID: chưa trang nào nối Meta để tra, hoặc token đã lưu đều hỏng. " +
+          "Nối một trang (token nào cũng được) là hệ thống tự tra ra App ID."
+        : "Chưa cấu hình META_APP_SECRET — Meta đòi App Secret cho mọi bước gia hạn, nên không có nó thì token phải dán tay. " +
+          "App ID thì không cần điền, hệ thống tự tra từ token.",
     };
   }
-
-  const db = getDb();
-  const rows = await db.select().from(brandFanpages).where(isNotNull(brandFanpages.metaTokenEnc));
 
   const pages: PageTokenReport[] = [];
   let renewedCount = 0;
@@ -172,10 +187,14 @@ export async function metaTokenStatusList(): Promise<{
   reason?: string;
   pages: MetaTokenStatusRow[];
 }> {
-  const creds = metaAppCreds();
+  // Chỉ xét env ở đây (không gọi Meta để tra App ID): khu này phải hiện ra ngay.
+  // Có Secret là coi như bật được — App ID tự tra ở lượt dò.
+  const hasSecret = !!(process.env.META_APP_SECRET || "").trim();
+  const creds = metaAppCreds() || (hasSecret ? { appId: "(tự tra)", appSecret: "" } : null);
   const reason = creds
     ? undefined
-    : "Chưa cấu hình META_APP_ID / META_APP_SECRET nên không tự gia hạn được — token sẽ phải dán tay khi hết hạn.";
+    : "Chưa cấu hình META_APP_SECRET nên không tự gia hạn được — token sẽ phải dán tay khi hết hạn. " +
+      "App ID không cần điền, hệ thống tự tra từ token đã lưu.";
 
   if (!isDbConfigured()) return { autoRenewEnabled: !!creds, reason, pages: [] };
 

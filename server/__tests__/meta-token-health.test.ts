@@ -2,6 +2,9 @@ import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import {
   metaAppCreds,
+  discoverAppId,
+  resolveMetaCreds,
+  resetDiscoveredAppId,
   inspectToken,
   checkAndRenew,
   upgradeTokenForPage,
@@ -287,5 +290,104 @@ describe("upgradeTokenForPage — nâng ngay lúc nối, xoá việc dán tay", 
       return undefined as any;
     });
     await assert.rejects(() => upgradeTokenForPage("ngan-han", "p1", creds), /business_tools/);
+  });
+});
+
+describe("discoverAppId / resolveMetaCreds — App ID tự tra, không bắt người dùng đi copy", () => {
+  test("token tự soi được thì lấy app_id từ debug_token", async () => {
+    graph((url) =>
+      url.pathname.endsWith("/debug_token") ? { body: { data: { app_id: "999", is_valid: true } } } : (undefined as any),
+    );
+    assert.equal(await discoverAppId("t"), "999");
+  });
+
+  test("debug_token không cho thì lùi về /app", async () => {
+    graph((url) => {
+      if (url.pathname.endsWith("/debug_token"))
+        return { status: 400, body: { error: { code: 190, message: "Không soi được" } } };
+      if (url.pathname.endsWith("/app")) return { body: { id: "888", name: "Outlier" } };
+      return undefined as any;
+    });
+    assert.equal(await discoverAppId("t"), "888");
+  });
+
+  test("cả hai đường đều tắc thì trả null, không đoán bừa", async () => {
+    graph(() => ({ status: 400, body: { error: { message: "nope" } } }));
+    assert.equal(await discoverAppId("t"), null);
+  });
+
+  test("có Secret mà thiếu App ID thì tự tra rồi ghép thành creds", async () => {
+    resetDiscoveredAppId();
+    const old = { id: process.env.META_APP_ID, secret: process.env.META_APP_SECRET };
+    delete process.env.META_APP_ID;
+    process.env.META_APP_SECRET = "bi-mat";
+    graph(debugTokenRoute({ app_id: "777", is_valid: true }));
+
+    const out = await resolveMetaCreds(["token-da-luu"]);
+    assert.deepEqual(out, { appId: "777", appSecret: "bi-mat" });
+
+    if (old.id) process.env.META_APP_ID = old.id;
+    if (old.secret) process.env.META_APP_SECRET = old.secret; else delete process.env.META_APP_SECRET;
+    resetDiscoveredAppId();
+  });
+
+  test("tra được một lần thì nhớ, không hỏi Meta lại mỗi lượt", async () => {
+    resetDiscoveredAppId();
+    const old = { id: process.env.META_APP_ID, secret: process.env.META_APP_SECRET };
+    delete process.env.META_APP_ID;
+    process.env.META_APP_SECRET = "bi-mat";
+    let calls = 0;
+    graph((url) => {
+      if (url.pathname.endsWith("/debug_token")) {
+        calls++;
+        return { body: { data: { app_id: "777", is_valid: true } } };
+      }
+      return undefined as any;
+    });
+
+    await resolveMetaCreds(["t"]);
+    await resolveMetaCreds(["t"]);
+    assert.equal(calls, 1, `hỏi Meta ${calls} lần, đáng ra 1`);
+
+    if (old.id) process.env.META_APP_ID = old.id;
+    if (old.secret) process.env.META_APP_SECRET = old.secret; else delete process.env.META_APP_SECRET;
+    resetDiscoveredAppId();
+  });
+
+  test("token đầu chết thì thử token sau, đừng bỏ cuộc", async () => {
+    resetDiscoveredAppId();
+    const old = { id: process.env.META_APP_ID, secret: process.env.META_APP_SECRET };
+    delete process.env.META_APP_ID;
+    process.env.META_APP_SECRET = "bi-mat";
+    graph((url) => {
+      if (!url.pathname.endsWith("/debug_token") && !url.pathname.endsWith("/app")) return undefined as any;
+      const t = url.searchParams.get("input_token") || url.searchParams.get("access_token");
+      if (t === "chet") return { status: 400, body: { error: { code: 190, message: "hỏng" } } };
+      return { body: { data: { app_id: "666", is_valid: true } } };
+    });
+
+    const out = await resolveMetaCreds(["chet", "con-song"]);
+    assert.equal(out?.appId, "666");
+
+    if (old.id) process.env.META_APP_ID = old.id;
+    if (old.secret) process.env.META_APP_SECRET = old.secret; else delete process.env.META_APP_SECRET;
+    resetDiscoveredAppId();
+  });
+
+  test("KHÔNG có Secret thì đừng cố tra — Secret chỉ chủ app có, tra App ID cũng vô ích", async () => {
+    resetDiscoveredAppId();
+    const old = { id: process.env.META_APP_ID, secret: process.env.META_APP_SECRET };
+    delete process.env.META_APP_ID;
+    delete process.env.META_APP_SECRET;
+    let called = false;
+    graph(() => {
+      called = true;
+      return { body: { data: { app_id: "555" } } };
+    });
+    assert.equal(await resolveMetaCreds(["t"]), null);
+    assert.equal(called, false, "không có Secret thì đừng gọi Meta cho tốn");
+    if (old.id) process.env.META_APP_ID = old.id;
+    if (old.secret) process.env.META_APP_SECRET = old.secret;
+    resetDiscoveredAppId();
   });
 });

@@ -42,6 +42,68 @@ export function metaAppCreds(): MetaAppCreds | null {
   return { appId, appSecret };
 }
 
+// App ID tự tra được, nhớ lại trong tiến trình để không hỏi Meta mỗi lượt.
+let discoveredAppId: string | null = null;
+
+/**
+ * Tra App ID từ chính token đã có.
+ *
+ * Vì sao làm được: token nào cũng do MỘT ứng dụng cấp, và Meta nói ra ứng dụng
+ * đó nếu ta hỏi bằng chính token ấy. Nên chỉ App Secret là đủ để chạy — không
+ * cần bắt người dùng đi copy thêm App ID, một con số đã nằm sẵn trong dữ liệu.
+ *
+ * Hai đường, thử lần lượt: debug_token tự soi, rồi /app.
+ */
+export async function discoverAppId(token: string): Promise<string | null> {
+  try {
+    const body = await graphGet("debug_token", { input_token: token, access_token: token });
+    const id = body?.data?.app_id;
+    if (id) return String(id);
+  } catch {
+    // Token có thể không tự soi được — thử đường thứ hai.
+  }
+  try {
+    const body = await graphGet("app", { fields: "id,name", access_token: token });
+    if (body?.id) return String(body.id);
+  } catch {
+    // Không tra được thì nói không biết, đừng đoán.
+  }
+  return null;
+}
+
+/**
+ * Lấy đủ App ID + Secret để làm việc: env trước, thiếu App ID thì tự tra từ
+ * token đang có.
+ *
+ * `tokensForDiscovery` là các token có thể dùng để tra — truyền vài cái vì cái
+ * đầu có thể đã chết.
+ */
+export async function resolveMetaCreds(tokensForDiscovery: string[] = []): Promise<MetaAppCreds | null> {
+  const fromEnv = metaAppCreds();
+  if (fromEnv) return fromEnv;
+
+  const appSecret = (process.env.META_APP_SECRET || "").trim();
+  if (!appSecret) return null; // Secret thì không tra hộ được — chỉ chủ app có.
+
+  if (discoveredAppId) return { appId: discoveredAppId, appSecret };
+
+  for (const token of tokensForDiscovery) {
+    if (!token?.trim()) continue;
+    const id = await discoverAppId(token.trim());
+    if (id) {
+      discoveredAppId = id;
+      console.log(`[meta-token] Tự tra được App ID ${id} từ token đã lưu — không cần điền META_APP_ID.`);
+      return { appId: id, appSecret };
+    }
+  }
+  return null;
+}
+
+/** Dùng trong test để quên App ID đã tra. */
+export function resetDiscoveredAppId(): void {
+  discoveredAppId = null;
+}
+
 async function graphGet(path: string, params: Record<string, string>): Promise<any> {
   const url = new URL(`${GRAPH}/${path}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);

@@ -15,7 +15,7 @@ import { brandFanpages, brandSources } from "../db/schema";
 import { fetchPageInfo, fetchPagePosts, postsToDocument, type MetaPageInfo } from "./meta-graph";
 import { summarizePosts, statsToText, type FanpageStats } from "./fanpage-stats";
 import { encryptToken, decryptToken } from "./meta-token";
-import { metaAppCreds, upgradeTokenForPage } from "./meta-token-health";
+import { resolveMetaCreds, upgradeTokenForPage } from "./meta-token-health";
 
 // Những đoạn đường dẫn của Facebook không bao giờ là tên page.
 const NOT_A_PAGE_SLUG = new Set([
@@ -77,7 +77,8 @@ export async function connectFanpageMeta(
   // việc làm tay. Người dùng dán token nào cũng được: ngắn hạn từ Graph API
   // Explorer, user token dài hạn, hay page token. Thiếu META_APP_ID/SECRET thì
   // bỏ qua êm và dùng nguyên token đã dán (hành vi cũ).
-  const creds = metaAppCreds();
+  // Token vừa dán chính là thứ tra ra được App ID — người dùng chỉ cần App Secret.
+  const creds = await resolveMetaCreds([pageAccessToken]);
   let tokenToStore = pageAccessToken;
   let userTokenToStore: string | null = null;
   let tokenNote: string | undefined;
@@ -98,8 +99,8 @@ export async function connectFanpageMeta(
     }
   } else {
     tokenNote =
-      "Chưa cấu hình META_APP_ID/META_APP_SECRET nên không tự gia hạn được token — " +
-      "token dán tay sẽ hết hạn và phải dán lại. Điền hai biến đó vào env để hệ thống tự lo.";
+      "Chưa cấu hình META_APP_SECRET nên không tự gia hạn được token — token dán tay sẽ hết hạn và phải dán lại. " +
+      "Điền META_APP_SECRET vào env là xong; App ID không cần, hệ thống tự tra từ token.";
   }
 
   const page = await fetchPageInfo(pageId, tokenToStore);
