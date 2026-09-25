@@ -573,6 +573,12 @@ const TOOLS = [
     },
   },
   {
+    name: "meta_token_check",
+    description: "Dò lại tình trạng token Meta của mọi trang đã nối và tự gia hạn cái nào sắp hết. Bình thường job nền tự làm 12 giờ/lượt — gọi tool này khi muốn kiểm ngay, hoặc khi quét bài báo lỗi token.",
+    annotations: { title: "Kiểm token Meta", readOnlyHint: false },
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
     name: "fanpage_sync_posts",
     description: "Quét các bài đã đăng của fanpage đã nối Meta, gộp thành một tài liệu rồi nạp vào hồ sơ thương hiệu. Sau đó gọi brand_extract để bóc giọng nói, xưng hô, chủ đề TỪ CHÍNH BÀI CỦA PAGE — mỗi mục sẽ kèm câu trích có link bài. Lưu ý: bài đã đăng không nói được 'không bao giờ làm', phần đó phải hỏi chủ trang rồi ghi bằng brand_set.",
     annotations: { title: "Quét bài của fanpage", readOnlyHint: false },
@@ -1682,7 +1688,21 @@ async function callTool(name: string, args: any, principal: McpPrincipal): Promi
     return {
       connected: true,
       page: out.page,
+      token_never_expires: out.tokenNeverExpires,
+      token_days_left: out.tokenDaysLeft,
+      token_note: out.tokenNote,
       note: "Đã nối. Gọi fanpage_sync_posts để quét bài về, rồi brand_extract để bóc tính cách từ bài thật.",
+    };
+  }
+
+  if (name === "meta_token_check") {
+    const { sweepMetaTokens } = await import("../services/meta-token-job");
+    const out = await sweepMetaTokens();
+    return {
+      ...out,
+      note: out.ran
+        ? "Token vĩnh viễn thì không cần làm gì. Trang trong needs_attention cần nối lại bằng token mới."
+        : out.skippedReason,
     };
   }
 

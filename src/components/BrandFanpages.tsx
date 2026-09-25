@@ -15,6 +15,7 @@ import type { BrandFanpage } from "../types";
 import FanpageStatsPanel from "./FanpageStatsPanel";
 import { imageDisplayUrl } from "../services/http";
 import MetaTokenExchange from "./MetaTokenExchange";
+import MetaTokenStatus from "./MetaTokenStatus";
 
 // Trang của CHÍNH thương hiệu — khác "Kênh theo dõi" (là kênh người khác để học).
 //
@@ -329,7 +330,8 @@ export default function BrandFanpages({
                       <p className="text-[11px] text-stone-400 mt-0.5">
                         Lấy ở Meta Graph API Explorer: chọn đúng page, cấp quyền{" "}
                         <code className="bg-stone-100 px-1 rounded">pages_read_engagement</code>. Token được kiểm tra
-                        trước khi lưu, và lưu ở dạng mã hoá.
+                        trước khi lưu, và lưu ở dạng mã hoá. Dán token nào cũng được — hệ thống tự nâng nó thành token
+                        trang không hết hạn rồi tự gia hạn về sau, không phải dán lại.
                       </p>
                       <input
                         id={`token-${fp.id}`}
@@ -367,7 +369,13 @@ export default function BrandFanpages({
                         <code className="bg-stone-100 px-1 rounded">me/accounts?fields=id,name,access_token</code> —
                         kết quả có sẵn mã page và token của từng trang bạn quản lý.
                       </p>
-                      {/* Token từ Explorer sống ~1 giờ; đổi một lần ở đây thì hết hạn nữa. */}
+                      {/* Token tự gia hạn: hệ thống nâng token lúc nối rồi dò lại
+                          hằng ngày. Khu này để thấy điều đó đang xảy ra. */}
+                      <div className="mt-3">
+                        <MetaTokenStatus />
+                      </div>
+                      {/* Đổi tay vẫn giữ làm đường lùi: khi chưa cấu hình
+                          META_APP_ID/SECRET, hoặc muốn tự lấy token trang khác. */}
                       <div className="mt-2">
                         <MetaTokenExchange />
                       </div>

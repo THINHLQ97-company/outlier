@@ -3,6 +3,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import dotenv from "dotenv";
 import { runMigrations } from "./server/db/migrate";
+import { startMetaTokenJob } from "./server/services/meta-token-job";
 import { seedAll } from "./server/db/seed";
 import { isDbConfigured } from "./server/db/client";
 import { registerAuthRoutes } from "./server/routes/auth.routes";
@@ -165,6 +166,8 @@ async function startServer() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    // Token Meta tự gia hạn — người dùng không phải dán lại token mỗi lần hết hạn.
+    startMetaTokenJob();
   });
 }
 

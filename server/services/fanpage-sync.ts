@@ -15,6 +15,7 @@ import { brandFanpages, brandSources } from "../db/schema";
 import { fetchPageInfo, fetchPagePosts, postsToDocument, type MetaPageInfo } from "./meta-graph";
 import { summarizePosts, statsToText, type FanpageStats } from "./fanpage-stats";
 import { encryptToken, decryptToken } from "./meta-token";
+import { metaAppCreds, upgradeTokenForPage } from "./meta-token-health";
 
 // Những đoạn đường dẫn của Facebook không bao giờ là tên page.
 const NOT_A_PAGE_SLUG = new Set([
@@ -42,6 +43,10 @@ export function guessPageIdFromUrl(url: string): string | null {
 export interface ConnectResult {
   fanpageId: string;
   page: MetaPageInfo;
+  /** Token đã được tự nâng lên mức bền hơn chưa, và giờ hạn dùng thế nào. */
+  tokenNote?: string;
+  tokenNeverExpires?: boolean;
+  tokenDaysLeft?: number | null;
 }
 
 /**
@@ -68,7 +73,36 @@ export async function connectFanpageMeta(
     );
   }
 
-  const page = await fetchPageInfo(pageId, pageAccessToken);
+  // Tự nâng token lên mức bền nhất Meta cho phép, NGAY LÚC NỐI — đây là chỗ xoá
+  // việc làm tay. Người dùng dán token nào cũng được: ngắn hạn từ Graph API
+  // Explorer, user token dài hạn, hay page token. Thiếu META_APP_ID/SECRET thì
+  // bỏ qua êm và dùng nguyên token đã dán (hành vi cũ).
+  const creds = metaAppCreds();
+  let tokenToStore = pageAccessToken;
+  let userTokenToStore: string | null = null;
+  let tokenNote: string | undefined;
+  let tokenNeverExpires = false;
+  let tokenDaysLeft: number | null = null;
+  if (creds) {
+    try {
+      const up = await upgradeTokenForPage(pageAccessToken, pageId, creds);
+      tokenToStore = up.pageToken;
+      userTokenToStore = up.userToken;
+      tokenNote = up.note;
+      tokenNeverExpires = up.inspection.neverExpires;
+      tokenDaysLeft = up.inspection.daysLeft;
+    } catch (e: any) {
+      // Nâng không được thì vẫn thử nối bằng token đã dán: biết đâu nó còn dùng
+      // được. Nói rõ là chưa tự gia hạn được, đừng im lặng.
+      tokenNote = `Chưa nâng được token thành loại tự gia hạn (${e?.message || e}). Tạm dùng token đã dán.`;
+    }
+  } else {
+    tokenNote =
+      "Chưa cấu hình META_APP_ID/META_APP_SECRET nên không tự gia hạn được token — " +
+      "token dán tay sẽ hết hạn và phải dán lại. Điền hai biến đó vào env để hệ thống tự lo.";
+  }
+
+  const page = await fetchPageInfo(pageId, tokenToStore);
   // Token của người dùng cũng gọi lọt endpoint này, và khi đó trả về hồ sơ cá
   // nhân chứ không phải page. Page luôn có category; tài khoản cá nhân thì không.
   if (!page.category && page.followers == null) {
@@ -82,8 +116,14 @@ export async function connectFanpageMeta(
     .update(brandFanpages)
     .set({
       metaPageId: page.id,
-      metaTokenEnc: encryptToken(pageAccessToken),
+      metaTokenEnc: encryptToken(tokenToStore),
+      metaUserTokenEnc: userTokenToStore ? encryptToken(userTokenToStore) : null,
       metaConnectedAt: new Date(),
+      metaTokenNeverExpires: tokenNeverExpires,
+      metaTokenExpiresAt: tokenDaysLeft != null ? new Date(Date.now() + tokenDaysLeft * 86_400_000) : null,
+      metaTokenStatus: tokenNeverExpires ? "active" : tokenDaysLeft != null && tokenDaysLeft > 0 ? "active" : "unknown",
+      metaTokenCheckedAt: new Date(),
+      metaTokenNote: tokenNote ?? null,
       pageName: row.pageName || page.name,
       handle: row.handle || (page.username ? `@${page.username}` : null),
       followerCount: page.followers ?? row.followerCount,
@@ -93,13 +133,21 @@ export async function connectFanpageMeta(
     })
     .where(eq(brandFanpages.id, fanpageRowId));
 
-  return { fanpageId: fanpageRowId, page };
+  return { fanpageId: fanpageRowId, page, tokenNote, tokenNeverExpires, tokenDaysLeft };
 }
 
 export async function disconnectFanpageMeta(fanpageRowId: string): Promise<void> {
   await getDb()
     .update(brandFanpages)
-    .set({ metaTokenEnc: null, metaConnectedAt: null })
+    .set({
+      metaTokenEnc: null,
+      metaUserTokenEnc: null,
+      metaConnectedAt: null,
+      metaTokenStatus: "unknown",
+      metaTokenExpiresAt: null,
+      metaTokenNeverExpires: false,
+      metaTokenNote: null,
+    })
     .where(eq(brandFanpages.id, fanpageRowId));
 }
 

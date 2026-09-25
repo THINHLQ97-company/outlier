@@ -377,6 +377,32 @@ export function registerBrandRoutes(app: Express) {
   // ===== Nối fanpage với Meta rồi quét bài của chính page về =====
   // Token đi trong body, không bao giờ trong URL: URL lọt vào log truy cập,
   // lịch sử trình duyệt và referer.
+  // GET /api/meta-tokens — tình trạng token của mọi trang đã nối, và POST để dò lại ngay.
+  //
+  // Job nền vẫn chạy 12 giờ/lượt; hai endpoint này để giao diện hiện được "còn
+  // bao lâu" và để người dùng bắt kiểm lại ngay khi vừa sửa gì đó ở phía Meta.
+  app.get("/api/meta-tokens", requireAuth, async (_req, res) => {
+    if (dbDown(res)) return;
+    try {
+      const { metaTokenStatusList } = await import("../services/meta-token-job");
+      res.json(await metaTokenStatusList());
+    } catch (e: any) {
+      console.error("meta token status:", e?.message || e);
+      res.status(500).json({ error: "Không đọc được tình trạng token." });
+    }
+  });
+
+  app.post("/api/meta-tokens/check", requireAuth, async (_req, res) => {
+    if (dbDown(res)) return;
+    try {
+      const { sweepMetaTokens } = await import("../services/meta-token-job");
+      res.json(await sweepMetaTokens());
+    } catch (e: any) {
+      console.error("meta token sweep:", e?.message || e);
+      res.status(500).json({ error: "Không dò được token." });
+    }
+  });
+
   app.post("/api/brands/:id/fanpages/:fid/meta/connect", requireAuth, async (req, res) => {
     if (dbDown(res)) return;
     const { id, fid } = req.params;
@@ -390,7 +416,15 @@ export function registerBrandRoutes(app: Express) {
 
       const { connectFanpageMeta } = await import("../services/fanpage-sync");
       const out = await connectFanpageMeta(fid, token, typeof req.body?.pageId === "string" ? req.body.pageId.trim() : undefined);
-      res.json({ connected: true, page: out.page });
+      res.json({
+        connected: true,
+        page: out.page,
+        // Nói ngay token vừa nối bền tới đâu — đừng để người dùng phát hiện ra
+        // bằng cách thấy nó hỏng vài hôm sau.
+        tokenNote: out.tokenNote,
+        tokenNeverExpires: out.tokenNeverExpires,
+        tokenDaysLeft: out.tokenDaysLeft,
+      });
     } catch (e: any) {
       // Lỗi từ Meta (token sai, thiếu quyền, sai page) là thứ người dùng sửa
       // được → trả nguyên văn kèm 400 thay vì nuốt thành 500.

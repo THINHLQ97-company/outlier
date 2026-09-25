@@ -891,6 +891,28 @@ export const brandFanpages = pgTable("brand_fanpages", {
   /** Page Access Token đã mã hoá — xem server/services/meta-token.ts. */
   metaTokenEnc: text("meta_token_enc"),
   metaConnectedAt: timestamp("meta_connected_at", { withTimezone: true }),
+
+  /**
+   * User token DÀI HẠN (đã mã hoá) của người đã nối trang.
+   *
+   * Vì sao phải giữ, khi cái dùng để đọc/đăng là page token: page token không tự
+   * gia hạn được. Đường gia hạn duy nhất chắc chắn là đổi lại user token dài hạn
+   * rồi LẤY LẠI page token từ /me/accounts — không có user token thì mỗi lần hết
+   * hạn lại phải dán tay, đúng cái đang làm người dùng mệt.
+   *
+   * User token dài hạn sống ~60 ngày và đổi lại được nhiều lần, nên job chạy hằng
+   * ngày sẽ giữ cho nó không bao giờ chạm hạn.
+   */
+  metaUserTokenEnc: text("meta_user_token_enc"),
+  /** Hạn của page token theo Meta. null + metaTokenNeverExpires=true → vĩnh viễn. */
+  metaTokenExpiresAt: timestamp("meta_token_expires_at", { withTimezone: true }),
+  metaTokenNeverExpires: boolean("meta_token_never_expires").notNull().default(false),
+  /** active | expiring | expired | invalid | unknown — hiện thẳng lên giao diện. */
+  metaTokenStatus: text("meta_token_status").notNull().default("unknown"),
+  metaTokenCheckedAt: timestamp("meta_token_checked_at", { withTimezone: true }),
+  metaTokenRenewedAt: timestamp("meta_token_renewed_at", { withTimezone: true }),
+  /** Vì sao lần kiểm/gia hạn gần nhất thất bại — để nói rõ thay vì im lặng. */
+  metaTokenNote: text("meta_token_note"),
   metaLastSyncAt: timestamp("meta_last_sync_at", { withTimezone: true }),
   /** Số bài lấy về ở lần quét gần nhất — để biết có đáng bóc lại hồ sơ không. */
   metaLastPostCount: integer("meta_last_post_count"),
