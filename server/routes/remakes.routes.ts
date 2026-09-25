@@ -68,6 +68,18 @@ export async function runRemakeInBackground(
       errorMessage: r.warning || null,
       updatedAt: new Date(),
     }).where(eq(remakes.id, id));
+
+    // Bài gốc có ảnh thì bản viết lại cũng cần ảnh — vẽ luôn, đừng bắt người
+    // dùng bấm thêm một nút nữa cho một việc chắc chắn phải làm.
+    //
+    // Chỉ vẽ khi CHƯA có ảnh nào (sửa bài lần hai không vẽ đè, vì người dùng có
+    // thể đã chọn ảnh ưng ý rồi), và chỉ với bài đăng — kịch bản video đi theo
+    // luồng dựng cảnh riêng.
+    if (format === "post") {
+      void autoDrawImage(id).catch((e: any) =>
+        console.warn("[remake] Tự vẽ ảnh thất bại:", e?.message || e),
+      );
+    }
   } catch (e: any) {
     console.error("remake (nền):", e?.message || e);
     await getDb().update(remakes)
@@ -75,6 +87,31 @@ export async function runRemakeInBackground(
       .where(eq(remakes.id, id))
       .catch(() => {});
   }
+}
+
+/**
+ * Vẽ ảnh cho bản viết vừa xong, nếu bài gốc vốn có ảnh.
+ *
+ * Không vẽ bừa cho mọi bài: bài gốc thuần chữ thì thêm ảnh là thêm một thứ
+ * người dùng không xin. Căn cứ là bài gốc — có ảnh bìa hoặc đã đọc được nội
+ * dung trong ảnh thì bản viết lại cũng cần ảnh.
+ */
+async function autoDrawImage(remakeId: string): Promise<void> {
+  const db = getDb();
+  const [row] = await db.select().from(remakes).where(eq(remakes.id, remakeId));
+  if (!row) return;
+
+  // Đã có ảnh thì thôi — sửa bài lần hai không vẽ đè lên ảnh người dùng đã chọn.
+  const existing = Array.isArray(row.imagesJson) ? row.imagesJson : [];
+  if (existing.length > 0) return;
+
+  const [decon] = await db.select().from(deconstructions).where(eq(deconstructions.id, row.deconstructionId));
+  const sourceHadImage = !!decon && (!!decon.thumbnailUrl || !!decon.imageReading || decon.contentKind === "image");
+  if (!sourceHadImage) return;
+
+  const { generateRemakeImage } = await import("../services/remake-image");
+  await generateRemakeImage({ remakeId });
+  console.log(`[remake] Đã tự vẽ ảnh cho bản viết ${remakeId} (bài gốc có ảnh).`);
 }
 
 export function registerRemakeRoutes(app: Express) {
@@ -151,7 +188,9 @@ export function registerRemakeRoutes(app: Express) {
     const username = getAuthUser(req)!;
     const brandId = String(req.body?.brandId || "");
     const deconstructionId = String(req.body?.deconstructionId || "");
-    const format: RemakeFormat = FORMATS.includes(req.body?.format) ? req.body.format : "video_script";
+    // Mặc định là BÀI ĐĂNG: phần lớn việc ở đây là viết lại bài, còn kịch bản
+    // video là nhánh phụ và đang chưa ổn định.
+    const format: RemakeFormat = FORMATS.includes(req.body?.format) ? req.body.format : "post";
 
     if (!UUID_RE.test(brandId)) return res.status(400).json({ error: "Chọn thương hiệu muốn viết cho." });
     if (!UUID_RE.test(deconstructionId)) return res.status(400).json({ error: "Chọn bài đã bóc cấu trúc để học theo." });

@@ -51,7 +51,9 @@ const CONTENT_KIND_LABEL: Record<string, string> = {
 
 const STATUS_META: Record<DeconstructionRow["status"], { label: string; cls: string }> = {
   pending: { label: "Đang chờ", cls: "" },
-  downloading: { label: "Đang tải video...", cls: "ds-badge-warning" },
+  // Nhãn chung, không nói "video": phần lớn thứ bóc ở đây là BÀI ĐĂNG, mà ghi
+  // "đang tải video" cho một bài chữ thì người dùng tưởng công cụ hiểu sai bài.
+  downloading: { label: "Đang tải nội dung...", cls: "ds-badge-warning" },
   analyzing: { label: "Đang phân tích...", cls: "ds-badge-warning" },
   ready: { label: "Đã có kết quả", cls: "ds-badge-success" },
   error: { label: "Lỗi", cls: "ds-badge-danger" },
@@ -736,7 +738,7 @@ function DeconstructDetailPanel({
           <div className="ds-alert ds-alert-warning mt-2">
             <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" aria-hidden="true" />
             {row.status === "downloading"
-              ? `Đang tải video... (${watchElapsedSec}s)`
+              ? `Đang tải nội dung... (${watchElapsedSec}s)`
               : `Đang phân tích... (${watchElapsedSec}s)`}
           </div>
         ) : null}

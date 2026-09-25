@@ -86,7 +86,9 @@ export default function Remake() {
   // thương hiệu" ở trang Bóc cấu trúc) như Deconstruct đang làm với radarItemId.
   const [formBrandId, setFormBrandId] = useState("");
   const [formDeconId, setFormDeconId] = useState("");
-  const [formFormat, setFormFormat] = useState<RemakeFormat>("video_script");
+  // Mặc định BÀI ĐĂNG: phần lớn việc ở đây là viết lại bài, còn kịch bản video
+  // là nhánh phụ và đang chưa ổn định.
+  const [formFormat, setFormFormat] = useState<RemakeFormat>("post");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -562,8 +564,10 @@ function NewRemakeForm({
             Dạng bài
           </label>
           <select id="rm-format" value={format} onChange={(e) => onFormatChange(e.target.value as RemakeFormat)} disabled={submitting} className="ds-select">
-            <option value="video_script">{FORMAT_LABEL.video_script}</option>
+            {/* Bài đăng đứng trước vì đó là việc chính; kịch bản video là nhánh
+                phụ và đang chưa ổn định. */}
             <option value="post">{FORMAT_LABEL.post}</option>
+            <option value="video_script">{FORMAT_LABEL.video_script} (đang phát triển)</option>
           </select>
         </div>
       </div>

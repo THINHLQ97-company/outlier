@@ -28,6 +28,7 @@ import {
   pollRadarJob,
   type CreateRadarInput,
 } from "../services/radar";
+import { imageDisplayUrl } from "../services/http";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { inspectUrl } from "../../shared/url-kind";
 import type { RadarJob, RadarJobDetail, RadarItem, RadarQueryKind, RadarConfidence, RadarMetricsSource, RadarEnrichQuote } from "../types";
@@ -741,8 +742,10 @@ function RadarItemCard({ item, minSampleForBaseline }: { item: RadarItem; minSam
       <div className="ds-card-body flex flex-col sm:flex-row gap-4">
       <div className="w-full sm:w-40 shrink-0">
         <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-stone-100 flex items-center justify-center">
+          {/* Ảnh bài giờ được giữ trong kho nội bộ (/api/files) nên PHẢI đi qua
+              imageDisplayUrl để kèm token — dùng thẳng coverUrl là 401, ra ô trống. */}
           {item.coverUrl ? (
-            <img src={item.coverUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
+            <img src={imageDisplayUrl(item.coverUrl) || undefined} alt="" className="w-full h-full object-cover" loading="lazy" />
           ) : (
             <ImageIcon className="w-6 h-6 text-stone-300" aria-hidden="true" />
           )}
