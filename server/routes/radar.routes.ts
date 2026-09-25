@@ -223,14 +223,23 @@ export function registerRadarRoutes(app: Express) {
     if (dbDown(res)) return;
     const username = getAuthUser(req)!;
     const query = String(req.body?.query || "").trim();
-    const queryKind = req.body?.queryKind === "competitor" ? "competitor" : "keyword";
-    const platforms: string[] = Array.isArray(req.body?.platforms)
-      ? req.body.platforms.filter((p: any) => PLATFORMS.includes(p))
-      : ["youtube"];
-    const limit = Math.min(Math.max(1, Number(req.body?.limit) || 30), 100);
+    if (!query) return res.status(400).json({ error: "Dán link bài hoặc link trang/kênh muốn soi." });
 
-    if (!query) return res.status(400).json({ error: "Nhập từ khoá ngách hoặc link đối thủ muốn soi." });
-    if (platforms.length === 0) return res.status(400).json({ error: "Chọn ít nhất một nền tảng." });
+    // Nền tảng và loại (bài hay trang) đọc từ chính đường dẫn, KHÔNG tin danh
+    // sách client gửi lên. Quét theo từ khoá đã bỏ: kết quả rải rác, khó đối
+    // chiếu với mốc của một kênh cụ thể, và vẫn tốn tiền như nhau.
+    const { inspectUrl } = await import("../../shared/url-kind");
+    const info = inspectUrl(query);
+    if (!info.platform) return res.status(400).json({ error: info.label });
+    if (!PLATFORMS.includes(info.platform)) {
+      return res.status(400).json({ error: `Chưa quét được ${info.platform} ở đây.` });
+    }
+    if (!info.kind) return res.status(400).json({ error: info.label });
+
+    const queryKind = "competitor";
+    const platforms: string[] = [info.platform];
+    // Một bài lẻ thì chỉ có đúng một bài để lấy — xin nhiều hơn là xin thừa.
+    const limit = info.kind === "post" ? 1 : Math.min(Math.max(1, Number(req.body?.limit) || 30), 100);
 
     let job;
     try {

@@ -29,6 +29,7 @@ import {
   type CreateRadarInput,
 } from "../services/radar";
 import ConfirmDialog from "../components/ConfirmDialog";
+import { inspectUrl } from "../../shared/url-kind";
 import type { RadarJob, RadarJobDetail, RadarItem, RadarQueryKind, RadarConfidence, RadarMetricsSource, RadarEnrichQuote } from "../types";
 
 // Trang "Radar" — tìm content đang bật lên trong một ngách. LINH HỒN màn này:
@@ -218,7 +219,7 @@ export default function Radar() {
           </p>
         </div>
         <button onClick={() => setShowNewForm(true)} className="ds-btn ds-btn-primary shrink-0">
-          <Plus className="w-4 h-4" aria-hidden="true" /> Quét ngách mới
+          <Plus className="w-4 h-4" aria-hidden="true" /> Quét theo link
         </button>
       </div>
 
@@ -245,7 +246,7 @@ export default function Radar() {
                 <p className="ds-empty-title">Chưa có phiên quét nào</p>
                 <p className="ds-empty-desc">Quét một ngách hoặc link đối thủ để tìm content đang bật lên.</p>
                 <button onClick={() => setShowNewForm(true)} className="ds-btn ds-btn-primary ds-btn-sm mt-1">
-                  <Plus className="w-3.5 h-3.5" aria-hidden="true" /> Quét ngách mới
+                  <Plus className="w-3.5 h-3.5" aria-hidden="true" /> Quét theo link
                 </button>
               </div>
             </div>
@@ -334,27 +335,37 @@ export default function Radar() {
 }
 
 function NewRadarForm({ onClose, onCreated }: { onClose: () => void; onCreated: (row: RadarJob) => void }) {
-  const [queryKind, setQueryKind] = useState<RadarQueryKind>("keyword");
   const [query, setQuery] = useState("");
-  const [platforms, setPlatforms] = useState<string[]>(["youtube"]);
   const [limit, setLimit] = useState(30);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  function togglePlatform(key: string) {
-    setPlatforms((prev) => (prev.includes(key) ? prev.filter((p) => p !== key) : [...prev, key]));
-  }
+  // Nền tảng và "bài hay trang" đọc thẳng từ đường dẫn.
+  //
+  // Trước đây bắt người dùng tick nền tảng trong khi link đã nói rõ — khai lại
+  // thứ máy đọc được, và tick sai thì quét trượt mà vẫn tốn tiền. Ô "số bài
+  // muốn quét" cũng chỉ có nghĩa khi quét cả trang; với một bài lẻ thì chỉ có
+  // đúng một bài để lấy.
+  const info = query.trim() ? inspectUrl(query) : null;
+  const isChannel = info?.kind === "channel";
+  const ready = !!info?.platform && !!info?.kind;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (platforms.length === 0) {
-      setError("Chọn ít nhất một nền tảng.");
+    if (!ready) {
+      setError(info?.label || "Dán link bài hoặc link trang/kênh.");
       return;
     }
     setSubmitting(true);
     setError(null);
     try {
-      const input: CreateRadarInput = { query: query.trim(), queryKind, platforms, limit };
+      const input: CreateRadarInput = {
+        query: query.trim(),
+        queryKind: "competitor",
+        platforms: [info!.platform!],
+        // Một bài lẻ thì chỉ lấy đúng bài đó.
+        limit: isChannel ? limit : 1,
+      };
       const result = await createRadarJob(input);
       onCreated(result);
     } catch (e: any) {
@@ -369,7 +380,7 @@ function NewRadarForm({ onClose, onCreated }: { onClose: () => void; onCreated: 
       <div className="ds-modal max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="new-radar-title">
         <div className="ds-modal-header">
           <h3 id="new-radar-title" className="ds-modal-title font-display">
-            Quét ngách mới
+            Quét theo link
           </h3>
           <button onClick={onClose} disabled={submitting} className="ds-modal-close disabled:opacity-40" aria-label="Đóng">
             <X className="w-4 h-4" aria-hidden="true" />
@@ -377,80 +388,58 @@ function NewRadarForm({ onClose, onCreated }: { onClose: () => void; onCreated: 
         </div>
         <form onSubmit={handleSubmit} className="ds-modal-body flex flex-col gap-3">
           <div>
-            <span className="block text-xs font-medium text-stone-600 mb-1">Bạn muốn soi gì?</span>
-            <div className="flex gap-3">
-              <label className="flex items-center gap-1.5 text-sm text-stone-600">
-                <input
-                  type="radio"
-                  name="queryKind"
-                  checked={queryKind === "keyword"}
-                  onChange={() => setQueryKind("keyword")}
-                  className="accent-storm-600"
-                  disabled={submitting}
-                />
-                Từ khoá ngách
-              </label>
-              <label className="flex items-center gap-1.5 text-sm text-stone-600">
-                <input
-                  type="radio"
-                  name="queryKind"
-                  checked={queryKind === "competitor"}
-                  onChange={() => setQueryKind("competitor")}
-                  className="accent-storm-600"
-                  disabled={submitting}
-                />
-                Link đối thủ
-              </label>
-            </div>
-          </div>
-
-          <div>
             <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="rd-query">
-              {queryKind === "keyword" ? "Từ khoá ngách" : "Link kênh/bài của đối thủ"}
+              Link bài hoặc link trang/kênh
             </label>
             <input
               id="rd-query"
               required
+              autoFocus
               disabled={submitting}
-              type={queryKind === "competitor" ? "url" : "text"}
+              type="url"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder={queryKind === "keyword" ? "Ví dụ: mẹo tiết kiệm điện" : "https://..."}
+              placeholder="https://facebook.com/... · youtube.com/@... · tiktok.com/@..."
               className="ds-input"
             />
+            <p className="text-[11px] text-stone-400 mt-1">
+              Dán link là đủ — công cụ tự nhận nền tảng và tự biết đó là một bài hay cả trang.
+            </p>
           </div>
 
-          <fieldset disabled={submitting} className="flex flex-col gap-1.5">
-            <legend className="block text-xs font-medium text-stone-600 mb-1">Nền tảng</legend>
-            {PLATFORM_DEFS.map((p) => (
-              <label key={p.key} className="flex items-center gap-1.5 text-sm text-stone-600">
-                <input
-                  type="checkbox"
-                  checked={platforms.includes(p.key)}
-                  onChange={() => togglePlatform(p.key)}
-                  className="accent-storm-600"
-                />
-                {p.label}
-                {p.note && <span className="text-xs text-stone-400 italic">({p.note})</span>}
+          {info && (
+            <div
+              className={`text-xs rounded-lg px-2.5 py-2 border ${
+                ready
+                  ? "bg-green-50 border-green-200 text-green-900"
+                  : "bg-amber-50 border-amber-200 text-amber-900"
+              }`}
+            >
+              {info.label}
+            </div>
+          )}
+
+          {/* Hỏi số bài CHỈ khi quét cả trang. */}
+          {isChannel && (
+            <div>
+              <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="rd-limit">
+                Quét bao nhiêu bài gần nhất? (tối đa 100)
               </label>
-            ))}
-          </fieldset>
-
-          <div>
-            <label className="block text-xs font-medium text-stone-600 mb-1" htmlFor="rd-limit">
-              Số lượng bài muốn quét (mỗi nền tảng, tối đa 100)
-            </label>
-            <input
-              id="rd-limit"
-              type="number"
-              min={1}
-              max={100}
-              disabled={submitting}
-              value={limit}
-              onChange={(e) => setLimit(Math.min(100, Math.max(1, Number(e.target.value) || 1)))}
-              className="ds-input w-28"
-            />
-          </div>
+              <input
+                id="rd-limit"
+                type="number"
+                min={1}
+                max={100}
+                disabled={submitting}
+                value={limit}
+                onChange={(e) => setLimit(Math.min(100, Math.max(1, Number(e.target.value) || 1)))}
+                className="ds-input w-28"
+              />
+              <p className="text-[11px] text-stone-400 mt-1">
+                Càng nhiều bài càng tốn phí — lấy 20-30 bài gần nhất thường đã đủ để thấy trang này đang ăn ở đâu.
+              </p>
+            </div>
+          )}
 
           {error && <div className="ds-alert ds-alert-danger">{error}</div>}
           {submitting && (
@@ -459,8 +448,9 @@ function NewRadarForm({ onClose, onCreated }: { onClose: () => void; onCreated: 
               Đang bắt đầu quét...
             </div>
           )}
-          <button type="submit" disabled={submitting} className="ds-btn ds-btn-primary justify-center mt-1">
-            {submitting && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />} {submitting ? "Đang bắt đầu..." : "Bắt đầu quét"}
+          <button type="submit" disabled={submitting || !ready} className="ds-btn ds-btn-primary justify-center mt-1">
+            {submitting && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />}
+            {submitting ? "Đang bắt đầu..." : isChannel ? `Quét ${limit} bài gần nhất` : "Quét bài này"}
           </button>
         </form>
       </div>
