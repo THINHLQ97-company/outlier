@@ -148,7 +148,13 @@ export async function refreshChannelInBackground(channelId: string, limit?: numb
     // yt-dlp không lấy được kênh TikTok từ link @user. Nếu người dùng đã bật
     // dịch vụ có phí thì đi đường Apify — quét profile và lấy luôn số liệu đầy đủ.
     if (r.candidates.length === 0 && chan.useApify && isApifyConfigured()) {
-      const viaApify = await scanChannelViaApify(chan.platform, chan.channelUrl, effectiveLimit);
+      const viaApify = await scanChannelViaApify(
+        chan.platform,
+        chan.channelUrl,
+        effectiveLimit,
+        // Lần đầu thì lấy hết; các lần sau chỉ xin bài mới hơn lần quét trước.
+        chan.scanCount && chan.lastScanAt ? new Date(chan.lastScanAt) : null,
+      );
       if (viaApify.candidates.length) r = viaApify;
       else if (viaApify.warning) r = { candidates: [], warning: viaApify.warning };
     }
@@ -233,8 +239,15 @@ export async function refreshChannelInBackground(channelId: string, limit?: numb
  * Quét kênh qua Apify — dùng khi công cụ miễn phí không làm được (TikTok).
  * TỐN TIỀN: tính theo số bài lấy về. Chỉ gọi khi kênh đã bật useApify.
  */
-async function scanChannelViaApify(platform: string, channelUrl: string, limit: number) {
-  const out = await enrichMetrics(platform, [channelUrl], { asProfile: true, limit });
+async function scanChannelViaApify(
+  platform: string,
+  channelUrl: string,
+  limit: number,
+  newerThan?: Date | null,
+) {
+  // newerThan: chỉ xin bài mới hơn lần quét trước — actor không nhận danh sách
+  // "bỏ qua bài này", nhưng nhận mốc ngày, và tác dụng là như nhau.
+  const out = await enrichMetrics(platform, [channelUrl], { asProfile: true, limit, newerThan });
   const candidates = out.metrics.map((m) => ({
     platform, itemKey: m.itemKey, url: m.url,
     // Ảnh bài lấy thẳng từ dữ liệu actor trả về — trước đây bỏ trống nên danh

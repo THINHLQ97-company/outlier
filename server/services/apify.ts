@@ -256,7 +256,7 @@ export function normalize(raw: any, platform: string): ApifyMetrics | null {
 export async function enrichMetrics(
   platform: string,
   urls: string[],
-  opts: { asProfile?: boolean; limit?: number } = {},
+  opts: { asProfile?: boolean; limit?: number; newerThan?: Date | null } = {},
 ): Promise<EnrichOutcome> {
   const uniq = [...new Set(urls.filter(Boolean))];
   const base: EnrichOutcome = { metrics: [], fromCache: 0, fetched: 0, skipped: 0, runsUsed: 0 };
@@ -316,18 +316,30 @@ export async function enrichMetrics(
   let raws: any[] = [];
   try {
     // Quét cả kênh và tra cứu bài lẻ dùng input khác nhau.
+    // Không có cách bảo actor "bỏ qua các bài này" — nó nhận đường dẫn TRANG rồi
+    // tự quyết lấy bài nào. Nhưng lọc theo NGÀY thì được, và hiệu quả tương
+    // đương: truyền ngày quét lần trước thì nó chỉ trả bài mới hơn, nên chỉ
+    // tính tiền cho bài mới.
+    const newerThanISO =
+      opts.newerThan instanceof Date && Number.isFinite(opts.newerThan.getTime())
+        ? opts.newerThan.toISOString().slice(0, 10)
+        : undefined;
+
     const input = platform === "facebook"
       ? {
           // Actor Facebook nhận thẳng URL trang, và giới hạn tên là resultsLimit
           // — dùng nhầm tên trường thì nó bỏ qua và trả về bao nhiêu tuỳ nó.
           startUrls: allowed.map((url) => ({ url })),
           resultsLimit: opts.asProfile ? Math.min(opts.limit ?? 20, limit) : allowed.length,
+          ...(newerThanISO ? { onlyPostsNewerThan: newerThanISO } : {}),
         }
       : opts.asProfile
       ? {
           // Actor nhận tên tài khoản, không phải URL đầy đủ.
           profiles: allowed.map((u) => u.replace(/\/+$/, "").split("/").pop()!.replace(/^@/, "")),
           resultsPerPage: Math.min(opts.limit ?? 20, limit),
+          // TikTok gọi tham số lọc ngày là oldestPostDate.
+          ...(newerThanISO ? { oldestPostDate: newerThanISO } : {}),
           shouldDownloadVideos: false, shouldDownloadCovers: false, shouldDownloadSubtitles: false,
         }
       : {
