@@ -232,6 +232,13 @@
       "when": 1790302689527,
       "tag": "0032_empty_pestilence",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1790324532259,
+      "tag": "0033_mysterious_toad_men",
+      "breakpoints": true
     }
   ]
 }

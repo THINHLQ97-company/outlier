@@ -48,6 +48,58 @@ export function registerUserRoutes(app: Express) {
   // Vì sao là một endpoint chứ không phải một câu trả lời cố định: danh sách mô
   // hình đổi liên tục, và bất kỳ ai (kể cả AI) nói "cái này mới nhất" theo trí
   // nhớ đều có thể đã lạc hậu. Hỏi API thì biết chắc.
+  // GET/PUT /api/admin/budget — trần chi phí ngày, admin đổi ngay trong app.
+  //
+  // Trước đây chỉ đổi được bằng biến môi trường: muốn nâng trần lúc đang cần
+  // thì phải triển khai lại cả ứng dụng. Chặn chi phí là đúng, nhưng chặn cả
+  // đường nâng trần thì thành chặn nhầm chỗ.
+  app.get("/api/admin/budget", requireAuth, requireAdmin, async (_req, res) => {
+    try {
+      const { budgetLeftToday } = await import("../services/apify");
+      const { allSettings, SETTING_KEYS } = await import("../services/app-settings");
+      const [left, settings] = await Promise.all([budgetLeftToday(), allSettings()]);
+      res.json({
+        runsLeft: left.runsLeft,
+        resultsLeft: left.resultsLeft,
+        ok: left.ok,
+        reason: left.reason,
+        // Trần đang áp dụng = còn lại + đã dùng; trả thẳng giá trị đã đặt để
+        // giao diện hiện đúng ô nhập.
+        runCap: Number(settings[SETTING_KEYS.dailyRunBudget] ?? process.env.APIFY_DAILY_RUN_BUDGET ?? 20),
+        resultCap: Number(settings[SETTING_KEYS.dailyResultBudget] ?? process.env.APIFY_DAILY_RESULT_BUDGET ?? 150),
+        setByAdmin: {
+          runs: settings[SETTING_KEYS.dailyRunBudget] != null,
+          results: settings[SETTING_KEYS.dailyResultBudget] != null,
+        },
+      });
+    } catch (e: any) {
+      console.error("budget get:", e?.message || e);
+      res.status(500).json({ error: "Không đọc được hạn mức." });
+    }
+  });
+
+  app.put("/api/admin/budget", requireAuth, requireAdmin, async (req, res) => {
+    const me = getAuthUser(req)!;
+    const runCap = req.body?.runCap;
+    const resultCap = req.body?.resultCap;
+    const valid = (v: any) => v === undefined || (Number.isFinite(Number(v)) && Number(v) >= 0 && Number(v) <= 100000);
+    if (!valid(runCap) || !valid(resultCap)) {
+      return res.status(400).json({ error: "Trần phải là số không âm (tối đa 100000)." });
+    }
+    try {
+      const { setSetting, SETTING_KEYS } = await import("../services/app-settings");
+      if (runCap !== undefined) await setSetting(SETTING_KEYS.dailyRunBudget, String(Math.floor(Number(runCap))), me);
+      if (resultCap !== undefined) {
+        await setSetting(SETTING_KEYS.dailyResultBudget, String(Math.floor(Number(resultCap))), me);
+      }
+      const { budgetLeftToday } = await import("../services/apify");
+      res.json({ ok: true, ...(await budgetLeftToday()) });
+    } catch (e: any) {
+      console.error("budget set:", e?.message || e);
+      res.status(500).json({ error: e?.message || "Không lưu được hạn mức." });
+    }
+  });
+
   app.get("/api/admin/gemini-models", requireAuth, requireAdmin, async (_req, res) => {
     const key = (process.env.GEMINI_API_KEY || "").trim();
     if (!key) return res.status(400).json({ error: "Chưa cấu hình GEMINI_API_KEY." });

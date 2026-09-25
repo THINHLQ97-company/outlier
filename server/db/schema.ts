@@ -944,3 +944,17 @@ export const brandFanpages = pgTable("brand_fanpages", {
 }));
 
 export type BrandFanpageRow = typeof brandFanpages.$inferSelect;
+
+// ===== app_settings — vài tuỳ chỉnh admin đổi được mà không cần deploy =====
+//
+// Ban đầu mọi hạn mức nằm trong biến môi trường. Đúng cho thứ ít đổi, nhưng
+// trần chi phí thì admin cần nâng ngay lúc đang cần — chờ một lượt triển khai
+// chỉ để đổi một con số là chặn nhầm chỗ.
+export const appSettings = pgTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedBy: text("updated_by"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type AppSettingRow = typeof appSettings.$inferSelect;

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Loader2, Wallet, AlertTriangle, TrendingUp } from "lucide-react";
 import { authHeaders } from "../services/http";
+import { useAppContext } from "../AppContext";
+import BudgetSettings from "../components/BudgetSettings";
 
 // Chi phí dịch vụ ngoài.
 //
@@ -27,6 +29,9 @@ function formatDay(day: string): string {
 }
 
 export default function Costs() {
+  // Chỉ quản trị viên mới thấy ô chỉnh trần — ai cũng xem được mình đã tiêu bao
+  // nhiêu, nhưng nâng trần là quyết định của người chịu trách nhiệm chi phí.
+  const { isAdmin } = useAppContext();
   const [data, setData] = useState<CostSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -75,6 +80,8 @@ export default function Costs() {
           YouTube đều <strong>miễn phí</strong> nên không xuất hiện ở đây.
         </p>
       </div>
+
+      {isAdmin && <BudgetSettings />}
 
       {/* Ngân sách đứng đầu: đây mới là câu hỏi người dùng thật sự cần trả lời. */}
       <div className="ds-card">

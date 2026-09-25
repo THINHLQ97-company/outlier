@@ -533,29 +533,14 @@ export function registerChannelRoutes(app: Express) {
         .orderBy(desc(radarItems.createdAt))
         .limit(500);
 
-      // Một bài có thể xuất hiện ở nhiều phiên (lần quét sau vẫn trả về nó).
-      // Giữ bản GIÀU dữ liệu nhất: bản có số liệu tính tiền hơn bản quét chay,
-      // và trong cùng hạng thì bản mới hơn.
-      const richness = (it: any) =>
-        (it.metricsSource === "apify" ? 4 : 0) +
-        (it.comments != null ? 2 : 0) +
-        (it.shares != null ? 1 : 0) +
-        (it.coverUrl ? 1 : 0);
-      const best = new Map<string, any>();
-      for (const { item } of rows) {
-        const key = item.itemKey || item.url;
-        const cur = best.get(key);
-        if (!cur) {
-          best.set(key, item);
-          continue;
-        }
-        // isNew giữ lại nếu BẤT KỲ bản nào từng được đánh dấu mới.
-        const merged = richness(item) > richness(cur) ? { ...item } : { ...cur };
-        merged.isNew = cur.isNew || item.isNew;
-        best.set(key, merged);
-      }
-
-      const items = [...best.values()]
+      // Gộp THEO TỪNG TRƯỜNG, không chọn một dòng rồi vứt dòng kia.
+      //
+      // Bản trước tôi chọn dòng "giàu nhất" — và dòng cũ đã vá bình luận nhưng
+      // mang nhãn "quét chay" bị dòng mới (có nhãn tính tiền, KHÔNG có bình
+      // luận) đánh bại. Bình luận biến mất khỏi màn hình dù database còn nguyên.
+      // Dữ liệu của cùng một bài thì bổ sung cho nhau, không tranh nhau.
+      const { mergeChannelItems } = await import("../services/merge-items");
+      const items = mergeChannelItems(rows.map((r) => r.item as any))
         .sort((a, b) => {
           if (a.isNew !== b.isNew) return a.isNew ? -1 : 1;
           const at = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;

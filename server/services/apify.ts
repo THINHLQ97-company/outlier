@@ -52,8 +52,13 @@ function enrichLimit(): number {
 function cacheDays(): number {
   return Math.max(0, Number(process.env.APIFY_CACHE_DAYS ?? 7));
 }
-function dailyBudget(): number {
-  return Math.max(0, Number(process.env.APIFY_DAILY_RUN_BUDGET ?? 20));
+/**
+ * Trần LƯỢT CHẠY mỗi ngày. Admin đặt được trong app (Chi phí) — chờ một lượt
+ * triển khai chỉ để đổi một con số là chặn nhầm chỗ.
+ */
+async function dailyBudget(): Promise<number> {
+  const { numberSetting, SETTING_KEYS } = await import("./app-settings");
+  return numberSetting(SETTING_KEYS.dailyRunBudget, "APIFY_DAILY_RUN_BUDGET", 20);
 }
 // Actor TikTok tính tiền theo SỐ KẾT QUẢ trả về (PAY_PER_EVENT), không phải theo
 // lượt chạy — nên phanh theo lượt chạy là chưa đủ: một lượt xin 1000 kết quả vẫn
@@ -62,8 +67,9 @@ function dailyBudget(): number {
 // Giá đo thực tế 2026-09-18: 2 kết quả tốn $0.00700 → ~$0.0035/kết quả.
 // Gói STARTER có hạn mức $29/tháng. Trần 150/ngày ≈ $0.52/ngày ≈ $15.8/tháng,
 // nằm an toàn trong hạn mức kể cả khi quét mỗi ngày.
-function dailyResultBudget(): number {
-  return Math.max(0, Number(process.env.APIFY_DAILY_RESULT_BUDGET ?? 150));
+async function dailyResultBudget(): Promise<number> {
+  const { numberSetting, SETTING_KEYS } = await import("./app-settings");
+  return numberSetting(SETTING_KEYS.dailyResultBudget, "APIFY_DAILY_RESULT_BUDGET", 150);
 }
 
 /**
@@ -74,15 +80,17 @@ function dailyResultBudget(): number {
  * trần ngày thì chặn thật. Hết hạn mức là dừng, nói rõ lý do.
  */
 export async function budgetLeftToday(): Promise<{ ok: boolean; reason?: string; runsLeft: number; resultsLeft: number }> {
-  if (!isDbConfigured()) return { ok: true, runsLeft: dailyBudget(), resultsLeft: dailyResultBudget() };
+  const [runCap, resultCap] = await Promise.all([dailyBudget(), dailyResultBudget()]);
+  if (!isDbConfigured()) return { ok: true, runsLeft: runCap, resultsLeft: resultCap };
+
   const [runsUsed, resultsUsed] = await Promise.all([runsUsedToday(), resultsUsedToday()]);
-  const runsLeft = dailyBudget() - runsUsed;
-  const resultsLeft = dailyResultBudget() - resultsUsed;
+  const runsLeft = runCap - runsUsed;
+  const resultsLeft = resultCap - resultsUsed;
   if (runsLeft <= 0) {
-    return { ok: false, runsLeft, resultsLeft, reason: `Đã dùng hết ${dailyBudget()} lượt quét có phí hôm nay. Thử lại ngày mai, hoặc nâng APIFY_DAILY_RUN_BUDGET.` };
+    return { ok: false, runsLeft, resultsLeft, reason: `Đã dùng hết ${runCap} lượt quét có phí hôm nay. Quản trị viên nâng trần ở menu Chi phí, hoặc chờ sang ngày mai.` };
   }
   if (resultsLeft <= 0) {
-    return { ok: false, runsLeft, resultsLeft, reason: `Đã dùng hết ${dailyResultBudget()} kết quả có phí hôm nay. Thử lại ngày mai, hoặc nâng APIFY_DAILY_RESULT_BUDGET.` };
+    return { ok: false, runsLeft, resultsLeft, reason: `Đã dùng hết ${resultCap} kết quả có phí hôm nay. Quản trị viên nâng trần ở menu Chi phí, hoặc chờ sang ngày mai.` };
   }
   return { ok: true, runsLeft, resultsLeft };
 }
@@ -552,19 +560,20 @@ export async function enrichMetrics(
   const skipped = need.length - take.length;
 
   // 3) Ngân sách ngày — chặn theo CẢ số lượt chạy lẫn số kết quả
+  const [runCap, resultCap] = await Promise.all([dailyBudget(), dailyResultBudget()]);
   const used = await runsUsedToday();
-  if (used >= dailyBudget()) {
+  if (used >= runCap) {
     return {
       ...base, metrics, fromCache: metrics.length, skipped: need.length,
-      warning: `Đã dùng hết ngân sách ${dailyBudget()} lượt Apify hôm nay — dừng để khỏi phát sinh chi phí. Thử lại ngày mai hoặc nâng APIFY_DAILY_RUN_BUDGET.`,
+      warning: `Đã dùng hết ngân sách ${runCap} lượt Apify hôm nay — dừng để khỏi phát sinh chi phí. Quản trị viên nâng trần ở menu Chi phí, hoặc chờ sang ngày mai.`,
     };
   }
   const resultsUsed = await resultsUsedToday();
-  const resultsLeft = dailyResultBudget() - resultsUsed;
+  const resultsLeft = resultCap - resultsUsed;
   if (resultsLeft <= 0) {
     return {
       ...base, metrics, fromCache: metrics.length, skipped: need.length,
-      warning: `Hôm nay đã lấy ${resultsUsed} kết quả từ Apify, chạm trần ${dailyResultBudget()}. Actor tính tiền theo số kết quả nên dừng tại đây.`,
+      warning: `Hôm nay đã lấy ${resultsUsed} kết quả từ Apify, chạm trần ${resultCap}. Actor tính tiền theo số kết quả nên dừng tại đây.`,
     };
   }
   // Chỉ xin đúng phần còn lại trong ngân sách.
