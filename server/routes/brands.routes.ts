@@ -137,7 +137,10 @@ export function registerBrandRoutes(app: Express) {
         .insert(brandSources)
         .values({
           brandId: id, kind, sourceUrl: url || null,
-          title: result.title || null, extractedText: result.text,
+          // Tên do client đặt (vd tên file .md) thắng tiêu đề tự suy ra: danh
+          // sách toàn "văn bản dán tay" thì không ai biết cái nào là cái nào.
+          title: (typeof req.body?.title === "string" && req.body.title.trim()) || result.title || null,
+          extractedText: result.text,
           charCount: result.charCount, status: "ready",
         })
         .returning({

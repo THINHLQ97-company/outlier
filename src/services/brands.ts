@@ -66,11 +66,13 @@ export async function addBrandSourceUrl(id: string, url: string): Promise<BrandS
   return res.json();
 }
 
-export async function addBrandSourceText(id: string, text: string): Promise<BrandSource> {
+// `title` để phân biệt tài liệu dán tay với file .md đã nạp — danh sách tài
+// liệu mà chỉ toàn "văn bản dán tay" thì không ai biết cái nào là cái nào.
+export async function addBrandSourceText(id: string, text: string, title?: string): Promise<BrandSource> {
   const res = await fetch(`/api/brands/${id}/sources`, {
     method: "POST",
     headers: authHeaders(),
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({ text, ...(title ? { title } : {}) }),
   });
   if (!res.ok) return asError(res, "Thêm tài liệu thất bại.");
   return res.json();

@@ -175,6 +175,13 @@ export async function repairChannelFromCache(channelId: string): Promise<RepairR
     }
     if (!m) continue;
 
+    // Ảnh lấy lại từ dataset cũ cũng là link có hạn — giữ về máy luôn.
+    let cover = it.coverUrl ?? m.coverUrl ?? null;
+    if (!it.coverUrl && m.coverUrl) {
+      const { cacheRemoteImage } = await import("../services/thumb-cache");
+      cover = (await cacheRemoteImage(m.coverUrl)) || m.coverUrl;
+    }
+
     await db
       .update(radarItems)
       .set({
@@ -182,7 +189,7 @@ export async function repairChannelFromCache(channelId: string): Promise<RepairR
         shares: it.shares ?? m.shares ?? null,
         likes: it.likes ?? m.likes ?? null,
         views: it.views ?? m.views ?? null,
-        coverUrl: it.coverUrl ?? m.coverUrl ?? null,
+        coverUrl: cover,
         publishedAt: it.publishedAt ?? (m.publishedAt ? new Date(m.publishedAt) : null),
       })
       .where(eq(radarItems.id, it.id));
@@ -252,6 +259,19 @@ export async function refreshChannelInBackground(channelId: string, limit?: numb
         lastScanAt: new Date(), updatedAt: new Date(),
       }).where(eq(watchedChannels.id, channelId));
       return;
+    }
+
+    // Giữ ảnh đại diện về máy mình TRƯỚC khi lưu.
+    //
+    // Link ảnh Facebook có chữ ký và hạn dùng: lưu link thì hôm nay hiện, vài
+    // hôm sau thành ô vỡ. Tải về một lần là ảnh sống bằng tuổi thọ dữ liệu.
+    try {
+      const { cacheImages } = await import("../services/thumb-cache");
+      const n = await cacheImages(r.candidates as any);
+      if (n > 0) console.log(`[channels] Đã giữ ${n} ảnh đại diện bài về kho nội bộ.`);
+    } catch (e: any) {
+      // Không giữ được thì vẫn dùng link gốc — có ảnh vẫn hơn không.
+      console.warn("[channels] Giữ ảnh đại diện thất bại:", e?.message || e);
     }
 
     // Bài nào đã từng thấy ở các lần trước?

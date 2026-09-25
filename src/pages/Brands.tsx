@@ -501,15 +501,28 @@ function SourcesSection({
     }
   }
 
+  // Nhận PDF và cả file chữ (.md, .txt).
+  //
+  // File chữ đọc thẳng ở trình duyệt rồi đi theo đúng đường "dán nội dung" đã
+  // có — không cần thêm gì ở máy chủ. Markdown giữ nguyên dấu #, -, ** vì đó
+  // chính là cấu trúc giúp model biết đâu là tiêu đề, đâu là danh sách.
+  const TEXT_EXT = /\.(md|markdown|txt|text)$/i;
+
   async function handleFile(file: File) {
     setSaving(true);
     setError(null);
     try {
-      const dataUrl = await fileToDataUrl(file);
-      await addBrandSourcePdf(brandId, dataUrl, file.name);
+      if (TEXT_EXT.test(file.name) || file.type.startsWith("text/")) {
+        const text = await file.text();
+        if (!text.trim()) throw new Error("File rỗng.");
+        await addBrandSourceText(brandId, text, file.name);
+      } else {
+        const dataUrl = await fileToDataUrl(file);
+        await addBrandSourcePdf(brandId, dataUrl, file.name);
+      }
       onChanged();
     } catch (e: any) {
-      setError(e?.message || "Tải PDF thất bại.");
+      setError(e?.message || "Tải tài liệu thất bại.");
     } finally {
       setSaving(false);
     }
@@ -535,7 +548,7 @@ function SourcesSection({
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h3 className="text-sm font-semibold text-stone-700">Tài liệu nguồn</h3>
-          <p className="text-xs text-stone-400 mt-0.5">Trang web, fanpage, PDF hoặc văn bản dán tay — dùng để bóc hồ sơ bên dưới.</p>
+          <p className="text-xs text-stone-400 mt-0.5">Trang web, fanpage, PDF, file .md hoặc văn bản dán tay — dùng để bóc hồ sơ bên dưới.</p>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
           <button
@@ -555,14 +568,14 @@ function SourcesSection({
             disabled={saving}
             className="flex items-center gap-1 text-xs font-medium text-stone-600 hover:bg-stone-100 px-2 py-1.5 rounded-lg transition-colors disabled:opacity-50"
           >
-            <Upload className="w-3.5 h-3.5" aria-hidden="true" /> Tải PDF
+            <Upload className="w-3.5 h-3.5" aria-hidden="true" /> Tải PDF / .md
           </button>
           <input
             ref={fileInputRef}
             type="file"
-            accept="application/pdf"
+            accept="application/pdf,.md,.markdown,.txt,text/markdown,text/plain"
             className="hidden"
-            aria-label="Tải tài liệu PDF"
+            aria-label="Tải tài liệu PDF hoặc Markdown"
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (file) handleFile(file);
@@ -613,7 +626,7 @@ function SourcesSection({
       {error && <div className="ds-alert ds-alert-danger">{error}</div>}
       {saving && !mode && (
         <div className="flex items-center gap-1.5 text-xs text-stone-400">
-          <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> Đang tải PDF lên...
+          <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> Đang tải tài liệu lên...
         </div>
       )}
 
