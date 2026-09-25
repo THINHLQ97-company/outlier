@@ -406,6 +406,91 @@ export function normalize(raw: any, platform: string): ApifyMetrics | null {
  * Bổ sung số liệu cho danh sách URL.
  * KHÔNG gọi Apify cho item đã có trong cache; phần còn lại gom vào 1 lượt chạy.
  */
+/**
+ * Lấy hồ sơ TRANG (số người theo dõi, tên, ảnh đại diện) bằng actor chuyên về
+ * trang — khác actor lấy bài.
+ *
+ * Vì sao tách riêng: dữ liệu bài hiếm khi kèm số người theo dõi của trang, và
+ * mua thêm cả một lượt quét bài chỉ để lấy con số đó là lãng phí. Actor trang
+ * trả đúng MỘT kết quả cho một trang, nên rẻ hơn hẳn.
+ *
+ * Nhớ lâu (30 ngày): số người theo dõi thay đổi chậm, quét lại mỗi ngày là đốt
+ * tiền cho một con số gần như không đổi.
+ */
+const PAGE_PROFILE_CACHE_DAYS = 30;
+
+export interface PageProfile {
+  followers: number | null;
+  name?: string;
+  avatarUrl?: string;
+  fromCache: boolean;
+  /** Không lấy được thì nói lý do, đừng im lặng. */
+  reason?: string;
+}
+
+export async function fetchPageProfile(platform: string, pageUrl: string): Promise<PageProfile> {
+  if (platform !== "facebook") return { followers: null, fromCache: false, reason: "Chỉ hỗ trợ Facebook." };
+  if (!isApifyConfigured()) return { followers: null, fromCache: false, reason: "Chưa cấu hình APIFY_TOKEN." };
+
+  const cacheKey = `facebook:page:${pageUrl}`;
+
+  if (isDbConfigured()) {
+    const since = new Date(Date.now() - PAGE_PROFILE_CACHE_DAYS * 86_400_000);
+    const [hit] = await getDb()
+      .select()
+      .from(apifyCache)
+      .where(and(eq(apifyCache.cacheKey, cacheKey), gte(apifyCache.fetchedAt, since)));
+    if (hit?.payload) {
+      const p: any = hit.payload;
+      return { followers: p.followers ?? null, name: p.name, avatarUrl: p.avatarUrl, fromCache: true };
+    }
+  }
+
+  const actor = process.env.APIFY_ACTOR_FB_PAGE || "apify~facebook-pages-scraper";
+  let raws: any[] = [];
+  try {
+    raws = await runActorSync(actor, { startUrls: [{ url: pageUrl }] });
+  } catch (e: any) {
+    return { followers: null, fromCache: false, reason: `Apify lỗi: ${e?.message || e}` };
+  }
+
+  if (isDbConfigured()) {
+    const { recordUsage } = await import("./cost-tracker");
+    await recordUsage({ actorId: actor, itemCount: raws.length, kind: "enrich", note: "hồ sơ trang" });
+  }
+
+  const raw = raws[0];
+  if (!raw) return { followers: null, fromCache: false, reason: "Actor không trả về trang nào." };
+
+  // Tên trường của actor trang khác actor bài, nên dò theo nghĩa cho chắc.
+  const followers =
+    pick(raw, ["followers", "followersCount", "likes", "likesCount", "fanCount", "fan_count"]) ??
+    deepFindCount(raw, /(follower|fan_count|likes)/i) ??
+    null;
+  const profile = {
+    followers,
+    name: typeof raw.title === "string" ? raw.title : typeof raw.name === "string" ? raw.name : undefined,
+    avatarUrl: deepFindImage(raw?.profilePhoto ?? raw?.profilePic ?? raw?.picture ?? raw) || undefined,
+  };
+
+  if (isDbConfigured()) {
+    await getDb()
+      .insert(apifyCache)
+      .values({ cacheKey, payload: { ...profile, raw } as any, fetchedAt: new Date() })
+      .onConflictDoUpdate({
+        target: apifyCache.cacheKey,
+        set: { payload: { ...profile, raw } as any, fetchedAt: new Date() },
+      })
+      .catch(() => {});
+  }
+
+  return {
+    ...profile,
+    fromCache: false,
+    reason: followers == null ? "Actor trả về trang nhưng không có số người theo dõi." : undefined,
+  };
+}
+
 export async function enrichMetrics(
   platform: string,
   urls: string[],

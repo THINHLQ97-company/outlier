@@ -271,17 +271,35 @@ export async function refreshChannelInBackground(channelId: string, limit?: numb
       platforms: [chan.platform], status: "scanning",
     }).returning();
 
-    // Facebook hiếm khi kèm số người theo dõi trong dữ liệu bài. Thử Graph —
-    // miễn phí, và được thì khỏi phải nhập tay.
+    // Facebook hiếm khi kèm số người theo dõi trong dữ liệu bài. Hai đường, rẻ
+    // trước: Graph (miễn phí) → actor hồ sơ trang của Apify (một kết quả, rẻ, và
+    // nhớ 30 ngày vì số này đổi rất chậm). Chỉ khi cả hai trượt mới cần người
+    // nhập tay — bắt nhập tay khi máy tự lấy được là bắt làm việc thừa.
+    // Hỏi lại MỖI LẦN quét, không chỉ lần đầu: số người theo dõi thay đổi theo
+    // thời gian, và mốc so sánh tính trên số cũ thì sai dần. Không sợ tốn: Graph
+    // miễn phí, còn Apify chỉ chạy khi Graph trượt VÀ bản nhớ đã quá 30 ngày.
     let graphFollowers: number | null = null;
-    if (chan.platform === "facebook" && chan.followerCount == null) {
+    if (chan.platform === "facebook") {
       try {
         const { fetchPublicPageFollowers } = await import("../services/fb-public-page");
         const out = await fetchPublicPageFollowers(chan.channelUrl);
         graphFollowers = out.followers;
         if (!out.followers && out.reason) console.warn(`[channels] Người theo dõi qua Graph: ${out.reason}`);
       } catch {
-        // Không lấy được thì thôi — đã có đường nhập tay.
+        // Không lấy được thì xuống đường Apify bên dưới.
+      }
+
+      if (graphFollowers == null && chan.useApify && isApifyConfigured()) {
+        try {
+          const { fetchPageProfile } = await import("../services/apify");
+          const prof = await fetchPageProfile("facebook", chan.channelUrl);
+          graphFollowers = prof.followers;
+          if (prof.followers == null && prof.reason) {
+            console.warn(`[channels] Người theo dõi qua Apify: ${prof.reason}`);
+          }
+        } catch (e: any) {
+          console.warn("[channels] Lấy hồ sơ trang qua Apify thất bại:", e?.message || e);
+        }
       }
     }
 
@@ -291,8 +309,10 @@ export async function refreshChannelInBackground(channelId: string, limit?: numb
     // ngày" đọc số này ở TỪNG BÀI. Trước đây chỉ ghi vào kênh, nên trang hiện
     // "750 N theo dõi" ngay bên cạnh dòng "chưa có số người theo dõi để so
     // sánh" — biết mà không dùng được, vì để nhầm chỗ.
+    // Số vừa lấy được thắng số cũ — kể cả số người dùng nhập tay, vì nhập tay
+    // chỉ là đường tạm khi máy chưa lấy được.
     const knownFollowers =
-      r.candidates.find((c) => c.followerCount != null)?.followerCount ?? chan.followerCount ?? graphFollowers;
+      r.candidates.find((c) => c.followerCount != null)?.followerCount ?? graphFollowers ?? chan.followerCount;
 
     await db.insert(radarItems).values(r.candidates.map((c) => ({
       jobId: job.id, platform: c.platform, itemKey: c.itemKey, url: c.url,
@@ -332,7 +352,7 @@ export async function refreshChannelInBackground(channelId: string, limit?: numb
       // giữ nó lại thì danh sách mãi hiện đường dẫn thay vì tên trang.
       channelName: first?.channelName ?? chan.channelName ?? null,
       channelAvatarUrl: (withAvatar as any)?.channelAvatarUrl ?? chan.channelAvatarUrl ?? null,
-      followerCount: first?.followerCount ?? chan.followerCount ?? graphFollowers,
+      followerCount: first?.followerCount ?? graphFollowers ?? chan.followerCount,
       updatedAt: new Date(),
     }).where(eq(watchedChannels.id, channelId));
   } catch (e: any) {
