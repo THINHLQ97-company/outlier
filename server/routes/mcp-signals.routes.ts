@@ -280,7 +280,7 @@ const TOOLS = [
       type: "object",
       properties: {
         brand_id: { type: "string", description: "Mã thương hiệu (từ brands_list)" },
-        deconstruction_id: { type: "string", description: "Mã bản bóc cấu trúc (từ deconstruct_start)" },
+        deconstruction_id: { type: "string", description: "Mã bản bóc cấu trúc — từ deconstruct_start (bóc từ link) HOẶC deconstruct_image (bóc từ ảnh người dùng gửi thẳng vào chat)" },
         format: { type: "string", enum: ["video_script", "post"], description: "Kịch bản video hay bài đăng" },
       },
       required: ["brand_id", "deconstruction_id"],
@@ -510,7 +510,7 @@ const TOOLS = [
   },
   {
     name: "deconstruct_image",
-    description: "Bóc cấu trúc từ một ẢNH thay vì từ link — dùng khi chỉ có ảnh chụp bài, hoặc khi link tốn tiền quét. Đọc chữ trong ảnh (giữ nguyên văn), nhận ra loại ảnh (ảnh chế, ảnh chat, đồ hoạ…), rút ra ảnh gây chú ý bằng cách nào, rồi bóc ra cách triển khai. MIỄN PHÍ — chỉ dùng Gemini, không đụng dịch vụ tính tiền.",
+    description: "Bóc cấu trúc từ một ẢNH thay vì từ link — dùng khi chỉ có ảnh chụp bài, hoặc khi link tốn tiền quét. Đọc chữ trong ảnh (giữ nguyên văn), nhận ra loại ảnh (ảnh chế, ảnh chat, đồ hoạ…), rút ra ảnh gây chú ý bằng cách nào, rồi bóc ra cách triển khai. Nhận ảnh người dùng dán thẳng vào chat. Trả về deconstruction_id — đưa luôn sang remake_start là viết lại được. MIỄN PHÍ — chỉ dùng Gemini, không đụng dịch vụ tính tiền.",
     annotations: { title: "Bóc cấu trúc từ ảnh", readOnlyHint: false },
     inputSchema: {
       type: "object",
