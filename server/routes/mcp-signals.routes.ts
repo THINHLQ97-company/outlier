@@ -438,11 +438,7 @@ const TOOLS = [
       properties: {
         url: { type: "string", description: "Link video" },
         radar_item_id: { type: "string", description: "Hoặc mã bài từ radar_results / channel_items" },
-        allow_paid: {
-          type: "boolean",
-          description:
-            "Đồng ý trả phí để lấy bài từ Facebook/TikTok/Instagram (khoảng 0.01 USD/bài). Để trống thì lần gọi đầu chỉ BÁO GIÁ rồi dừng; gọi lại với allow_paid=true để chạy thật.",
-        },
+
         count: { type: "number", description: "Số khung, mặc định 6, tối đa 12" },
         include_transcript: { type: "boolean", description: "Kèm lời thoại có mốc giây (mặc định có)" },
       },
@@ -1398,22 +1394,17 @@ async function callTool(name: string, args: any, principal: McpPrincipal, base =
                 radarItemId: UUID_RE.test(args.radar_item_id || "") ? args.radar_item_id : null })
       .returning({ id: deconstructions.id, status: deconstructions.status });
 
-    // Bài Facebook/TikTok/Instagram phải lấy qua dịch vụ có phí. Trước đây MCP
-    // luôn chạy ở chế độ KHÔNG trả phí, nên mọi lần Claude bóc bài Facebook đều
-    // dừng giữa chừng và bắt người dùng vào web bấm tay — vô lý khi chính Claude
-    // là bên chọn bài đáng bóc.
-    const allowPaid = args.allow_paid === true;
+    // Chạy thẳng, không hỏi trước. Bài Facebook/TikTok/Instagram phải lấy qua
+    // dịch vụ có phí, nhưng chặn chi phí bằng TRẦN NGÀY chứ không bằng câu hỏi —
+    // hỏi thì ai cũng đồng ý, mà mỗi lần hỏi lại đẻ thêm một bản phân tích.
     const { runDeconstructForMcp } = await import("./deconstruct.routes");
-    void runDeconstructForMcp(row.id, url, allowPaid);
+    void runDeconstructForMcp(row.id, url);
 
     return {
       ...row,
-      allow_paid: allowPaid,
-      note: allowPaid
-        ? "Đang chạy nền (có tính phí), mất khoảng 1-3 phút. Gọi deconstruct_get với id này để xem kết quả."
-        : "Đang chạy nền, mất khoảng 1-3 phút. Gọi deconstruct_get với id này. " +
-          "Nếu bài thuộc Facebook/TikTok/Instagram thì nó sẽ dừng lại và BÁO GIÁ — " +
-          "gọi lại deconstruct_start với allow_paid=true để chạy thật.",
+      note:
+        "Đang chạy nền, mất khoảng 1-3 phút. Gọi deconstruct_get với id này để xem kết quả. " +
+        "Bài Facebook/TikTok/Instagram có tính phí (~0.004 USD/bài); hết hạn mức ngày thì dừng và báo rõ.",
     };
   }
 
@@ -1426,12 +1417,6 @@ async function callTool(name: string, args: any, principal: McpPrincipal, base =
       note:
         row.status === "ready"
           ? "Mọi mốc thời gian đã được đối chiếu với độ dài video thật; mốc nằm ngoài video đã bị loại. 'formula' mô tả CÁCH TRIỂN KHAI để học theo — không được chép lại câu chữ của bài gốc."
-          : row.status === "error" && row.needsPaid
-          ? // Dừng vì cần trả phí, không phải hỏng. Nói rõ giá và cách chạy tiếp,
-            // để Claude khỏi báo "phân tích thất bại" khi thật ra chỉ đang chờ
-            // một quyết định chi tiền.
-            `Bài này phải lấy qua dịch vụ có phí (khoảng ${row.estimatedCostUsd || "0.01"} USD). ` +
-            "Chưa tốn đồng nào. Muốn chạy thì gọi lại deconstruct_start với cùng url/radar_item_id và allow_paid=true."
           : row.status === "error"
           ? "Phân tích không thành công — xem errorMessage."
           : "Đang chạy, chờ khoảng 30 giây rồi gọi lại.",

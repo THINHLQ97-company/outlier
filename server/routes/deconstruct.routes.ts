@@ -77,25 +77,27 @@ export async function runDeconstructFromRadarItem(
   }
 }
 
-export async function runDeconstructInBackground(id: string, url: string, allowPaid = false) {
+export async function runDeconstructInBackground(id: string, url: string, _allowPaid = true) {
   try {
     await getDb().update(deconstructions).set({ status: "analyzing", updatedAt: new Date() }).where(eq(deconstructions.id, id));
 
     const platform = platformOfUrl(url);
 
-    // TikTok/Facebook/Instagram không tải trực tiếp được nữa — phải qua dịch vụ
-    // có phí. Chỉ chạy khi người dùng đã đồng ý trả phí.
+    // TikTok/Facebook/Instagram không tải trực tiếp được — phải qua dịch vụ có
+    // phí. Chạy thẳng, KHÔNG hỏi trước.
+    //
+    // Bỏ bước hỏi vì nó vừa phiền vừa chẳng chặn được gì: ai cũng bấm đồng ý,
+    // mà mỗi lần bấm lại đẻ thêm một bản phân tích nữa trong danh sách. Thứ
+    // chặn chi phí thật là TRẦN NGÀY — hết hạn mức thì dừng hẳn, nói rõ lý do.
     if (platform && NEEDS_PAID_FETCH.has(platform)) {
-      if (!allowPaid) {
+      const { budgetLeftToday } = await import("../services/apify");
+      const budget = await budgetLeftToday();
+      if (!budget.ok) {
         await getDb().update(deconstructions).set({
           status: "error",
-          needsPaid: true,
-          estimatedCostUsd: estimateCostUsd(1).toFixed(3),
+          needsPaid: false,
           contentKind: platform === "facebook" ? "post" : "video",
-          errorMessage:
-            `Nội dung ${platform === "facebook" ? "Facebook" : platform === "tiktok" ? "TikTok" : "Instagram"} ` +
-            `không lấy được bằng công cụ miễn phí. Cần dùng dịch vụ có phí — khoảng ` +
-            `${estimateCostUsd(1).toFixed(3)} USD cho một bài. Bấm "Phân tích có phí" để tiếp tục.`,
+          errorMessage: budget.reason || "Hết hạn mức quét có phí hôm nay.",
           updatedAt: new Date(),
         }).where(eq(deconstructions.id, id));
         return;
@@ -482,7 +484,7 @@ export function registerDeconstructRoutes(app: Express) {
       if (canDoFree) {
         void runDeconstructFromRadarItem(row.id, fromRadar!);
       } else {
-        void runDeconstructInBackground(row.id, url, req.body?.allowPaid === true);
+        void runDeconstructInBackground(row.id, url);
       }
     } catch (e: any) {
       console.error("deconstruct create:", e?.message || e);

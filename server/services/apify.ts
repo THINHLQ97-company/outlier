@@ -66,6 +66,27 @@ function dailyResultBudget(): number {
   return Math.max(0, Number(process.env.APIFY_DAILY_RESULT_BUDGET ?? 150));
 }
 
+/**
+ * Hôm nay còn hạn mức để chạy một việc có phí không.
+ *
+ * Dùng thay cho việc hỏi người dùng "có đồng ý trả phí không" trước mỗi lần:
+ * hỏi mỗi lần thì vừa phiền vừa không chặn được gì (ai cũng bấm đồng ý), còn
+ * trần ngày thì chặn thật. Hết hạn mức là dừng, nói rõ lý do.
+ */
+export async function budgetLeftToday(): Promise<{ ok: boolean; reason?: string; runsLeft: number; resultsLeft: number }> {
+  if (!isDbConfigured()) return { ok: true, runsLeft: dailyBudget(), resultsLeft: dailyResultBudget() };
+  const [runsUsed, resultsUsed] = await Promise.all([runsUsedToday(), resultsUsedToday()]);
+  const runsLeft = dailyBudget() - runsUsed;
+  const resultsLeft = dailyResultBudget() - resultsUsed;
+  if (runsLeft <= 0) {
+    return { ok: false, runsLeft, resultsLeft, reason: `Đã dùng hết ${dailyBudget()} lượt quét có phí hôm nay. Thử lại ngày mai, hoặc nâng APIFY_DAILY_RUN_BUDGET.` };
+  }
+  if (resultsLeft <= 0) {
+    return { ok: false, runsLeft, resultsLeft, reason: `Đã dùng hết ${dailyResultBudget()} kết quả có phí hôm nay. Thử lại ngày mai, hoặc nâng APIFY_DAILY_RESULT_BUDGET.` };
+  }
+  return { ok: true, runsLeft, resultsLeft };
+}
+
 /** Giá mỗi kết quả (USD), đo thực tế — dùng để ước tính chi phí trước khi chạy. */
 export const USD_PER_RESULT = 0.0035;
 
