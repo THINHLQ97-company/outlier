@@ -666,6 +666,14 @@ export interface RemakeImage {
   createdAt: string;
   /** true = vẽ hỏng, trả về ảnh chỗ trống thay vì ảnh thật. */
   isDemo?: boolean;
+  /**
+   * Bản đặc tả đã dùng để vẽ ảnh này.
+   *
+   * Giữ lại để xem và SỬA: prompt là một khối JSON dài, đọc thô thì rối, nhưng
+   * từng mục (cảnh, nhân vật, màu, điều cấm) thì ai cũng hiểu. Sửa đúng mục cần
+   * sửa rồi vẽ lại chính xác hơn nhiều so với tả lại cả cảnh bằng lời.
+   */
+  specJson?: Record<string, any> | null;
 }
 
 /** Một lần đăng bài lên trang. */

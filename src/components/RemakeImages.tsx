@@ -4,6 +4,7 @@ import { generateRemakeImage, selectRemakeImage, editRemakeImage } from "../serv
 import type { RemakeImage } from "../types";
 import { imageDisplayUrl } from "../services/http";
 import ImageRegionEditor from "./ImageRegionEditor";
+import ImageSpecEditor, { ResetSpecButton, type ImageSpec } from "./ImageSpecEditor";
 
 // Ảnh cho bản viết. Khác luồng "Sáng tạo" (vẽ meme theo dàn nhân vật cố định):
 // ở đây ảnh bám nhận diện của thương hiệu người dùng.
@@ -39,6 +40,10 @@ export default function RemakeImages({
   const [showPrompt, setShowPrompt] = useState(false);
   const [lastDescription, setLastDescription] = useState<string | null>(null);
   const [charsUsed, setCharsUsed] = useState<{ id: string; name: string; hasReference: boolean }[]>([]);
+  // Đặc tả của lần vẽ gần nhất: xem được, sửa được, vẽ lại đúng theo bản đã sửa.
+  const [spec, setSpec] = useState<ImageSpec | null>(null);
+  const [specEdited, setSpecEdited] = useState(false);
+  const [showSpec, setShowSpec] = useState(false);
   // Chỉnh ảnh: mở đúng một ảnh mỗi lần, để khỏi lẫn đang sửa cái nào.
   const [editing, setEditing] = useState<RemakeImage | null>(null);
   const [editBusy, setEditBusy] = useState(false);
@@ -65,9 +70,15 @@ export default function RemakeImages({
       const out = await generateRemakeImage(remakeId, {
         aspectRatio: ratio,
         prompt: prompt.trim() || undefined,
+        // Đã sửa đặc tả thì vẽ theo bản sửa; chưa sửa thì để công cụ tự dựng.
+        spec: specEdited && spec ? spec : undefined,
       });
       setLastDescription(out.description);
       setCharsUsed(out.charactersUsed || []);
+      if (out.spec) {
+        setSpec(out.spec as ImageSpec);
+        setSpecEdited(false);
+      }
       onChanged();
     } catch (e: any) {
       setError(e?.message || "Không vẽ được ảnh.");
@@ -172,6 +183,49 @@ export default function RemakeImages({
                   </span>
                 )}
               </p>
+            )}
+
+            {/* Bản đặc tả: mặc định gập lại vì phần lớn lần vẽ không cần đụng tới.
+                Cần chỉnh chính xác thì mở ra — sửa đúng mục, không phải tả lại
+                cả cảnh bằng lời rồi hy vọng model giữ nguyên phần còn lại. */}
+            {spec && (
+              <div className="mt-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setShowSpec((v) => !v)}
+                    className="ds-btn ds-btn-ghost ds-btn-sm"
+                  >
+                    {showSpec ? "Ẩn bản đặc tả" : "Xem & sửa bản đặc tả"}
+                  </button>
+                  {specEdited && (
+                    <>
+                      <span className="text-[11px] text-amber-700">
+                        Đã sửa — bấm "Vẽ thêm phương án" để vẽ theo bản này.
+                      </span>
+                      <ResetSpecButton
+                        disabled={busy}
+                        onReset={() => {
+                          setSpecEdited(false);
+                          setShowSpec(false);
+                        }}
+                      />
+                    </>
+                  )}
+                </div>
+                {showSpec && (
+                  <div className="mt-2">
+                    <ImageSpecEditor
+                      spec={spec}
+                      disabled={busy}
+                      onChange={(next) => {
+                        setSpec(next);
+                        setSpecEdited(true);
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
             )}
 
             {lastDescription && !prompt.trim() && (

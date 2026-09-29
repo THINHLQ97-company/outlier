@@ -127,6 +127,8 @@ export function buildImagePrompt(description: string, brand: any, chars: Charact
 export interface GenerateRemakeImageResult {
   image: RemakeImage;
   description: string;
+  /** Đặc tả đã dùng — giao diện hiện ra để xem và sửa. */
+  spec?: Record<string, any>;
   /** Nhân vật đã dùng làm mẫu — để giao diện nói rõ ảnh vẽ theo ai. */
   charactersUsed: { id: string; name: string; hasReference: boolean }[];
 }
@@ -136,6 +138,10 @@ export async function generateRemakeImage(opts: {
   aspectRatio?: string;
   /** Người dùng tự tả, bỏ qua bước nhờ model tả. */
   customPrompt?: string;
+  /** Đặc tả người dùng đã sửa tay — vẽ lại đúng theo bản này. */
+  spec?: Record<string, any> | null;
+  /** Chữ muốn hiện trong ảnh; bỏ trống = không vẽ chữ. */
+  textInImage?: string | null;
 }): Promise<GenerateRemakeImageResult> {
   const db = getDb();
   const [row] = await db.select().from(remakes).where(eq(remakes.id, opts.remakeId));
@@ -147,12 +153,30 @@ export async function generateRemakeImage(opts: {
 
   const description =
     opts.customPrompt?.trim() || (await describeImageForDraft(row.draft, brand, chars));
-  const prompt = buildImagePrompt(description, brand, chars);
   const aspectRatio = opts.aspectRatio || "1:1";
+
+  // Đặc tả có cấu trúc thay cho một đoạn mô tả bằng lời: model tuân thủ danh
+  // sách mục chắc hơn văn xuôi, và người dùng sửa được đúng mục cần sửa.
+  const { buildImageSpec, imageSpecToPrompt, sanitizeSpec } = await import("./image-spec");
+  const refs = await referenceImagesOf(chars);
+  const baseSpec = buildImageSpec({
+    description,
+    aspectRatio,
+    characters: chars.map((c) => ({
+      name: c.name,
+      promptDescription: c.promptDescription,
+      hasReference: !!c.referenceImageUrl,
+    })),
+    visual: visualOf(brand),
+    textInImage: opts.textInImage,
+  });
+  // Người dùng sửa tay thì dùng bản họ sửa, nhưng vẫn lọc lại — không tin dữ
+  // liệu gửi lên.
+  const spec = opts.spec ? sanitizeSpec(opts.spec, baseSpec) : baseSpec;
+  const prompt = imageSpecToPrompt(spec, refs.length);
 
   // Ảnh mẫu của nhân vật đi kèm prompt: tả bằng chữ không đủ để hai bài ra cùng
   // một nhân vật, phải cho model nhìn thấy.
-  const refs = await referenceImagesOf(chars);
   const dataUrl = await generateImageGemini(prompt, refs.length ? refs : undefined, aspectRatio);
   // persistDataUrl lưu vào storage rồi trả "/api/files/<key>" — dùng chung cơ
   // chế với ảnh của luồng Sáng tạo, thay vì nhét base64 vào Postgres.
@@ -164,6 +188,7 @@ export async function generateRemakeImage(opts: {
     prompt: description,
     aspectRatio,
     createdAt: new Date().toISOString(),
+    specJson: spec as any,
   };
 
   const images = [...((row.imagesJson as RemakeImage[]) || []), image];
@@ -177,6 +202,7 @@ export async function generateRemakeImage(opts: {
   return {
     image,
     description,
+    spec: spec as any,
     charactersUsed: chars.map((c) => ({
       id: c.id,
       name: c.name,

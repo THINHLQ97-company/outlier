@@ -48,6 +48,15 @@ export interface BuiltImageRequest {
   promptText: string;
   referenceImages: RefImage[];
   charactersUsed: string[]; // tên các nhân vật THỰC SỰ vào ảnh (có ảnh tham chiếu)
+  /**
+   * Bản đặc tả có cấu trúc đã dùng để dựng prompt.
+   *
+   * Trả ra ngoài để người dùng XEM và SỬA được: prompt là một khối JSON dài,
+   * đọc thô thì rối, nhưng từng mục (bối cảnh, nhân vật, lời thoại, bố cục,
+   * luật) thì ai cũng hiểu. Sửa đúng mục cần sửa chính xác hơn nhiều so với
+   * viết lại cả đoạn mô tả bằng lời.
+   */
+  spec: Record<string, any>;
 }
 
 // Dịch mô tả cảnh VN → EN (model text ép JSON { "scene_en": "..." }). Lỗi bất kỳ
@@ -70,6 +79,18 @@ ${trimmed}`;
 }
 
 // Bỏ trường undefined khỏi object (JSON.stringify tự bỏ, hàm này chỉ để rõ ý).
+/**
+ * Đổi bản đặc tả thành prompt gửi cho model vẽ.
+ *
+ * Tách riêng để dùng lại được khi người dùng SỬA đặc tả rồi vẽ lại — vẽ lại từ
+ * đặc tả đã sửa thì chỉ đổi đúng chỗ họ đổi, khác hẳn việc tả lại cả cảnh bằng
+ * lời rồi hy vọng model giữ nguyên phần còn lại.
+ */
+export function specToPrompt(spec: Record<string, any>, refImageCount: number): string {
+  const preamble = `You are an AI comic illustration engine. Attached reference images are numbered #1..#${refImageCount} in order. Follow this JSON spec exactly:`;
+  return preamble + "\n\n" + JSON.stringify(spec, null, 2);
+}
+
 export async function buildImageGenerationRequest(input: BuildImageInput): Promise<BuiltImageRequest> {
   const scene = await translateScene(input.scene);
 
@@ -168,8 +189,7 @@ export async function buildImageGenerationRequest(input: BuildImageInput): Promi
   }
   spec.rules = rules;
 
-  const preamble = `You are an AI comic illustration engine. Attached reference images are numbered #1..#${referenceImages.length} in order. Follow this JSON spec exactly:`;
-  const promptText = preamble + "\n\n" + JSON.stringify(spec, null, 2);
+  const promptText = specToPrompt(spec, referenceImages.length);
 
-  return { promptText, referenceImages, charactersUsed: keptCharImgs.map((c) => c.name) };
+  return { promptText, referenceImages, charactersUsed: keptCharImgs.map((c) => c.name), spec };
 }

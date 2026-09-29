@@ -465,6 +465,10 @@ export function registerRemakeRoutes(app: Express) {
         remakeId: id,
         aspectRatio: typeof req.body?.aspectRatio === "string" ? req.body.aspectRatio : undefined,
         customPrompt: typeof req.body?.prompt === "string" ? req.body.prompt : undefined,
+        // Đặc tả người dùng đã sửa tay (xem/sửa ở khu "Bản đặc tả"). Gửi lên là
+        // vẽ đúng theo bản đó, thay vì dựng lại từ đầu rồi mất phần họ chỉnh.
+        spec: req.body?.spec && typeof req.body.spec === "object" ? req.body.spec : undefined,
+        textInImage: typeof req.body?.textInImage === "string" ? req.body.textInImage : undefined,
       });
       res.json(out);
     } catch (e: any) {

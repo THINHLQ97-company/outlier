@@ -134,11 +134,19 @@ export interface RemakeImageResult {
   description: string;
   /** Nhân vật đã dùng làm mẫu; hasReference=false nghĩa là chỉ tả bằng chữ. */
   charactersUsed: { id: string; name: string; hasReference: boolean }[];
+  /** Đặc tả đã dùng để vẽ — giao diện hiện ra cho xem và sửa rồi vẽ lại. */
+  spec?: Record<string, any>;
 }
 
 export async function generateRemakeImage(
   id: string,
-  opts: { prompt?: string; aspectRatio?: string } = {},
+  opts: {
+    prompt?: string;
+    aspectRatio?: string;
+    /** Đặc tả đã sửa tay — vẽ đúng theo bản này thay vì dựng lại từ đầu. */
+    spec?: Record<string, any> | null;
+    textInImage?: string | null;
+  } = {},
 ): Promise<RemakeImageResult> {
   const res = await fetch(`/api/remakes/${id}/image`, {
     method: "POST",
