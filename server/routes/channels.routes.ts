@@ -396,20 +396,10 @@ async function scanChannelViaApify(
   // newerThan: chỉ xin bài mới hơn lần quét trước — actor không nhận danh sách
   // "bỏ qua bài này", nhưng nhận mốc ngày, và tác dụng là như nhau.
   const out = await enrichMetrics(platform, [channelUrl], { asProfile: true, limit, newerThan });
-  const candidates = out.metrics.map((m) => ({
-    platform, itemKey: m.itemKey, url: m.url,
-    // Ảnh bài lấy thẳng từ dữ liệu actor trả về — trước đây bỏ trống nên danh
-    // sách toàn ô ảnh rỗng, dù actor có gửi ảnh kèm.
-    title: m.title, coverUrl: m.coverUrl, durationSec: undefined,
-    // Facebook là bài viết (chữ + ảnh); TikTok/Instagram là video.
-    contentKind: (platform === "facebook" ? "post" : "video") as any,
-    publishedAt: m.publishedAt,
-    channelKey: m.channelKey, channelName: m.channelName,
-    channelAvatarUrl: m.channelAvatarUrl,
-    followerCount: m.followerCount,
-    views: m.views, likes: m.likes,
-    __fromApify: true,
-  })) as any[];
+  // Ánh xạ nằm trong service riêng, có test đi qua từng chỉ số: bảng ánh xạ
+  // viết tay ở đây đã làm mất số bình luận một lần, và mất im lặng.
+  const { toScanCandidate } = await import("../services/scan-candidate");
+  const candidates = out.metrics.map((m) => toScanCandidate(platform, m)) as any[];
   return { candidates, warning: out.warning };
 }
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { deconstructFromTrend } from "../services/deconstruct";
-import { RefreshCw, Plus, Loader2, X, ExternalLink, AlertTriangle, Wand2, Sparkles, TrendingUp, Trash2, Eraser, Scissors } from "lucide-react";
+import { RefreshCw, Plus, Loader2, X, ExternalLink, AlertTriangle, Wand2, Sparkles, TrendingUp, Trash2, Eraser, Scissors, ChevronRight, ChevronDown } from "lucide-react";
 import { listSignals, syncSignals, createManualSignal, scanGoogleTrends, deleteSignal, purgeSignals } from "../services/signals";
 import type { Signal } from "../types";
 import { AXES, type AxisKey } from "../../shared/engine-data";
@@ -58,6 +58,19 @@ function fmtDate(iso: string) {
 // Tín hiệu — bản gọn: chỉ còn danh sách ý tưởng thu thập được (tiêu đề, tóm
 // tắt, nguồn, ngày) + thêm ý tưởng thủ công + quét tín hiệu mới. Đã bỏ hẳn
 // phần chấm điểm/rubric để trang này dễ dùng, không cần biết thuật ngữ nội bộ.
+/** Nhãn ngày kiểu người đọc: Hôm nay / Hôm qua / thứ trong tuần + ngày. */
+function dayLabel(day: string): string {
+  if (day === "unknown") return "Chưa rõ ngày";
+  const d = new Date(`${day}T00:00:00`);
+  const today = new Date();
+  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.round((startOf(today) - startOf(d)) / 86_400_000);
+  if (diffDays === 0) return "Hôm nay";
+  if (diffDays === 1) return "Hôm qua";
+  const thu = ["Chủ nhật", "Thứ hai", "Thứ ba", "Thứ tư", "Thứ năm", "Thứ sáu", "Thứ bảy"][d.getDay()];
+  return `${thu}, ${d.toLocaleDateString("vi-VN")}`;
+}
+
 export default function SignalsQueue() {
   const navigate = useNavigate();
   // Trend đi qua bóc cấu trúc như mọi nguồn khác: có công thức xem lại được, và
@@ -85,7 +98,12 @@ export default function SignalsQueue() {
   const [scanningTrends, setScanningTrends] = useState(false);
   // Mặc định theo độ nóng: người dùng vào đây để tìm cái đang được quan tâm
   // nhất, không phải để xem cái nào vừa quét về.
-  const [sortBy, setSortBy] = useState<"hot" | "new">("hot");
+  // Mặc định MỚI NHẤT trước: xu hướng là thứ theo ngày, hôm nay có gì mới mới
+  // là câu hỏi đầu tiên. "Độ nóng" vẫn chọn được, nhưng xếp theo độ nóng thì
+  // tin hôm qua nằm lẫn với tin tuần trước, nhìn vào không biết cái nào đang xảy ra.
+  const [sortBy, setSortBy] = useState<"hot" | "new">("new");
+  // Xem theo ngày: mỗi ngày một mục, gập lại được, mặc định mở ngày gần nhất.
+  const [collapsedDays, setCollapsedDays] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [showManualForm, setShowManualForm] = useState(false);
@@ -178,6 +196,20 @@ export default function SignalsQueue() {
   });
   const hasTraffic = signals.some((s) => trafficOf(s) > 0);
 
+  // Gom theo NGÀY thay vì đổ một danh sách dài.
+  //
+  // Xu hướng chỉ có nghĩa kèm thời điểm: "đang nóng" của hôm nay khác hẳn của
+  // tuần trước. Đổ luôn tuồng thì không phân biệt được, và cũng không xem lại
+  // được hôm qua có gì.
+  const byDay: { day: string; label: string; items: typeof sorted }[] = [];
+  for (const s of sorted) {
+    const d = new Date(s.publishedDate);
+    const day = isNaN(d.getTime()) ? "unknown" : d.toISOString().slice(0, 10);
+    const found = byDay.find((g) => g.day === day);
+    if (found) found.items.push(s);
+    else byDay.push({ day, label: dayLabel(day), items: [s] });
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -267,8 +299,32 @@ export default function SignalsQueue() {
           </div>
         </div>
       ) : (
-        <div className="flex flex-col gap-2">
-          {sorted.map((s) => (
+        <div className="flex flex-col gap-4">
+          {byDay.map((group) => {
+            const collapsed = collapsedDays.includes(group.day);
+            return (
+            <div key={group.day} className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setCollapsedDays((prev) =>
+                    prev.includes(group.day) ? prev.filter((d) => d !== group.day) : [...prev, group.day],
+                  )
+                }
+                className="flex items-center gap-2 text-left sticky top-0 bg-stone-50/95 backdrop-blur py-1.5 z-10"
+                aria-expanded={!collapsed}
+              >
+                {collapsed ? (
+                  <ChevronRight className="w-4 h-4 text-stone-400" aria-hidden="true" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-stone-400" aria-hidden="true" />
+                )}
+                <span className="text-sm font-semibold text-stone-700">{group.label}</span>
+                <span className="text-xs text-stone-400">{group.items.length} xu hướng</span>
+                <span className="flex-1 border-b border-stone-200" />
+              </button>
+
+              {!collapsed && group.items.map((s) => (
             <div key={s.id} className="ds-card">
             <div className="ds-card-body flex flex-col gap-2">
               <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -388,7 +444,10 @@ export default function SignalsQueue() {
               </div>
             </div>
             </div>
-          ))}
+              ))}
+            </div>
+            );
+          })}
         </div>
       )}
 
