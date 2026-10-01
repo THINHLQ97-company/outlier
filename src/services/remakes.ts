@@ -136,7 +136,10 @@ export interface RemakeImageResult {
   image: RemakeImage;
   description: string;
   /** Nhân vật đã dùng làm mẫu; hasReference=false nghĩa là chỉ tả bằng chữ. */
-  charactersUsed: { id: string; name: string; hasReference: boolean }[];
+  charactersUsed: { id: string; name: string; hasReference: boolean; missingReason?: string }[];
+  /** Ảnh gốc có được đính kèm làm mẫu bố cục không, và nếu không thì vì sao. */
+  sourceAttached?: boolean;
+  sourceMissingReason?: string;
   /** Đặc tả đã dùng để vẽ — giao diện hiện ra cho xem và sửa rồi vẽ lại. */
   spec?: Record<string, any>;
 }

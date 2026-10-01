@@ -14,6 +14,8 @@ export interface ImageSpec {
   aspect_ratio: string;
   /** Nét vẽ của trang (Phong cách gắn với thương hiệu). */
   art_style?: { name: string; descriptor: Record<string, any> };
+  /** Ảnh gốc của bài đang remake — mẫu BỐ CỤC, không phải mẫu nhân vật. */
+  source_layout_reference?: string;
   /** Cảnh cần vẽ, viết bằng tiếng Anh vì đi thẳng vào model vẽ. */
   scene: string;
   characters: { name: string; keep_appearance_from_reference_image?: string; note?: string }[];
@@ -51,6 +53,8 @@ export interface SpecInput {
   textInImage?: string | null;
   /** Nét vẽ của trang. Không có thì model vẽ theo nét mặc định của nó. */
   style?: { name: string; styleJson: Record<string, any> } | null;
+  /** Số hiệu (1-based) của ảnh gốc trong mảng ảnh đính kèm, null nếu không có. */
+  sourceIndex?: number | null;
 }
 
 export function buildImageSpec(input: SpecInput): ImageSpec {
@@ -73,6 +77,16 @@ export function buildImageSpec(input: SpecInput): ImageSpec {
     );
     const avoid = Array.isArray(d.avoid) ? d.avoid : d.avoid ? [String(d.avoid)] : [];
     if (avoid.length) rules.push(`This art style must NOT contain: ${avoid.join("; ")}.`);
+  }
+
+  // Ảnh gốc: lấy BỐ CỤC, không lấy NHÂN VẬT. Luật thay nhân vật phải chặt —
+  // lỏng là model vẽ lại luôn nhân vật gốc (chú ngựa) thay cho nhân vật trang.
+  if (input.sourceIndex) {
+    const ours = characters.map((c) => c.name).join(", ");
+    rules.push(
+      `Reference image #${input.sourceIndex} is the ORIGINAL post being remade. Reproduce its layout, panel structure, camera angle, poses, gestures and comedic timing as closely as possible.`,
+      `But REPLACE every character from image #${input.sourceIndex} with our characters${ours ? ` (${ours})` : ""}. Do NOT copy the original characters' appearance, species, face, costume or colors. Do NOT copy any text, watermark or logo from image #${input.sourceIndex}.`,
+    );
   }
 
   if (characters.some((c) => c.keep_appearance_from_reference_image)) {
@@ -98,6 +112,7 @@ export function buildImageSpec(input: SpecInput): ImageSpec {
     aspect_ratio: input.aspectRatio,
     art_style:
       input.style && Object.keys(d).length ? { name: input.style.name, descriptor: d } : undefined,
+    source_layout_reference: input.sourceIndex ? `#${input.sourceIndex}` : undefined,
     scene: input.description,
     characters,
     brand_visual: {
@@ -193,6 +208,7 @@ export function sanitizeSpec(raw: any, fallback: ImageSpec): ImageSpec {
       raw.art_style && typeof raw.art_style === "object" && str(raw.art_style.name)
         ? { name: str(raw.art_style.name)!, descriptor: raw.art_style.descriptor || {} }
         : fallback.art_style,
+    source_layout_reference: str(raw.source_layout_reference, fallback.source_layout_reference),
     scene,
     characters: Array.isArray(raw.characters)
       ? raw.characters

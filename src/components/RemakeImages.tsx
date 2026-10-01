@@ -50,7 +50,10 @@ export default function RemakeImages({
   const [prompt, setPrompt] = useState("");
   const [showPrompt, setShowPrompt] = useState(false);
   const [lastDescription, setLastDescription] = useState<string | null>(null);
-  const [charsUsed, setCharsUsed] = useState<{ id: string; name: string; hasReference: boolean }[]>([]);
+  const [charsUsed, setCharsUsed] = useState<
+    { id: string; name: string; hasReference: boolean; missingReason?: string }[]
+  >([]);
+  const [sourceInfo, setSourceInfo] = useState<{ attached: boolean; reason?: string } | null>(null);
   // Đặc tả của lần vẽ gần nhất: xem được, sửa được, vẽ lại đúng theo bản đã sửa.
   const [spec, setSpec] = useState<ImageSpec | null>(null);
   const [specEdited, setSpecEdited] = useState(false);
@@ -100,6 +103,7 @@ export default function RemakeImages({
       });
       setLastDescription(out.description);
       setCharsUsed(out.charactersUsed || []);
+      setSourceInfo({ attached: !!out.sourceAttached, reason: out.sourceMissingReason });
       if (out.spec) {
         setSpec(out.spec as ImageSpec);
         setSpecEdited(false);
@@ -310,16 +314,34 @@ export default function RemakeImages({
               </div>
             )}
 
-            {charsUsed.length > 0 && (
-              <p className="text-xs text-stone-500 mt-2">
-                Vẽ theo nhân vật: {charsUsed.map((c) => c.name).join(", ")}
-                {charsUsed.some((c) => !c.hasReference) && (
-                  <span className="text-amber-600">
-                    {" "}
-                    — có nhân vật chưa có ảnh mẫu nên chỉ tả được bằng chữ, ngoại hình sẽ kém nhất quán.
-                  </span>
+            {/* Nói rõ đã đính ảnh nào. Trước đây thiếu ảnh mẫu là im lặng — model
+                vẽ theo chữ, ra nhân vật "na ná", và không ai biết vì sao. */}
+            {(charsUsed.length > 0 || sourceInfo) && (
+              <div className="text-xs text-stone-500 mt-2 flex flex-col gap-0.5">
+                {charsUsed.length > 0 && (
+                  <p>
+                    Ảnh mẫu đã đính:{" "}
+                    {charsUsed.map((c, i) => (
+                      <span key={c.id}>
+                        {i > 0 && ", "}
+                        {c.hasReference ? (
+                          <span className="text-stone-700">{c.name} ✓</span>
+                        ) : (
+                          <span className="text-amber-700">
+                            {c.name} — THIẾU ({c.missingReason || "không đọc được ảnh"})
+                          </span>
+                        )}
+                      </span>
+                    ))}
+                  </p>
                 )}
-              </p>
+                {sourceInfo && (
+                  <p className={sourceInfo.attached ? "" : "text-amber-700"}>
+                    Ảnh gốc làm mẫu bố cục:{" "}
+                    {sourceInfo.attached ? "đã đính ✓" : `không đính được (${sourceInfo.reason || "bài không có ảnh"})`}
+                  </p>
+                )}
+              </div>
             )}
 
             {/* Bản đặc tả: mặc định gập lại vì phần lớn lần vẽ không cần đụng tới.

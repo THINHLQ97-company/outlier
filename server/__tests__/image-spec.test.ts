@@ -98,6 +98,10 @@ describe("luồng vẽ remake — canh bằng mã nguồn", () => {
   });
 
   test("nhân vật CÓ ảnh mẫu không bị tả ngoại hình bằng chữ", () => {
-    assert.match(src, /filter\(\(c\) => !c\.refIndex && c\.promptDescription\)/);
+    assert.match(src, /filter\(\(c\) => !c\.referenceImageUrl && c\.promptDescription\)/);
+  });
+
+  test("ghi log đã đính ảnh nào và thiếu ảnh nào", () => {
+    assert.match(src, /\[remake-image\].*đính/);
   });
 });

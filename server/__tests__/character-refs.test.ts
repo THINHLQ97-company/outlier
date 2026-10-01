@@ -57,12 +57,23 @@ describe("gom ảnh mẫu — canh bằng mã nguồn", () => {
     assert.match(src, /refIndex = images\.length/);
   });
 
+  const loader = fs.readFileSync(path.join(process.cwd(), "server", "services", "image-loader.ts"), "utf8");
+
   test("khai đúng kiểu file, không ghi cứng image/png", () => {
-    assert.match(src, /contentTypeForKey\(key\)/);
-    assert.doesNotMatch(src, /mimeType: "image\/png"/);
+    assert.match(loader, /contentTypeForKey\(key\)/);
+    assert.doesNotMatch(src + loader, /mimeType: "image\/png"/);
   });
 
-  test("file đọc không được thì coi như không có ảnh", () => {
-    assert.match(src, /if \(buf\?\.length\)/);
+  test("đọc được ảnh NGOÀI kho — lỗi cũ: ảnh mẫu dạng link ngoài bị bỏ qua im lặng", () => {
+    assert.match(loader, /https\?:/);
+  });
+
+  test("thiếu ảnh nào cũng ghi LÝ DO, không im lặng", () => {
+    assert.match(src, /missingReason/);
+    assert.match(src, /sourceMissingReason/);
+  });
+
+  test("ảnh gốc đứng CUỐI, sau ảnh nhân vật", () => {
+    assert.match(src, /sourceIndex = images\.length/);
   });
 });

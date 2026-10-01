@@ -53,7 +53,10 @@ export interface GenerateRemakeImageResult {
   /** Đặc tả đã dùng — giao diện hiện ra để xem và sửa. */
   spec?: Record<string, any>;
   /** Nhân vật đã dùng làm mẫu — để giao diện nói rõ ảnh vẽ theo ai. */
-  charactersUsed: { id: string; name: string; hasReference: boolean }[];
+  charactersUsed: { id: string; name: string; hasReference: boolean; missingReason?: string }[];
+  /** Ảnh gốc của bài có được đính kèm làm mẫu bố cục không. */
+  sourceAttached?: boolean;
+  sourceMissingReason?: string;
 }
 
 /**
@@ -75,9 +78,14 @@ async function loadImageContext(remakeId: string) {
     ? await db.select().from(deconstructions).where(eq(deconstructions.id, row.deconstructionId))
     : [];
 
-  // Gom ảnh mẫu và đánh số cùng một chỗ — tách ra là số hiệu lệch.
-  const { collectCharacterRefs } = await import("./character-refs");
-  const refs = await collectCharacterRefs(chars);
+  // Ảnh gốc của bài: ưu tiên bản đã giữ trong kho (không hết hạn), rồi mới tới
+  // link gốc. Link Facebook có chữ ký và hạn dùng, để lâu là không tải được.
+  let sourceImageUrl: string | null = (decon?.thumbnailUrl as string) || null;
+  if (decon?.radarItemId) {
+    const { radarItems } = await import("../db/schema");
+    const [item] = await db.select().from(radarItems).where(eq(radarItems.id, decon.radarItemId));
+    if (item?.coverUrl?.startsWith("/api/files/")) sourceImageUrl = item.coverUrl;
+  }
 
   // Nét vẽ của trang. Thiếu thì model vẽ theo nét mặc định của nó — nhân vật
   // đúng mà nhìn vẫn không ra trang mình.
@@ -93,8 +101,9 @@ async function loadImageContext(remakeId: string) {
     row,
     brand,
     chars,
-    refs,
     style,
+    decon,
+    sourceImageUrl,
     source: {
       imageReading: (decon?.imageReading as any) || null,
       formula: (decon?.structure as any)?.formula || null,
@@ -118,8 +127,8 @@ export async function proposeConceptsForRemake(remakeId: string, count = 3) {
       characterNames: ctx.chars.map((c) => c.name),
       // Chỉ nhân vật KHÔNG có ảnh mẫu mới được tả ngoại hình bằng chữ — có ảnh
       // mẫu mà còn tả bằng chữ thì chữ giành quyền với ảnh, nhân vật vẽ ra sai.
-      charactersWithoutReference: ctx.refs.characters
-        .filter((c) => !c.refIndex && c.promptDescription)
+      charactersWithoutReference: ctx.chars
+        .filter((c) => !c.referenceImageUrl && c.promptDescription)
         .map((c) => ({ name: c.name, appearance: c.promptDescription! })),
       visual: visualOf(ctx.brand),
       source: ctx.source,
@@ -146,38 +155,72 @@ export async function generateRemakeImage(opts: {
   textInImage?: string | null;
 }): Promise<GenerateRemakeImageResult> {
   const ctx = await loadImageContext(opts.remakeId);
-  const { db, row, brand, chars, refs, style } = ctx;
+  const { db, row, brand, chars, style } = ctx;
   const aspectRatio = opts.aspectRatio || "1:1";
 
   const { buildImageSpec, specFromConcept, imageSpecToPrompt, sanitizeSpec } = await import("./image-spec");
-  const specInput = { aspectRatio, characters: refs.characters, visual: visualOf(brand), style };
+  const { collectCharacterRefs } = await import("./character-refs");
+
+  // Chọn phương án TRƯỚC, vì nó quyết định nhân vật nào có trong bài.
+  let concept: any = null;
+  let conceptIndex: number | null = null;
+  if (!opts.customPrompt?.trim()) {
+    let concepts = Array.isArray(row.imageConceptsJson) ? (row.imageConceptsJson as any[]) : [];
+    if (concepts.length === 0) concepts = await proposeConceptsForRemake(opts.remakeId);
+    conceptIndex = Math.min(Math.max(0, opts.conceptIndex ?? 0), concepts.length - 1);
+    concept = concepts[conceptIndex];
+  }
+
+  // Chỉ đính ảnh mẫu của nhân vật CÓ TRONG BÀI — bài chỉ có Gèn mà đính cả
+  // ảnh Gàn thì model hay vẽ thêm Gàn, hoặc pha hai người thành một.
+  const usedChars = pickCharactersInUse(chars, concept, opts.customPrompt);
+  const refs = await collectCharacterRefs(usedChars, { sourceImageUrl: ctx.sourceImageUrl });
+
+  // Ghi rõ đã đính ảnh nào và thiếu ảnh nào vì sao. Trước đây thiếu ảnh mẫu là
+  // im lặng — model vẽ theo chữ, ra nhân vật "na ná", không ai biết tại sao.
+  const attachLog = [
+    ...refs.characters.map((c) => (c.refIndex ? `${c.name}=#${c.refIndex}` : `${c.name}=THIẾU(${c.missingReason})`)),
+    refs.sourceIndex ? `ảnh gốc=#${refs.sourceIndex}` : `ảnh gốc=THIẾU(${refs.sourceMissingReason || "bài không có ảnh"})`,
+  ].join(", ");
+  console.log(`[remake-image] ${opts.remakeId}: đính ${refs.images.length} ảnh — ${attachLog}`);
+
+  const specInput = {
+    aspectRatio,
+    characters: refs.characters,
+    visual: visualOf(brand),
+    style,
+    sourceIndex: refs.sourceIndex,
+  };
 
   let baseSpec;
   let description: string;
-  let conceptIndex: number | null = null;
-
-  if (opts.customPrompt?.trim()) {
-    // Người dùng tự tả cả cảnh: tôn trọng nguyên văn.
-    description = opts.customPrompt.trim();
-    baseSpec = buildImageSpec({ ...specInput, description, textInImage: opts.textInImage });
-  } else {
-    // Mặc định đi qua PHƯƠNG ÁN có cấu trúc (khung, hành động, biểu cảm, lời
-    // thoại) — chính xác hơn hẳn một đoạn tả bằng văn xuôi.
-    let concepts = Array.isArray(row.imageConceptsJson) ? (row.imageConceptsJson as any[]) : [];
-    if (concepts.length === 0) concepts = await proposeConceptsForRemake(opts.remakeId);
-
-    conceptIndex = Math.min(Math.max(0, opts.conceptIndex ?? 0), concepts.length - 1);
-    const concept = concepts[conceptIndex];
+  if (concept) {
+    // Phương án có cấu trúc (khung, hành động, biểu cảm, lời thoại).
     description = `${concept.title} — ${concept.why || ""}`.trim();
     baseSpec = specFromConcept(concept, specInput);
+  } else {
+    // Người dùng tự tả cả cảnh: tôn trọng nguyên văn.
+    description = opts.customPrompt!.trim();
+    baseSpec = buildImageSpec({ ...specInput, description, textInImage: opts.textInImage });
   }
 
   // Người dùng sửa tay đặc tả thì dùng bản họ sửa, nhưng vẫn lọc lại.
   const spec = opts.spec ? sanitizeSpec(opts.spec, baseSpec) : baseSpec;
   const prompt = imageSpecToPrompt(spec, refs.images.length);
 
-  // Ảnh mẫu đi kèm prompt: tả bằng chữ không đủ để hai bài ra cùng một nhân vật.
+  // Ảnh đính kèm: ảnh mẫu nhân vật + ảnh gốc của bài.
   const dataUrl = await generateImageGemini(prompt, refs.images.length ? refs.images : undefined, aspectRatio);
+
+  // Ảnh gốc là link ngoài mà tải được thì giữ luôn về kho — link Facebook hết
+  // hạn sau vài hôm, lần vẽ sau sẽ không còn ảnh gốc để bám.
+  if (refs.sourceIndex && ctx.decon && ctx.sourceImageUrl && !ctx.sourceImageUrl.startsWith("/api/files/")) {
+    const { cacheRemoteImage } = await import("./thumb-cache");
+    const kept = await cacheRemoteImage(ctx.sourceImageUrl).catch(() => null);
+    if (kept) {
+      const { deconstructions } = await import("../db/schema");
+      await db.update(deconstructions).set({ thumbnailUrl: kept }).where(eq(deconstructions.id, ctx.decon.id)).catch(() => {});
+    }
+  }
   const url = await persistDataUrl("remakes", dataUrl);
   if (!url) throw new Error("Công cụ vẽ trả về dữ liệu không đọc được.");
 
@@ -205,10 +248,35 @@ export async function generateRemakeImage(opts: {
     image,
     description,
     spec: spec as any,
-    charactersUsed: chars.map((c) => ({
-      id: c.id,
-      name: c.name,
-      hasReference: !!refs.characters.find((r) => r.name === c.name)?.refIndex,
-    })),
+    charactersUsed: usedChars.map((c) => {
+      const r = refs.characters.find((x) => x.name === c.name);
+      return { id: c.id, name: c.name, hasReference: !!r?.refIndex, missingReason: r?.missingReason };
+    }),
+    sourceAttached: !!refs.sourceIndex,
+    sourceMissingReason: refs.sourceIndex ? undefined : refs.sourceMissingReason,
   };
+}
+
+/**
+ * Nhân vật nào CÓ TRONG BÀI.
+ *
+ * Theo thứ tự: tên phương án ghi rõ → tên xuất hiện trong lời tả/lời thoại các
+ * khung → (không thấy ai) toàn bộ nhân vật của trang. Bước cuối là lưới an
+ * toàn: model quên ghi tên thì thà đính đủ còn hơn vẽ ra nhân vật không có mẫu.
+ */
+export function pickCharactersInUse(
+  chars: CharacterRow[],
+  concept: { characters?: string[]; panels?: { scene?: string; action?: string; dialogue?: string | null }[] } | null,
+  customPrompt?: string,
+): CharacterRow[] {
+  const byName = new Map(chars.map((c) => [c.name, c]));
+  const listed = (concept?.characters || []).map((n) => byName.get(n)).filter(Boolean) as CharacterRow[];
+  if (listed.length) return listed;
+
+  const text = [
+    customPrompt || "",
+    ...(concept?.panels || []).flatMap((p) => [p.scene || "", p.action || "", p.dialogue || ""]),
+  ].join(" ");
+  const mentioned = chars.filter((c) => text.includes(c.name));
+  return mentioned.length ? mentioned : chars;
 }
