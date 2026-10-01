@@ -1,0 +1,1 @@
+ALTER TABLE "brands" ADD COLUMN "default_style_id" uuid;

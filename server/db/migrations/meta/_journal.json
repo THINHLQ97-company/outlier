@@ -253,6 +253,13 @@
       "when": 1790839650003,
       "tag": "0035_stiff_shooting_star",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1790840856070,
+      "tag": "0036_military_thunderbolt_ross",
+      "breakpoints": true
     }
   ]
 }

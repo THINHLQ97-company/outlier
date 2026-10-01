@@ -12,6 +12,8 @@
 export interface ImageSpec {
   role: "brand_post_illustration";
   aspect_ratio: string;
+  /** Nét vẽ của trang (Phong cách gắn với thương hiệu). */
+  art_style?: { name: string; descriptor: Record<string, any> };
   /** Cảnh cần vẽ, viết bằng tiếng Anh vì đi thẳng vào model vẽ. */
   scene: string;
   characters: { name: string; keep_appearance_from_reference_image?: string; note?: string }[];
@@ -47,6 +49,8 @@ export interface SpecInput {
   visual?: { template?: string; palette?: string[]; mustHave?: string[]; doNots?: string[] } | null;
   /** Chữ muốn hiện trong ảnh (tiêu đề, câu chốt). Bỏ trống = không vẽ chữ. */
   textInImage?: string | null;
+  /** Nét vẽ của trang. Không có thì model vẽ theo nét mặc định của nó. */
+  style?: { name: string; styleJson: Record<string, any> } | null;
 }
 
 export function buildImageSpec(input: SpecInput): ImageSpec {
@@ -58,6 +62,19 @@ export function buildImageSpec(input: SpecInput): ImageSpec {
   }));
 
   const rules: string[] = [];
+
+  // Nét vẽ đứng ĐẦU: nó quyết định cả bức ảnh trông ra sao. Cùng cách luồng
+  // Sáng tạo — "avoid" và bảng màu tách thành luật riêng, vì phủ định nằm lẫn
+  // trong JSON thì model bỏ qua.
+  const d = input.style?.styleJson || {};
+  if (input.style && Object.keys(d).length) {
+    rules.push(
+      "Render EXACTLY in the art style described in art_style.descriptor — line weight, rendering method, character proportions, face style and background treatment. This style applies to the whole image and to every character.",
+    );
+    const avoid = Array.isArray(d.avoid) ? d.avoid : d.avoid ? [String(d.avoid)] : [];
+    if (avoid.length) rules.push(`This art style must NOT contain: ${avoid.join("; ")}.`);
+  }
+
   if (characters.some((c) => c.keep_appearance_from_reference_image)) {
     rules.push(
       "Keep each character's face, hairstyle, costume and colors IDENTICAL to their reference image. Do not redesign them.",
@@ -79,6 +96,8 @@ export function buildImageSpec(input: SpecInput): ImageSpec {
   return {
     role: "brand_post_illustration",
     aspect_ratio: input.aspectRatio,
+    art_style:
+      input.style && Object.keys(d).length ? { name: input.style.name, descriptor: d } : undefined,
     scene: input.description,
     characters,
     brand_visual: {
@@ -170,6 +189,10 @@ export function sanitizeSpec(raw: any, fallback: ImageSpec): ImageSpec {
   return {
     role: "brand_post_illustration",
     aspect_ratio: str(raw.aspect_ratio, fallback.aspect_ratio)!,
+    art_style:
+      raw.art_style && typeof raw.art_style === "object" && str(raw.art_style.name)
+        ? { name: str(raw.art_style.name)!, descriptor: raw.art_style.descriptor || {} }
+        : fallback.art_style,
     scene,
     characters: Array.isArray(raw.characters)
       ? raw.characters

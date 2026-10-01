@@ -397,6 +397,15 @@ export const brands = pgTable("brands", {
    *  nặng hơn nhiều dòng mô tả tính cách. */
   fewShotExamples: jsonb("few_shot_examples").$type<BrandField<BrandExample[]> | null>(),
 
+  /**
+   * Nét vẽ (Phong cách) của trang — mọi ảnh remake vẽ theo nét này.
+   *
+   * Thiếu nó thì luồng remake vẽ theo nét MẶC ĐỊNH của Gemini (bóng bẩy, kiểu
+   * chibi) dù trang vẽ phẳng 2D: nhân vật đúng mà nhìn vẫn không ra trang mình.
+   * Luồng Sáng tạo có chọn phong cách từ đầu; luồng remake thì chưa từng có.
+   */
+  defaultStyleId: uuid("default_style_id"),
+
   ingestStatus: text("ingest_status").notNull().default("empty"), // empty | running | ready | error
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

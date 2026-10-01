@@ -32,6 +32,7 @@ import {
 } from "../services/brands";
 import ConfirmDialog from "../components/ConfirmDialog";
 import type { BrandRow, BrandDetail, BrandSource, BrandField, BrandRejectedField } from "../types";
+import BrandStylePicker from "../components/BrandStylePicker";
 import BrandFanpages from "../components/BrandFanpages";
 
 // Trang "Thương hiệu" — hồ sơ brand bóc từ tài liệu thật, MỖI FIELD KÈM TRÍCH
@@ -432,6 +433,12 @@ function BrandDetailPanel({
         brandId={brand.id}
         fanpages={brand.fanpages || []}
         canEdit
+        onChanged={onSourcesChanged}
+      />
+
+      <BrandStylePicker
+        brandId={brand.id}
+        value={(brand as any).defaultStyleId}
         onChanged={onSourcesChanged}
       />
 

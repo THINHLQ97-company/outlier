@@ -263,6 +263,11 @@ export function registerBrandRoutes(app: Express) {
       const patch: Record<string, any> = { updatedAt: new Date() };
       if (typeof req.body?.name === "string" && req.body.name.trim()) patch.name = req.body.name.trim();
       if (typeof req.body?.isShared === "boolean") patch.isShared = req.body.isShared;
+      // Nét vẽ của trang: null để bỏ chọn (về nét mặc định).
+      if (req.body?.defaultStyleId === null) patch.defaultStyleId = null;
+      else if (typeof req.body?.defaultStyleId === "string" && UUID_RE.test(req.body.defaultStyleId)) {
+        patch.defaultStyleId = req.body.defaultStyleId;
+      }
 
       for (const f of EDITABLE) {
         if (!(f in (req.body || {}))) continue;

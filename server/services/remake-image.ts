@@ -79,12 +79,22 @@ async function loadImageContext(remakeId: string) {
   const { collectCharacterRefs } = await import("./character-refs");
   const refs = await collectCharacterRefs(chars);
 
+  // Nét vẽ của trang. Thiếu thì model vẽ theo nét mặc định của nó — nhân vật
+  // đúng mà nhìn vẫn không ra trang mình.
+  let style: { name: string; styleJson: Record<string, any> } | null = null;
+  if (brand?.defaultStyleId) {
+    const { styles } = await import("../db/schema");
+    const [st] = await db.select().from(styles).where(eq(styles.id, brand.defaultStyleId));
+    if (st) style = { name: st.name, styleJson: (st.styleJson as any) || {} };
+  }
+
   return {
     db,
     row,
     brand,
     chars,
     refs,
+    style,
     source: {
       imageReading: (decon?.imageReading as any) || null,
       formula: (decon?.structure as any)?.formula || null,
@@ -136,11 +146,11 @@ export async function generateRemakeImage(opts: {
   textInImage?: string | null;
 }): Promise<GenerateRemakeImageResult> {
   const ctx = await loadImageContext(opts.remakeId);
-  const { db, row, brand, chars, refs } = ctx;
+  const { db, row, brand, chars, refs, style } = ctx;
   const aspectRatio = opts.aspectRatio || "1:1";
 
   const { buildImageSpec, specFromConcept, imageSpecToPrompt, sanitizeSpec } = await import("./image-spec");
-  const specInput = { aspectRatio, characters: refs.characters, visual: visualOf(brand) };
+  const specInput = { aspectRatio, characters: refs.characters, visual: visualOf(brand), style };
 
   let baseSpec;
   let description: string;
