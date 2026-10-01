@@ -674,6 +674,8 @@ export interface RemakeImage {
    * sửa rồi vẽ lại chính xác hơn nhiều so với tả lại cả cảnh bằng lời.
    */
   specJson?: Record<string, any> | null;
+  /** Vẽ từ phương án thứ mấy (0-based) trong imageConceptsJson. */
+  conceptIndex?: number | null;
   /**
    * Prompt ĐÚNG NHƯ ĐÃ GỬI cho công cụ vẽ.
    *
@@ -730,6 +732,19 @@ export const remakes = pgTable("remakes", {
    * vẫn vẽ cảnh kể chuyện thì bài với ảnh nói hai thứ khác nhau.
    */
   directionText: text("direction_text"),
+
+  /**
+   * Ba phương án ảnh AI đề xuất cho bản viết (image-concepts).
+   *
+   * Lưu lại để chọn phương án khác chỉ bằng một cú bấm, không phải chờ đề xuất
+   * lại — và để biết ảnh đang có được vẽ từ phương án nào.
+   */
+  imageConceptsJson: jsonb("image_concepts_json").$type<any[] | null>(),
+  /**
+   * Lý do vẽ ảnh tự động thất bại (nếu có). Tách khỏi errorMessage vì bài viết
+   * vẫn dùng được — hỏng ảnh không phải hỏng bài, và phải nói đúng cái nào hỏng.
+   */
+  imageError: text("image_error"),
 
   /**
    * Bài đã đăng lên đâu. Giữ để không đăng trùng và để mở lại bài thật.

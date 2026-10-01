@@ -16,7 +16,13 @@
 // tinh thần "không crash toàn app" (CLAUDE.md mục 3).
 export class GeminiError extends Error {}
 
-const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-3.1-pro-preview";
+// Model PHÂN TÍCH (chữ, đọc ảnh, đọc video). Đổi sang gemini-3.8-flash theo yêu
+// cầu chủ dự án 2026-10-01: nhanh hơn và rẻ hơn hẳn bản pro cho đúng loại việc
+// đang làm ở đây (bóc cấu trúc, tả ảnh, viết lại bài).
+const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-3.8-flash";
+// Đường lùi khi Google từ chối tên model (sai tên, chưa mở cho tài khoản, bị
+// rút). Không có lùi thì một tên model sai làm chết TOÀN BỘ phần phân tích.
+const TEXT_MODEL_FALLBACK = process.env.GEMINI_TEXT_MODEL_FALLBACK || "gemini-3.1-pro-preview";
 const IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image-preview";
 
 function getApiKey(): string {
@@ -29,6 +35,36 @@ function getApiKey(): string {
 
 // Chuẩn hoá lỗi từ @google/genai thành message tiếng Việt dễ hiểu, cùng
 // pattern with marcow-crop's /api/gemini error handling.
+/** Lỗi này có phải do TÊN MODEL không dùng được không (khác lỗi nội dung, hết hạn mức…). */
+function isModelUnavailable(e: any): boolean {
+  const msg = String(e?.message || e || "");
+  const status = e?.status ?? e?.code;
+  return status === 404 || /not found|is not supported|unknown model|does not exist|model.*not.*available/i.test(msg);
+}
+
+// Nhớ model đã phải lùi để không thử lại tên hỏng ở mọi lượt gọi.
+let textModelInUse = TEXT_MODEL;
+
+/**
+ * Gọi với model phân tích; tên model bị từ chối thì lùi về bản dự phòng MỘT lần
+ * rồi dùng luôn bản đó cho các lượt sau, kèm log rõ để biết mà sửa env.
+ */
+async function withTextModel<T>(run: (model: string) => Promise<T>): Promise<T> {
+  try {
+    return await run(textModelInUse);
+  } catch (e: any) {
+    if (textModelInUse !== TEXT_MODEL_FALLBACK && isModelUnavailable(e)) {
+      console.warn(
+        `[gemini] Model "${textModelInUse}" không dùng được (${e?.message || e}) — lùi về "${TEXT_MODEL_FALLBACK}". ` +
+          "Kiểm tra tên model ở /api/admin/gemini-models rồi đặt GEMINI_TEXT_MODEL cho đúng.",
+      );
+      textModelInUse = TEXT_MODEL_FALLBACK;
+      return run(textModelInUse);
+    }
+    throw e;
+  }
+}
+
 function normalizeGeminiError(e: any): GeminiError {
   const msg: string = e?.message || String(e);
   if (msg.includes("API key not valid") || msg.includes("API_KEY_INVALID")) {
@@ -51,7 +87,15 @@ const EMBED_MODEL = process.env.GEMINI_EMBED_MODEL || "gemini-embedding-001";
  * (/api/admin/gemini-models). Đổi mô hình bằng biến môi trường, không phải sửa
  * mã: khi Google ra bản mới thì chỉ cần đổi env rồi triển khai lại.
  */
-export const CURRENT_MODELS = { text: TEXT_MODEL, image: IMAGE_MODEL, embed: EMBED_MODEL };
+export const CURRENT_MODELS = {
+  get text() {
+    return textModelInUse;
+  },
+  textConfigured: TEXT_MODEL,
+  textFallback: TEXT_MODEL_FALLBACK,
+  image: IMAGE_MODEL,
+  embed: EMBED_MODEL,
+};
 
 // Sinh embedding (vector) cho 1 đoạn text — dùng cho RAG (truy hồi ảnh đã thích
 // giống nhất). Lỗi/thiếu key → throw GeminiError (caller tự bỏ qua RAG).
@@ -85,11 +129,13 @@ export async function generateTextGemini(prompt: string, opts: { asPlainText?: b
   try {
     const { GoogleGenAI } = await import("@google/genai");
     const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models.generateContent({
-      model: TEXT_MODEL,
-      contents: prompt,
-      config: opts.asPlainText ? {} : { responseMimeType: "application/json" },
-    });
+    const response: any = await withTextModel((model) =>
+      ai.models.generateContent({
+        model,
+        contents: prompt,
+        config: opts.asPlainText ? {} : { responseMimeType: "application/json" },
+      }),
+    );
     const text = response.text;
     if (!text) throw new Error("Phản hồi Gemini rỗng.");
     return text;
@@ -112,11 +158,13 @@ export async function analyzeImageGemini(
   try {
     const { GoogleGenAI } = await import("@google/genai");
     const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models.generateContent({
-      model: TEXT_MODEL,
-      contents: { parts: [{ inlineData: image }, { text: prompt }] },
-      config: { responseMimeType: "application/json" },
-    });
+    const response: any = await withTextModel((model) =>
+      ai.models.generateContent({
+        model,
+        contents: { parts: [{ inlineData: image }, { text: prompt }] },
+        config: { responseMimeType: "application/json" },
+      }),
+    );
     const text = response.text;
     if (!text) throw new Error("Phản hồi Gemini rỗng.");
     return text;
@@ -139,11 +187,13 @@ export async function analyzeVideoGemini(
   try {
     const { GoogleGenAI } = await import("@google/genai");
     const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models.generateContent({
-      model: TEXT_MODEL,
-      contents: { parts: [{ inlineData: video }, { text: prompt }] },
-      config: { responseMimeType: "application/json" },
-    });
+    const response: any = await withTextModel((model) =>
+      ai.models.generateContent({
+        model,
+        contents: { parts: [{ inlineData: video }, { text: prompt }] },
+        config: { responseMimeType: "application/json" },
+      }),
+    );
     const text = response.text;
     if (!text) throw new Error("Phản hồi Gemini rỗng.");
     return text;

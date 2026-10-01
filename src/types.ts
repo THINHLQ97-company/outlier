@@ -658,7 +658,7 @@ export interface GuardrailReport {
 }
 
 export type RemakeFormat = "video_script" | "post";
-export type RemakeStatus = "pending" | "writing" | "ready" | "error";
+export type RemakeStatus = "pending" | "writing" | "ready" | "error" | "drawing";
 
 export interface RemakeRevision {
   at: string;
@@ -682,6 +682,12 @@ export interface RemakeRow {
   /** Các phương án ảnh đã vẽ cho bản viết này. */
   imagesJson?: RemakeImage[];
   selectedImageUrl?: string | null;
+  /** Ba phương án ảnh AI đề xuất — chọn phương án khác chỉ một cú bấm. */
+  imageConceptsJson?: ImageConcept[] | null;
+  /** Vẽ ảnh tự động thất bại vì sao. Bài viết vẫn dùng được. */
+  imageError?: string | null;
+  /** Hướng nội dung chủ trang đặt lúc tạo bản viết. */
+  directionText?: string | null;
   /** Bài đã đăng lên trang nào. */
   publishedJson?: PublishedRecord[];
   createdAt: string;
@@ -700,6 +706,14 @@ export interface PublishedRecord {
 }
 
 /** Một phương án ảnh — mirror server/db/schema.ts (RemakeImage). */
+export interface ImageConcept {
+  title: string;
+  why: string;
+  layout: string;
+  characters: string[];
+  panels: { scene: string; action: string; expression: string; dialogue: string | null }[];
+}
+
 export interface RemakeImage {
   url: string;
   prompt: string;
@@ -716,6 +730,8 @@ export interface RemakeImage {
   specJson?: Record<string, any> | null;
   /** Prompt đúng như đã gửi cho công cụ vẽ — xem lại được khi ảnh ra sai. */
   promptSent?: string | null;
+  /** Vẽ từ phương án thứ mấy (0-based). */
+  conceptIndex?: number | null;
 }
 
 // POST /api/remakes và /api/remakes/:id/revise trả về NGAY (status

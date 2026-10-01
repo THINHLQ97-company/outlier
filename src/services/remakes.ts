@@ -9,7 +9,7 @@
 // services/deconstruct.ts. Riêng /recheck là ĐỒNG BỘ — trả kết quả ngay,
 // không cần poll (dùng khi người dùng tự sửa tay nội dung).
 import { authHeaders, asError } from "./http";
-import type { RemakeRow, RemakeCreateResult, RemakeFormat, RemakeImage, PublishedRecord } from "../types";
+import type { RemakeRow, RemakeCreateResult, RemakeFormat, RemakeImage, PublishedRecord, ImageConcept } from "../types";
 
 export async function listRemakes(): Promise<RemakeRow[]> {
   const res = await fetch("/api/remakes", { headers: authHeaders(false) });
@@ -93,7 +93,8 @@ export interface RemakePollOptions {
  */
 export function pollRemake(id: string, opts: RemakePollOptions): () => void {
   const intervalMs = opts.intervalMs ?? 3000;
-  const timeoutMs = opts.timeoutMs ?? 5 * 60 * 1000;
+  // Viết + đề xuất phương án + vẽ ảnh: dài hơn chỉ viết, nên chờ lâu hơn.
+  const timeoutMs = opts.timeoutMs ?? 8 * 60 * 1000;
   const startedAt = Date.now();
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -104,6 +105,8 @@ export function pollRemake(id: string, opts: RemakePollOptions): () => void {
       const row = await getRemake(id);
       if (stopped) return;
       opts.onUpdate(row);
+      // "drawing" CHƯA xong: chữ đã viết nhưng ảnh đang vẽ. Dừng theo dõi ở đây
+      // là lỗi cũ — ảnh vẽ xong không ai tải lại, người dùng tưởng không có ảnh.
       if (row.status === "ready" || row.status === "error") return; // xong, không hẹn tiếp
     } catch (e: any) {
       if (!stopped) opts.onError(e?.message || "Không theo dõi được tiến độ, thử tải lại trang.");
@@ -145,6 +148,8 @@ export async function generateRemakeImage(
     aspectRatio?: string;
     /** Đặc tả đã sửa tay — vẽ đúng theo bản này thay vì dựng lại từ đầu. */
     spec?: Record<string, any> | null;
+    /** Vẽ phương án thứ mấy (0-based) trong ba phương án đã đề xuất. */
+    conceptIndex?: number;
     textInImage?: string | null;
   } = {},
 ): Promise<RemakeImageResult> {
@@ -217,4 +222,11 @@ export async function deleteRemakeImage(remakeId: string, url: string): Promise<
     headers: authHeaders(false),
   });
   if (!res.ok) return asError(res, "Xoá ảnh thất bại.");
+}
+
+// Đề xuất lại ba phương án ảnh (việc chữ, không vẽ, không tốn tiền vẽ).
+export async function proposeRemakeConcepts(id: string): Promise<{ concepts: ImageConcept[] }> {
+  const res = await fetch(`/api/remakes/${id}/concepts`, { method: "POST", headers: authHeaders(false) });
+  if (!res.ok) return asError(res, "Không đề xuất được phương án ảnh.");
+  return res.json();
 }

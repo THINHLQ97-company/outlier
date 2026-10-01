@@ -80,20 +80,8 @@ describe("sanitizeSpec — người dùng sửa tay thì vẫn phải lọc lạ
   });
 });
 
-describe("luật trong prompt tả ảnh — canh bằng mã nguồn", () => {
+describe("luồng vẽ remake — canh bằng mã nguồn", () => {
   const src = fs.readFileSync(path.join(process.cwd(), "server", "services", "remake-image.ts"), "utf8");
-
-  test("bắt ảnh minh hoạ ĐÚNG bản viết, không phải cảnh chung chủ đề", () => {
-    assert.match(src, /minh hoạ ĐÚNG nội dung bản viết/);
-  });
-
-  test("bài gốc nhiều khung thì giữ đúng hình thức nhiều khung", () => {
-    assert.match(src, /giữ đúng hình thức đó \(số khung, cách chia khung\)/);
-  });
-
-  test("hướng nội dung của chủ trang thắng mọi gợi ý khác", () => {
-    assert.match(src, /thắng mọi gợi ý khác/);
-  });
 
   test("prompt đã gửi được lưu lại cùng ảnh", () => {
     assert.match(src, /promptSent: prompt/);
@@ -102,5 +90,14 @@ describe("luật trong prompt tả ảnh — canh bằng mã nguồn", () => {
   test("bài gốc được đọc từ bản bóc cấu trúc, không bỏ qua", () => {
     assert.match(src, /row\.deconstructionId/);
     assert.match(src, /imageReading/);
+  });
+
+  test("mặc định vẽ theo PHƯƠNG ÁN có cấu trúc, không theo đoạn văn xuôi", () => {
+    assert.match(src, /specFromConcept\(concept/);
+    assert.doesNotMatch(src, /describeImageForDraft\(/, "hàm tả ảnh cũ đã bỏ — không được gọi lại");
+  });
+
+  test("nhân vật CÓ ảnh mẫu không bị tả ngoại hình bằng chữ", () => {
+    assert.match(src, /filter\(\(c\) => !c\.refIndex && c\.promptDescription\)/);
   });
 });

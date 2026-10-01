@@ -35,6 +35,8 @@ import PublishPanel from "../components/PublishPanel";
 const STATUS_META: Record<RemakeRow["status"], { label: string; cls: string }> = {
   pending: { label: "Đang chờ", cls: "" },
   writing: { label: "Đang viết...", cls: "ds-badge-warning" },
+  // Chữ đã xong, đang đề xuất phương án và vẽ ảnh — CHƯA xong hẳn.
+  drawing: { label: "Đang vẽ ảnh...", cls: "ds-badge-warning" },
   ready: { label: "Đã có bản viết", cls: "ds-badge-success" },
   error: { label: "Lỗi", cls: "ds-badge-danger" },
 };
@@ -203,7 +205,7 @@ export default function Remake() {
       const r = await getRemake(id);
       setDetail(r);
       syncItemInList(r);
-      if (r.status === "pending" || r.status === "writing") startWatching(id);
+      if (r.status === "pending" || r.status === "writing" || r.status === "drawing") startWatching(id);
     } catch (e: any) {
       setDetailError(e?.message || "Không tải được bản viết.");
       if (!opts.silent) setDetail(null);
@@ -437,6 +439,7 @@ export default function Remake() {
                 key={detail.id}
                 row={detail}
                 watching={detail.status === "pending" || detail.status === "writing"}
+                drawing={detail.status === "drawing"}
                 watchElapsedSec={watchElapsedSec}
                 watchTimedOut={watchTimedOut}
                 hint={pendingHint?.id === detail.id ? pendingHint.message : null}
@@ -718,6 +721,7 @@ function IssuesList({ report }: { report: GuardrailReport }) {
 function RemakeDetailPanel({
   row,
   watching,
+  drawing,
   watchElapsedSec,
   watchTimedOut,
   hint,
@@ -733,6 +737,8 @@ function RemakeDetailPanel({
 }: {
   row: RemakeRow;
   watching: boolean;
+  /** Chữ đã xong, đang đề xuất phương án và vẽ ảnh. */
+  drawing?: boolean;
   watchElapsedSec: number;
   watchTimedOut: boolean;
   hint: string | null;
@@ -939,6 +945,9 @@ function RemakeDetailPanel({
             images={row.imagesJson || []}
             selectedUrl={row.selectedImageUrl}
             hasDraft={!!row.draft?.trim()}
+            concepts={row.imageConceptsJson || []}
+            autoDrawing={!!drawing}
+            autoDrawError={row.imageError || null}
             onChanged={onChanged}
           />
 

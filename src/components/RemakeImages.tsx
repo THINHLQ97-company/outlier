@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Loader2, ImagePlus, Check, Download, Pencil, Wand2, X } from "lucide-react";
-import { generateRemakeImage, selectRemakeImage, editRemakeImage } from "../services/remakes";
-import type { RemakeImage } from "../types";
+import { generateRemakeImage, selectRemakeImage, editRemakeImage, proposeRemakeConcepts } from "../services/remakes";
+import type { RemakeImage, ImageConcept } from "../types";
 import { imageDisplayUrl } from "../services/http";
 import ImageRegionEditor from "./ImageRegionEditor";
 import ImageSpecEditor, { ResetSpecButton, type ImageSpec } from "./ImageSpecEditor";
@@ -25,15 +25,26 @@ export default function RemakeImages({
   images,
   selectedUrl,
   hasDraft,
+  concepts = [],
+  autoDrawing = false,
+  autoDrawError = null,
   onChanged,
 }: {
   remakeId: string;
   images: RemakeImage[];
   selectedUrl?: string | null;
   hasDraft: boolean;
+  /** Ba phương án ảnh AI đã đề xuất. */
+  concepts?: ImageConcept[];
+  /** Hệ thống đang tự đề xuất + vẽ ngay sau khi viết xong. */
+  autoDrawing?: boolean;
+  /** Lý do tự vẽ thất bại (nếu có). */
+  autoDrawError?: string | null;
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [drawingConcept, setDrawingConcept] = useState<number | null>(null);
+  const [proposing, setProposing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ratio, setRatio] = useState("1:1");
   const [prompt, setPrompt] = useState("");
@@ -75,14 +86,16 @@ export default function RemakeImages({
     }
   }
 
-  async function handleGenerate() {
+  async function handleGenerate(conceptIndex?: number) {
     setBusy(true);
+    setDrawingConcept(conceptIndex ?? null);
     setError(null);
     try {
       const out = await generateRemakeImage(remakeId, {
         aspectRatio: ratio,
         prompt: prompt.trim() || undefined,
-        // Đã sửa đặc tả thì vẽ theo bản sửa; chưa sửa thì để công cụ tự dựng.
+        // Chọn phương án nào thì vẽ phương án đó; đã sửa đặc tả thì theo bản sửa.
+        conceptIndex: specEdited ? undefined : conceptIndex,
         spec: specEdited && spec ? spec : undefined,
       });
       setLastDescription(out.description);
@@ -97,6 +110,25 @@ export default function RemakeImages({
       setError(e?.message || "Không vẽ được ảnh.");
     } finally {
       setBusy(false);
+      setDrawingConcept(null);
+    }
+  }
+
+  // Ba phương án nào CHƯA vẽ ảnh nào — để đánh dấu cái đã vẽ, cái còn chờ.
+  const drawnConcepts = new Set(
+    images.map((i) => (i as any).conceptIndex).filter((x: any) => Number.isInteger(x)),
+  );
+
+  async function handleReproposeConcepts() {
+    setProposing(true);
+    setError(null);
+    try {
+      await proposeRemakeConcepts(remakeId);
+      onChanged();
+    } catch (e: any) {
+      setError(e?.message || "Không đề xuất được phương án ảnh.");
+    } finally {
+      setProposing(false);
     }
   }
 
@@ -125,6 +157,86 @@ export default function RemakeImages({
           </div>
         ) : (
           <>
+            {/* Đang tự vẽ ngay sau khi viết xong — không cần bấm gì. */}
+            {autoDrawing && (
+              <div role="status" className="ds-alert ds-alert-info mt-3">
+                <Loader2 className="w-4 h-4 animate-spin shrink-0" aria-hidden="true" />
+                <span>
+                  Đang đề xuất 3 phương án ảnh và vẽ phương án đầu — không cần bấm gì, ảnh sẽ tự hiện ra ở đây
+                  (thường 30-60 giây).
+                </span>
+              </div>
+            )}
+
+            {autoDrawError && !autoDrawing && images.length === 0 && (
+              <div role="alert" className="ds-alert ds-alert-warning mt-3">
+                <span>
+                  Bài viết đã xong nhưng tự vẽ ảnh không được: {autoDrawError}. Chọn một phương án bên dưới để vẽ lại.
+                </span>
+              </div>
+            )}
+
+            {/* Ba phương án AI đề xuất. Phương án đầu được vẽ tự động; hai cái
+                còn lại nằm sẵn, đổi sang chỉ một cú bấm — không phải bấm "vẽ
+                lại" rồi cầu may. */}
+            {concepts.length > 0 && (
+              <div className="mt-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <p className="text-sm font-semibold text-stone-700">Phương án ảnh AI đề xuất</p>
+                  <button
+                    type="button"
+                    onClick={handleReproposeConcepts}
+                    disabled={proposing || busy || autoDrawing}
+                    className="ds-btn ds-btn-ghost ds-btn-sm"
+                    title="Không ưng cả ba? Đề xuất ba phương án khác — chỉ là việc chữ, chưa vẽ nên không tốn tiền vẽ."
+                  >
+                    {proposing ? <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> : <Wand2 className="w-3.5 h-3.5" aria-hidden="true" />}
+                    Đề xuất 3 phương án khác
+                  </button>
+                </div>
+                <ul className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2">
+                  {concepts.map((c, i) => {
+                    const drawn = drawnConcepts.has(i);
+                    const thisBusy = busy && drawingConcept === i;
+                    return (
+                      <li
+                        key={i}
+                        className={`border rounded-xl p-3 flex flex-col gap-1.5 ${
+                          drawn ? "border-storm-300 bg-storm-50/40" : "border-stone-200"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-sm font-semibold text-stone-800">
+                            {i + 1}. {c.title}
+                          </p>
+                          <span className="text-[10px] text-stone-400 shrink-0">{c.layout}</span>
+                        </div>
+                        {c.why && <p className="text-xs text-stone-500">{c.why}</p>}
+                        {c.panels.some((p) => p.dialogue) && (
+                          <p className="text-[11px] text-stone-600 italic line-clamp-2">
+                            "{c.panels.map((p) => p.dialogue).filter(Boolean).join(" / ")}"
+                          </p>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleGenerate(i)}
+                          disabled={busy || autoDrawing}
+                          className={`ds-btn ds-btn-sm mt-auto ${drawn ? "ds-btn-ghost" : "ds-btn-primary"}`}
+                        >
+                          {thisBusy ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <ImagePlus className="w-3.5 h-3.5" aria-hidden="true" />
+                          )}
+                          {thisBusy ? "Đang vẽ..." : drawn ? "Vẽ lại phương án này" : "Vẽ phương án này"}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+
             <div className="flex items-center gap-2 mt-3 flex-wrap">
               <label htmlFor={`ratio-${remakeId}`} className="sr-only">
                 Tỉ lệ khung ảnh
@@ -142,14 +254,23 @@ export default function RemakeImages({
                 ))}
               </select>
 
-              <button type="button" onClick={handleGenerate} disabled={busy} className="ds-btn ds-btn-primary">
-                {busy ? (
-                  <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
-                ) : (
-                  <ImagePlus className="w-4 h-4" aria-hidden="true" />
-                )}
-                {images.length > 0 ? "Vẽ thêm phương án" : "Vẽ ảnh"}
-              </button>
+              {/* Nút vẽ chung chỉ còn cần khi tự tả hoặc đã sửa đặc tả — đường
+                  chính là bấm thẳng vào một trong ba phương án bên dưới. */}
+              {(showPrompt || specEdited || concepts.length === 0) && (
+                <button
+                  type="button"
+                  onClick={() => handleGenerate()}
+                  disabled={busy || autoDrawing}
+                  className="ds-btn ds-btn-primary"
+                >
+                  {busy && drawingConcept === null ? (
+                    <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <ImagePlus className="w-4 h-4" aria-hidden="true" />
+                  )}
+                  {specEdited ? "Vẽ theo đặc tả đã sửa" : showPrompt ? "Vẽ theo lời tả của tôi" : "Vẽ ảnh"}
+                </button>
+              )}
 
               <button type="button"
                 onClick={() => setShowPrompt((v) => !v)}

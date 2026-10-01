@@ -570,6 +570,10 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        concept_index: {
+          type: "number",
+          description: "Vẽ phương án thứ mấy (0, 1, 2) trong ba phương án AI đã đề xuất — xem imageConceptsJson ở remake_get. Bỏ trống = phương án đầu.",
+        },
         remake_id: { type: "string", description: "Mã bản viết (từ remake_get)" },
         prompt: { type: "string", description: "Tự tả ảnh cần vẽ; bỏ trống thì tool tự đọc bản viết rồi tả" },
         aspect_ratio: { type: "string", description: "Tỉ lệ khung: 1:1 (mặc định), 4:5, 16:9, 9:16" },
@@ -1456,8 +1460,12 @@ async function callTool(name: string, args: any, principal: McpPrincipal, base =
     return {
       ...row,
       note:
-        row.status !== "ready"
+        row.status === "drawing"
+          ? "Chữ đã viết xong (xem draft), đang đề xuất 3 phương án ảnh và vẽ phương án đầu — chờ 30-60 giây rồi gọi lại để có ảnh."
+          : row.status !== "ready"
           ? "Chưa xong — chờ rồi gọi lại."
+          : row.imageError
+          ? `Bài viết dùng được, nhưng tự vẽ ảnh lỗi: ${row.imageError}. Gọi remake_image với concept_index để vẽ lại.`
           : g && g.passed === false
           ? "BẢN NÀY CÒN LỖI CHẶN — xem guardrailJson.issues. Không được đem dùng khi chưa sửa xong."
           : "Bản này qua được kiểm tra. Vẫn nên có người đọc lại lần cuối trước khi đăng.",
@@ -1824,6 +1832,9 @@ async function callTool(name: string, args: any, principal: McpPrincipal, base =
       remakeId: args.remake_id,
       aspectRatio: args.aspect_ratio ? String(args.aspect_ratio) : undefined,
       customPrompt: args.prompt ? String(args.prompt) : undefined,
+      // Vẽ phương án thứ mấy trong ba phương án đã đề xuất (xem remake_get →
+      // imageConceptsJson).
+      conceptIndex: Number.isInteger(args.concept_index) ? args.concept_index : undefined,
     });
 
     // Trả ảnh về dạng Claude xem được, không chỉ đường dẫn: người dùng hỏi "vẽ

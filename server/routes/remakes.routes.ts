@@ -73,21 +73,43 @@ export async function runRemakeInBackground(
       revisions.push({ at: new Date().toISOString(), note, draft: previousDraft });
     }
 
+    // Bài đăng: CHƯA báo xong ở đây — còn phải vẽ ảnh. Trạng thái "drawing"
+    // giữ cho giao diện tiếp tục theo dõi.
+    //
+    // Lỗi đã gặp: trước đây báo "ready" ngay khi chữ viết xong rồi mới vẽ ảnh
+    // ở nền. Giao diện thấy "ready" là ngừng theo dõi, ảnh vẽ xong không ai
+    // tải lại — người dùng tưởng không có ảnh, bấm vẽ tay, thành vẽ hai lần.
+    const willDraw = format === "post";
     await getDb().update(remakes).set({
-      status: "ready",
+      status: willDraw ? "drawing" : "ready",
       draft: r.draft,
       guardrailJson: r.guardrail as any,
       revisionsJson: revisions as any,
       errorMessage: r.warning || null,
+      // Bản viết đổi thì phương án ảnh cũ không còn khớp — bỏ để đề xuất lại.
+      imageConceptsJson: null,
+      imageError: null,
       updatedAt: new Date(),
     }).where(eq(remakes.id, id));
 
-    // Viết xong là vẽ luôn — đừng bắt bấm thêm một nút cho việc chắc chắn phải
-    // làm. Chỉ bài đăng; kịch bản video đi theo luồng dựng cảnh riêng.
-    if (format === "post") {
-      void autoDrawImage(id).catch((e: any) =>
-        console.warn("[remake] Tự vẽ ảnh thất bại:", e?.message || e),
-      );
+    if (willDraw) {
+      try {
+        await autoDrawImage(id);
+      } catch (e: any) {
+        // Hỏng ảnh KHÔNG phải hỏng bài: bài vẫn dùng được, nói rõ phần nào hỏng.
+        console.warn("[remake] Tự vẽ ảnh thất bại:", e?.message || e);
+        await getDb()
+          .update(remakes)
+          .set({ imageError: String(e?.message || e).slice(0, 400) })
+          .where(eq(remakes.id, id))
+          .catch(() => {});
+      } finally {
+        await getDb()
+          .update(remakes)
+          .set({ status: "ready", updatedAt: new Date() })
+          .where(eq(remakes.id, id))
+          .catch(() => {});
+      }
     }
   } catch (e: any) {
     console.error("remake (nền):", e?.message || e);
@@ -104,24 +126,17 @@ export async function runRemakeInBackground(
  * Viết lại một bài để đem đăng thì gần như luôn cần ảnh — bắt bấm thêm một nút
  * cho việc chắc chắn phải làm là bắt làm thừa. Nên mặc định là VẼ, không hỏi.
  *
- * Bản trước tôi đặt thêm điều kiện "bài gốc có ảnh mới vẽ". Điều kiện đó sai ở
- * chỗ: bài gốc thuần chữ không có nghĩa bản viết lại của mình cũng thuần chữ —
- * trang của mình có nhân vật riêng và vẫn cần ảnh để đăng.
- *
- * Chỉ giữ đúng MỘT chặn: đã có ảnh rồi thì không vẽ đè, vì sửa bài lần hai
- * không được xoá ảnh người dùng đã chọn.
+ * Sửa bài lần hai cũng vẽ: chữ đã đổi thì ảnh cũ không còn khớp. Ảnh mới được
+ * THÊM vào, ảnh cũ vẫn giữ — không mất ảnh người dùng đã chọn.
  */
 async function autoDrawImage(remakeId: string): Promise<void> {
-  const db = getDb();
-  const [row] = await db.select().from(remakes).where(eq(remakes.id, remakeId));
-  if (!row) return;
-
-  const existing = Array.isArray(row.imagesJson) ? row.imagesJson : [];
-  if (existing.length > 0) return;
-
-  const { generateRemakeImage } = await import("../services/remake-image");
-  await generateRemakeImage({ remakeId });
-  console.log(`[remake] Đã tự vẽ ảnh cho bản viết ${remakeId}.`);
+  // Đề xuất BA phương án (việc chữ, rẻ) rồi vẽ phương án đầu. Hai phương án
+  // còn lại nằm sẵn đó, đổi sang chỉ là một cú bấm — không phải bấm "vẽ lại"
+  // rồi cầu may như trước.
+  const { proposeConceptsForRemake, generateRemakeImage } = await import("../services/remake-image");
+  await proposeConceptsForRemake(remakeId, 3);
+  await generateRemakeImage({ remakeId, conceptIndex: 0 });
+  console.log(`[remake] Đã đề xuất 3 phương án và vẽ phương án 1 cho bản viết ${remakeId}.`);
 }
 
 export function registerRemakeRoutes(app: Express) {
@@ -454,6 +469,27 @@ export function registerRemakeRoutes(app: Express) {
   // ===== Vẽ ảnh cho bản viết =====
   // Vẽ mất khoảng 10-30 giây, dưới ngưỡng proxy cắt (60s) nên gọi thẳng, không
   // cần cơ chế việc chạy nền như bên dựng video.
+  // POST /api/remakes/:id/concepts — đề xuất lại ba phương án ảnh (việc chữ,
+  // rẻ, không vẽ). Dùng khi ba phương án hiện có đều không ưng.
+  app.post("/api/remakes/:id/concepts", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const { id } = req.params;
+    if (!UUID_RE.test(id)) return res.status(400).json({ error: "Mã không hợp lệ." });
+    try {
+      const [row] = await getDb().select().from(remakes).where(eq(remakes.id, id));
+      if (!row) return res.status(404).json({ error: "Không tìm thấy bản viết." });
+      const me = getAuthUser(req)!;
+      if (row.owner !== me && !(await isActiveAdmin(me))) {
+        return res.status(403).json({ error: "Không có quyền với bản viết này." });
+      }
+      const { proposeConceptsForRemake } = await import("../services/remake-image");
+      res.json({ concepts: await proposeConceptsForRemake(id, 3) });
+    } catch (e: any) {
+      console.error("remake concepts:", e?.message || e);
+      res.status(502).json({ error: e?.message || "Không đề xuất được phương án ảnh." });
+    }
+  });
+
   app.post("/api/remakes/:id/image", requireAuth, async (req, res) => {
     if (dbDown(res)) return;
     const { id } = req.params;
@@ -471,6 +507,8 @@ export function registerRemakeRoutes(app: Express) {
         remakeId: id,
         aspectRatio: typeof req.body?.aspectRatio === "string" ? req.body.aspectRatio : undefined,
         customPrompt: typeof req.body?.prompt === "string" ? req.body.prompt : undefined,
+        // Vẽ phương án thứ mấy trong ba phương án đã đề xuất.
+        conceptIndex: Number.isInteger(req.body?.conceptIndex) ? req.body.conceptIndex : undefined,
         // Đặc tả người dùng đã sửa tay (xem/sửa ở khu "Bản đặc tả"). Gửi lên là
         // vẽ đúng theo bản đó, thay vì dựng lại từ đầu rồi mất phần họ chỉnh.
         spec: req.body?.spec && typeof req.body.spec === "object" ? req.body.spec : undefined,

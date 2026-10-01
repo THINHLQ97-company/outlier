@@ -23,6 +23,13 @@ export interface ImageSpec {
   };
   /** Chữ hiện trong ảnh — rỗng nghĩa là không vẽ chữ. */
   text_in_image: string | null;
+  /** Bố cục khung: "1 khung", "4 khung dọc"… */
+  layout?: string;
+  /**
+   * Từng khung: cảnh, hành động, biểu cảm, lời thoại. Có khung thì model vẽ
+   * theo khung — chắc hơn nhiều so với một đoạn tả gộp cả câu chuyện.
+   */
+  panels?: { panel: number; scene: string; action: string; expression: string; dialogue: string | null }[];
   rules: string[];
 }
 
@@ -85,6 +92,51 @@ export function buildImageSpec(input: SpecInput): ImageSpec {
   };
 }
 
+/**
+ * Dựng đặc tả từ một PHƯƠNG ÁN ẢNH đã đề xuất (image-concepts).
+ *
+ * Phương án đã có sẵn khung, hành động, biểu cảm, lời thoại — đặc tả chỉ việc
+ * ghép thêm nhân vật (kèm số ảnh mẫu), nhận diện thương hiệu và luật.
+ */
+export function specFromConcept(
+  concept: {
+    title: string;
+    layout: string;
+    panels: { scene: string; action: string; expression: string; dialogue: string | null }[];
+  },
+  input: Omit<SpecInput, "description" | "textInImage">,
+): ImageSpec {
+  const hasDialogue = concept.panels.some((p) => p.dialogue);
+  const base = buildImageSpec({
+    ...input,
+    description:
+      concept.panels.length === 1
+        ? concept.panels[0].scene
+        : `${concept.layout} comic. ${concept.panels.map((p, i) => `Panel ${i + 1}: ${p.scene}`).join(" ")}`,
+    // Lời thoại nằm trong từng khung; ở đây chỉ để bật luật "vẽ chữ đúng dấu".
+    textInImage: hasDialogue ? concept.panels.map((p) => p.dialogue).filter(Boolean).join(" / ") : null,
+  });
+
+  const rules = [...base.rules];
+  if (concept.panels.length > 1) {
+    rules.unshift(
+      `Draw EXACTLY ${concept.panels.length} panels in this layout: ${concept.layout}. Each panel follows its own scene/action/expression below, in order.`,
+    );
+  }
+  if (hasDialogue) {
+    rules.push(
+      "Put each panel's dialogue in a speech bubble pointing at the right character. Text in [square brackets] is a narration caption, not a speech bubble.",
+    );
+  }
+
+  return {
+    ...base,
+    layout: concept.layout,
+    panels: concept.panels.map((p, i) => ({ panel: i + 1, ...p })),
+    rules,
+  };
+}
+
 /** Đổi đặc tả thành prompt gửi model vẽ. */
 export function imageSpecToPrompt(spec: ImageSpec, refCount: number): string {
   const head =
@@ -135,6 +187,18 @@ export function sanitizeSpec(raw: any, fallback: ImageSpec): ImageSpec {
       do_not: list(raw.brand_visual?.do_not),
     },
     text_in_image: str(raw.text_in_image) || null,
+    layout: str(raw.layout, fallback.layout),
+    panels: Array.isArray(raw.panels)
+      ? raw.panels
+          .filter((p: any) => p && typeof p === "object" && str(p.scene))
+          .map((p: any, i: number) => ({
+            panel: i + 1,
+            scene: str(p.scene)!,
+            action: str(p.action) || "",
+            expression: str(p.expression) || "",
+            dialogue: str(p.dialogue) || null,
+          }))
+      : fallback.panels,
     rules: list(raw.rules) || fallback.rules,
   };
 }
