@@ -156,22 +156,109 @@ export function sanitizeConcepts(raw: any, allowedNames: string[], max: number):
   return out;
 }
 
+/**
+ * Khuôn JSON ép Gemini trả đúng hình dạng phương án.
+ *
+ * Lỗi đã gặp ở production: chỉ dặn "trả JSON" trong prompt thì model vẫn trả
+ * về một dạng mà bộ đọc không nhận ra, và cả luồng tự vẽ ảnh chết theo. Có
+ * khuôn thì chính Gemini chịu trách nhiệm đúng hình dạng.
+ */
+export const CONCEPT_SCHEMA = {
+  type: "object",
+  properties: {
+    concepts: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          why: { type: "string" },
+          layout: { type: "string" },
+          characters: { type: "array", items: { type: "string" } },
+          panels: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                scene: { type: "string" },
+                action: { type: "string" },
+                expression: { type: "string" },
+                dialogue: { type: "string", nullable: true },
+              },
+              required: ["scene", "action", "expression"],
+            },
+          },
+        },
+        required: ["title", "why", "layout", "panels"],
+      },
+    },
+  },
+  required: ["concepts"],
+};
+
+/**
+ * Đọc JSON model trả về, chịu được các dạng hay gặp.
+ *
+ * Bộ đọc cũ cắt từ dấu "{" đầu tới "}" cuối — hỏng ngay khi model trả về một
+ * MẢNG ở ngoài cùng ([{...},{...}] thành {...},{...}, không phải JSON hợp lệ).
+ * Giờ thử lần lượt: nguyên văn → bỏ khung ```json → cắt theo mảng → cắt theo
+ * object.
+ */
+export function parseLooseJson(raw: string): any {
+  const text = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  const attempts: string[] = [text];
+  const a1 = text.indexOf("[");
+  const a2 = text.lastIndexOf("]");
+  const o1 = text.indexOf("{");
+  const o2 = text.lastIndexOf("}");
+  // Dạng nào mở trước thì thử trước: "[{" là mảng, "{" là object.
+  if (a1 >= 0 && a2 > a1 && (o1 < 0 || a1 < o1)) attempts.push(text.slice(a1, a2 + 1));
+  if (o1 >= 0 && o2 > o1) attempts.push(text.slice(o1, o2 + 1));
+
+  for (const t of attempts) {
+    try {
+      return JSON.parse(t);
+    } catch {
+      // thử dạng tiếp theo
+    }
+  }
+  throw new Error("JSON không hợp lệ");
+}
+
 export async function proposeImageConcepts(
   input: ConceptInput,
   count = 3,
   // Tiêm được để test không phải gọi mạng.
-  generate: (prompt: string) => Promise<string> = (p) => generateTextGemini(p),
+  generate: (prompt: string) => Promise<string> = (p) =>
+    generateTextGemini(p, { responseSchema: CONCEPT_SCHEMA }),
 ): Promise<ImageConcept[]> {
-  const raw = await generate(buildConceptPrompt(input, count));
-  let parsed: any;
-  try {
-    const start = raw.indexOf("{");
-    const end = raw.lastIndexOf("}");
-    parsed = JSON.parse(raw.slice(start, end + 1));
-  } catch {
-    throw new Error("Không đọc được phương án ảnh model trả về.");
+  const prompt = buildConceptPrompt(input, count);
+
+  // Thử hai lần: lần đầu hỏng thường là do model trả lệch dạng một lần, gọi lại
+  // là được. Hỏng cả hai thì báo lỗi kèm đoạn đầu câu trả lời để biết vì sao.
+  let lastRaw = "";
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const raw = await generate(prompt);
+    lastRaw = raw;
+    let parsed: any;
+    try {
+      parsed = parseLooseJson(raw);
+    } catch {
+      console.warn(
+        `[image-concepts] Lần ${attempt}: không đọc được JSON. Đoạn đầu câu trả lời: ${JSON.stringify(raw.slice(0, 300))}`,
+      );
+      continue;
+    }
+    const concepts = sanitizeConcepts(parsed, input.characterNames, count);
+    if (concepts.length > 0) return concepts;
+    console.warn(
+      `[image-concepts] Lần ${attempt}: đọc được JSON nhưng không có phương án dùng được. Đoạn đầu: ${JSON.stringify(raw.slice(0, 300))}`,
+    );
   }
-  const concepts = sanitizeConcepts(parsed, input.characterNames, count);
-  if (concepts.length === 0) throw new Error("Model không đưa ra phương án ảnh nào dùng được.");
-  return concepts;
+
+  throw new Error(
+    lastRaw.trim()
+      ? "Model trả về phương án ảnh không đúng dạng, thử hai lần vẫn hỏng."
+      : "Model không trả lời khi đề xuất phương án ảnh.",
+  );
 }

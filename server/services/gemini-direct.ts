@@ -124,7 +124,20 @@ export async function embedTextGemini(text: string): Promise<number[]> {
  * viết lại cho thương hiệu. Ép JSON ở đó khiến model gói nội dung vào
  * {"content": "..."} và người dùng không copy dùng được.
  */
-export async function generateTextGemini(prompt: string, opts: { asPlainText?: boolean } = {}): Promise<string> {
+export async function generateTextGemini(
+  prompt: string,
+  opts: {
+    asPlainText?: boolean;
+    /**
+     * Khuôn JSON bắt model trả ĐÚNG hình dạng.
+     *
+     * Chỉ dặn "trả JSON" trong prompt là chưa đủ: model vẫn có lúc trả mảng thay
+     * vì object, đổi tên khoá, hoặc thêm lời dẫn. Có khuôn thì Gemini tự ép đầu
+     * ra theo khuôn, bên mình khỏi phải đoán.
+     */
+    responseSchema?: Record<string, any>;
+  } = {},
+): Promise<string> {
   const apiKey = getApiKey();
   try {
     const { GoogleGenAI } = await import("@google/genai");
@@ -133,7 +146,12 @@ export async function generateTextGemini(prompt: string, opts: { asPlainText?: b
       ai.models.generateContent({
         model,
         contents: prompt,
-        config: opts.asPlainText ? {} : { responseMimeType: "application/json" },
+        config: opts.asPlainText
+          ? {}
+          : {
+              responseMimeType: "application/json",
+              ...(opts.responseSchema ? { responseSchema: opts.responseSchema } : {}),
+            },
       }),
     );
     const text = response.text;

@@ -1,6 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { buildConceptPrompt, sanitizeConcepts, proposeImageConcepts } from "../services/image-concepts";
+import { buildConceptPrompt, sanitizeConcepts, proposeImageConcepts, parseLooseJson } from "../services/image-concepts";
 import { specFromConcept } from "../services/image-spec";
 
 const input = {
@@ -95,14 +95,26 @@ describe("sanitizeConcepts — không tin model tuân thủ", () => {
 });
 
 describe("proposeImageConcepts", () => {
-  test("model trả rác thì báo lỗi rõ", async () => {
-    await assert.rejects(() => proposeImageConcepts(input, 3, async () => "không phải JSON"), /Không đọc được/);
+  test("model trả rác hai lần thì báo lỗi rõ", async () => {
+    await assert.rejects(() => proposeImageConcepts(input, 3, async () => "không phải JSON"), /không đúng dạng/);
+  });
+
+  test("lần đầu hỏng, lần hai đúng thì vẫn ra phương án — không chết cả luồng vì một lần lệch", async () => {
+    let n = 0;
+    const out = await proposeImageConcepts(input, 3, async () => (++n === 1 ? "rác" : JSON.stringify(good)));
+    assert.equal(n, 2);
+    assert.ok(out.length > 0);
+  });
+
+  test("model trả MẢNG ở ngoài cùng vẫn đọc được — đúng lỗi đã gặp ở production", async () => {
+    const out = await proposeImageConcepts(input, 3, async () => JSON.stringify(good.concepts));
+    assert.ok(out.length > 0);
   });
 
   test("không phương án nào dùng được thì báo lỗi, không trả mảng rỗng im lặng", async () => {
     await assert.rejects(
       () => proposeImageConcepts(input, 3, async () => JSON.stringify({ concepts: [{ title: "x", panels: [] }] })),
-      /không đưa ra phương án ảnh nào/,
+      /không đúng dạng/,
     );
   });
 });
@@ -133,5 +145,27 @@ describe("specFromConcept — phương án thành đặc tả vẽ", () => {
 
   test("Gèn trỏ đúng ảnh mẫu #1", () => {
     assert.equal(spec.characters[1].keep_appearance_from_reference_image, "#1");
+  });
+});
+
+describe("parseLooseJson — chịu được các dạng model hay trả", () => {
+  test("object nguyên văn", () => {
+    assert.deepEqual(parseLooseJson('{"a":1}'), { a: 1 });
+  });
+
+  test("MẢNG ở ngoài cùng — bộ đọc cũ cắt theo {…} nên hỏng chính chỗ này", () => {
+    assert.deepEqual(parseLooseJson('[{"a":1},{"a":2}]'), [{ a: 1 }, { a: 2 }]);
+  });
+
+  test("bọc trong khung ```json", () => {
+    assert.deepEqual(parseLooseJson('```json\n{"a":1}\n```'), { a: 1 });
+  });
+
+  test("có lời dẫn phía trước", () => {
+    assert.deepEqual(parseLooseJson('Đây nhé:\n{"a":1}'), { a: 1 });
+  });
+
+  test("rác thật sự thì ném lỗi, không trả bừa", () => {
+    assert.throws(() => parseLooseJson("không phải json"));
   });
 });

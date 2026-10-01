@@ -171,7 +171,10 @@ export default function RemakeImages({
             {autoDrawError && !autoDrawing && images.length === 0 && (
               <div role="alert" className="ds-alert ds-alert-warning mt-3">
                 <span>
-                  Bài viết đã xong nhưng tự vẽ ảnh không được: {autoDrawError}. Chọn một phương án bên dưới để vẽ lại.
+                  Bài viết đã xong nhưng tự vẽ ảnh không được: {autoDrawError}{" "}
+                  {/* Nói đúng việc làm được: không có phương án nào thì bảo "chọn
+                      phương án bên dưới" là chỉ vào chỗ trống. */}
+                  {concepts.length > 0 ? "Chọn một phương án bên dưới để vẽ." : 'Bấm "Vẽ ảnh" để thử lại.'}
                 </span>
               </div>
             )}
