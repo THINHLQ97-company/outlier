@@ -674,6 +674,14 @@ export interface RemakeImage {
    * sửa rồi vẽ lại chính xác hơn nhiều so với tả lại cả cảnh bằng lời.
    */
   specJson?: Record<string, any> | null;
+  /**
+   * Prompt ĐÚNG NHƯ ĐÃ GỬI cho công cụ vẽ.
+   *
+   * Giữ nguyên văn để xem lại được: ảnh ra sai thì câu hỏi đầu tiên luôn là
+   * "nó đã nhận lệnh gì", và suy lại từ đặc tả không bao giờ chắc bằng đọc
+   * đúng thứ đã gửi đi.
+   */
+  promptSent?: string | null;
 }
 
 /** Một lần đăng bài lên trang. */
@@ -714,6 +722,14 @@ export const remakes = pgTable("remakes", {
   imagesJson: jsonb("images_json").$type<RemakeImage[]>().default([]),
   /** URL ảnh đang chọn trong imagesJson. */
   selectedImageUrl: text("selected_image_url"),
+
+  /**
+   * Hướng nội dung chủ trang đặt lúc tạo bản viết.
+   *
+   * Lưu lại vì bước VẼ cũng cần: viết theo hướng "nói sâu về kỹ thuật" mà ảnh
+   * vẫn vẽ cảnh kể chuyện thì bài với ảnh nói hai thứ khác nhau.
+   */
+  directionText: text("direction_text"),
 
   /**
    * Bài đã đăng lên đâu. Giữ để không đăng trùng và để mở lại bài thật.

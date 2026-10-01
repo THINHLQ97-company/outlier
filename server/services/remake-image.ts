@@ -58,10 +58,20 @@ async function referenceImagesOf(chars: CharacterRow[]): Promise<{ mimeType: str
  * model vẽ đọc một đoạn dài sẽ bám vào chi tiết vụn, còn bước tả buộc phải chọn
  * ra MỘT khoảnh khắc đáng vẽ. Bước tả cũng là chỗ người dùng sửa được.
  */
+export interface SourceContext {
+  /** Đọc được gì trong ảnh của bài gốc (chữ trên ảnh, loại ảnh, thủ pháp). */
+  imageReading?: { textInImage?: string; imageKind?: string; technique?: string; description?: string } | null;
+  /** Công thức triển khai đã bóc được từ bài gốc. */
+  formula?: string | null;
+  /** Hướng nội dung chủ trang đặt. */
+  direction?: string | null;
+}
+
 export async function describeImageForDraft(
   draft: string,
   brand: any,
   chars: CharacterRow[] = [],
+  source: SourceContext = {},
 ): Promise<string> {
   const visual = visualOf(brand);
   const lines: string[] = [];
@@ -78,14 +88,36 @@ export async function describeImageForDraft(
       "\n"
     : "";
 
+  // Bài gốc quyết định HÌNH THỨC, bản viết quyết định NỘI DUNG.
+  //
+  // Thiếu phần này là lỗi đã gặp: với trang truyện tranh, hình thức của bài gốc
+  // CHÍNH LÀ nội dung — tả ảnh chỉ từ chữ thì ra một tấm minh hoạ chung chung,
+  // không liên quan gì tới bài đang remake.
+  const r = source.imageReading;
+  const sourceLines: string[] = [];
+  if (r?.imageKind) sourceLines.push(`Bài gốc là loại ảnh: ${r.imageKind}`);
+  if (r?.technique) sourceLines.push(`Bài gốc gây chú ý bằng: ${r.technique}`);
+  if (r?.description) sourceLines.push(`Ảnh gốc trông thế nào: ${r.description}`);
+  if (r?.textInImage) sourceLines.push(`Chữ nằm trong ảnh gốc: "${r.textInImage.slice(0, 400)}"`);
+  if (source.formula) sourceLines.push(`Cách triển khai học được: ${source.formula}`);
+
+  const sourceBlock = sourceLines.length
+    ? `BÀI GỐC ĐANG HỌC THEO (bám HÌNH THỨC của nó, KHÔNG chép nội dung):\n${sourceLines.join("\n")}\n\n`
+    : "";
+  const directionBlock = source.direction?.trim()
+    ? `HƯỚNG NỘI DUNG CHỦ TRANG ĐẶT (thắng mọi gợi ý khác): ${source.direction.trim()}\n\n`
+    : "";
+
   const prompt = `Đây là bản viết sắp đăng của một fanpage:
 
 ${draft.slice(0, 2000)}
 
-${charBlock}${lines.length ? `Nhận diện hình ảnh của trang:\n${lines.join("\n")}\n` : ""}
+${sourceBlock}${directionBlock}${charBlock}${lines.length ? `Nhận diện hình ảnh của trang:\n${lines.join("\n")}\n` : ""}
 Hãy tả MỘT tấm ảnh minh hoạ cho bài này, để đưa cho công cụ vẽ.
 
 Yêu cầu:
+- Ảnh phải minh hoạ ĐÚNG nội dung bản viết ở trên — không phải một cảnh chung chung cùng chủ đề.
+- Nếu bài gốc là truyện tranh/ảnh nhiều khung, giữ đúng hình thức đó (số khung, cách chia khung), nhưng nội dung từng khung lấy từ bản viết.
 - Chọn đúng một khoảnh khắc, không tả cả câu chuyện.
 - Tả cụ thể: bố cục, vật thể, góc nhìn, ánh sáng, tâm trạng.
 - Nếu trang có khuôn ảnh quen thuộc, bám theo khuôn đó.
@@ -151,8 +183,20 @@ export async function generateRemakeImage(opts: {
   const [brand] = await db.select().from(brands).where(eq(brands.id, row.brandId));
   const chars = await charactersForBrand(row.brandId);
 
+  // Đọc BÀI GỐC: hình thức của nó quyết định hình thức ảnh mình vẽ. Thiếu phần
+  // này thì ảnh ra một tấm minh hoạ chung chung không dính gì tới bài đang làm.
+  const { deconstructions } = await import("../db/schema");
+  const [decon] = row.deconstructionId
+    ? await db.select().from(deconstructions).where(eq(deconstructions.id, row.deconstructionId))
+    : [];
+  const source = {
+    imageReading: (decon?.imageReading as any) || null,
+    formula: (decon?.structure as any)?.formula || null,
+    direction: row.directionText || null,
+  };
+
   const description =
-    opts.customPrompt?.trim() || (await describeImageForDraft(row.draft, brand, chars));
+    opts.customPrompt?.trim() || (await describeImageForDraft(row.draft, brand, chars, source));
   const aspectRatio = opts.aspectRatio || "1:1";
 
   // Đặc tả có cấu trúc thay cho một đoạn mô tả bằng lời: model tuân thủ danh
@@ -189,6 +233,7 @@ export async function generateRemakeImage(opts: {
     aspectRatio,
     createdAt: new Date().toISOString(),
     specJson: spec as any,
+    promptSent: prompt,
   };
 
   const images = [...((row.imagesJson as RemakeImage[]) || []), image];

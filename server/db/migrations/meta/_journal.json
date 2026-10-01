@@ -239,6 +239,13 @@
       "when": 1790324532259,
       "tag": "0033_mysterious_toad_men",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1790837163372,
+      "tag": "0034_military_gladiator",
+      "breakpoints": true
     }
   ]
 }

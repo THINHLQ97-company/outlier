@@ -255,6 +255,12 @@ export function registerRemakeRoutes(app: Express) {
         direction = TREND_DEFAULT_DIRECTION;
       }
 
+      // Lưu lại hướng: bước VẼ cũng cần. Viết theo hướng "nói sâu về kỹ thuật"
+      // mà ảnh vẫn vẽ cảnh kể chuyện thì bài với ảnh nói hai thứ khác nhau.
+      if (direction) {
+        await getDb().update(remakes).set({ directionText: direction }).where(eq(remakes.id, row.id));
+      }
+
       void runRemakeInBackground(
         row.id, brandCtx, decon.structure as DeconstructedStructure,
         format, decon.transcript, undefined, undefined,

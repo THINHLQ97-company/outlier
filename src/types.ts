@@ -714,6 +714,8 @@ export interface RemakeImage {
    * sửa rồi vẽ lại chính xác hơn nhiều so với tả lại cả cảnh bằng lời.
    */
   specJson?: Record<string, any> | null;
+  /** Prompt đúng như đã gửi cho công cụ vẽ — xem lại được khi ảnh ra sai. */
+  promptSent?: string | null;
 }
 
 // POST /api/remakes và /api/remakes/:id/revise trả về NGAY (status

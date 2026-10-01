@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, ImagePlus, Check, Download, Pencil, Wand2, X } from "lucide-react";
 import { generateRemakeImage, selectRemakeImage, editRemakeImage } from "../services/remakes";
 import type { RemakeImage } from "../types";
@@ -44,6 +44,18 @@ export default function RemakeImages({
   const [spec, setSpec] = useState<ImageSpec | null>(null);
   const [specEdited, setSpecEdited] = useState(false);
   const [showSpec, setShowSpec] = useState(false);
+  // Prompt đúng như đã gửi — câu hỏi đầu tiên khi ảnh ra sai luôn là "nó đã
+  // nhận lệnh gì", và suy lại từ đặc tả không bao giờ chắc bằng đọc thứ đã gửi.
+  const [promptSent, setPromptSent] = useState<string | null>(null);
+
+  // Mở bài cũ ra cũng phải xem được đặc tả và prompt của ảnh đang chọn — không
+  // bắt vẽ lại một lần nữa chỉ để biết lần trước đã gửi gì.
+  const current = images.find((i) => i.url === selectedUrl) || images[images.length - 1];
+  useEffect(() => {
+    if (specEdited) return; // đang sửa dở thì đừng ghi đè
+    setSpec(((current as any)?.specJson as ImageSpec) || null);
+    setPromptSent(((current as any)?.promptSent as string) || null);
+  }, [current?.url, specEdited]);
   // Chỉnh ảnh: mở đúng một ảnh mỗi lần, để khỏi lẫn đang sửa cái nào.
   const [editing, setEditing] = useState<RemakeImage | null>(null);
   const [editBusy, setEditBusy] = useState(false);
@@ -79,6 +91,7 @@ export default function RemakeImages({
         setSpec(out.spec as ImageSpec);
         setSpecEdited(false);
       }
+      setPromptSent(((out.image as any)?.promptSent as string) || null);
       onChanged();
     } catch (e: any) {
       setError(e?.message || "Không vẽ được ảnh.");
@@ -198,6 +211,16 @@ export default function RemakeImages({
                   >
                     {showSpec ? "Ẩn bản đặc tả" : "Xem & sửa bản đặc tả"}
                   </button>
+                  {promptSent && (
+                    <details className="w-full mt-1">
+                      <summary className="text-[11px] text-stone-500 cursor-pointer hover:text-stone-700">
+                        Xem đúng prompt đã gửi cho công cụ vẽ
+                      </summary>
+                      <pre className="text-[10px] text-stone-600 bg-stone-50 border border-stone-200 rounded-lg p-2 mt-1 overflow-x-auto whitespace-pre-wrap max-h-72">
+                        {promptSent}
+                      </pre>
+                    </details>
+                  )}
                   {specEdited && (
                     <>
                       <span className="text-[11px] text-amber-700">

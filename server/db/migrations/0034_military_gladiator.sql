@@ -1,0 +1,1 @@
+ALTER TABLE "remakes" ADD COLUMN "direction_text" text;
