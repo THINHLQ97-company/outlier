@@ -9,8 +9,8 @@ const base = () =>
     description: "Gan sits at a desk staring at a broken dashboard",
     aspectRatio: "1:1",
     characters: [
-      { name: "Gàn", promptDescription: "young man", hasReference: true },
-      { name: "Gèn", promptDescription: "older man in a cap", hasReference: false },
+      { name: "Gàn", promptDescription: "young man", refIndex: 1 },
+      { name: "Gèn", promptDescription: "older man in a cap", refIndex: null },
     ],
     visual: { palette: ["#4f46e5"], mustHave: ["logo góc phải"], doNots: ["ảnh người thật"] },
   });
@@ -27,7 +27,7 @@ describe("buildImageSpec — đặc tả có cấu trúc thay cho một đoạn 
     const s = buildImageSpec({
       description: "x",
       aspectRatio: "1:1",
-      characters: [{ name: "A", hasReference: false }],
+      characters: [{ name: "A", refIndex: null }],
     });
     assert.equal(s.characters[0].keep_appearance_from_reference_image, undefined);
     assert.doesNotMatch(JSON.stringify(s), /#1/);

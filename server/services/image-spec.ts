@@ -29,19 +29,25 @@ export interface ImageSpec {
 export interface SpecInput {
   description: string;
   aspectRatio: string;
-  characters: { name: string; promptDescription?: string | null; hasReference: boolean }[];
+  /**
+   * Nhân vật kèm SỐ HIỆU ảnh mẫu (1-based) do chỗ gom ảnh cấp.
+   *
+   * Không tự suy số theo vị trí trong danh sách: nhân vật không có ảnh vẫn nằm
+   * trong danh sách, nên suy theo vị trí là lệch — và trỏ nhầm số thì model bịa
+   * ra một nhân vật khác hẳn ảnh mẫu.
+   */
+  characters: { name: string; promptDescription?: string | null; refIndex: number | null }[];
   visual?: { template?: string; palette?: string[]; mustHave?: string[]; doNots?: string[] } | null;
   /** Chữ muốn hiện trong ảnh (tiêu đề, câu chốt). Bỏ trống = không vẽ chữ. */
   textInImage?: string | null;
 }
 
 export function buildImageSpec(input: SpecInput): ImageSpec {
-  const characters = input.characters.map((c, i) => ({
+  const characters = input.characters.map((c) => ({
     name: c.name,
-    // Chỉ trỏ tới ảnh mẫu khi thật sự có ảnh: trỏ vào ảnh không tồn tại thì
-    // model tự bịa ra một nhân vật khác.
-    keep_appearance_from_reference_image: c.hasReference ? `#${i + 1}` : undefined,
-    note: c.hasReference ? undefined : c.promptDescription || undefined,
+    // Chỉ trỏ tới ảnh mẫu khi thật sự có ảnh, và trỏ đúng số hiệu của nó.
+    keep_appearance_from_reference_image: c.refIndex ? `#${c.refIndex}` : undefined,
+    note: c.refIndex ? undefined : c.promptDescription || undefined,
   }));
 
   const rules: string[] = [];

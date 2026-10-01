@@ -34,23 +34,6 @@ export async function charactersForBrand(brandId: string): Promise<CharacterRow[
   return db.select().from(characters).where(inArray(characters.id, ids));
 }
 
-/** Đọc ảnh tham chiếu của nhân vật từ storage để đưa vào làm mẫu khi vẽ. */
-async function referenceImagesOf(chars: CharacterRow[]): Promise<{ mimeType: string; data: string }[]> {
-  const out: { mimeType: string; data: string }[] = [];
-  // Trần 3 ảnh: đưa quá nhiều mẫu thì model pha trộn thành một nhân vật lai.
-  for (const c of chars.slice(0, 3)) {
-    const key = internalKeyFromUrl(c.referenceImageUrl);
-    if (!key) continue;
-    try {
-      const buf = await storage.get(key);
-      out.push({ mimeType: "image/png", data: buf.toString("base64") });
-    } catch {
-      // Thiếu ảnh mẫu thì vẫn vẽ được, chỉ kém nhất quán hơn — không chặn.
-    }
-  }
-  return out;
-}
-
 /**
  * Nhờ model đọc bản viết rồi tả ảnh cần vẽ.
  *
@@ -202,15 +185,15 @@ export async function generateRemakeImage(opts: {
   // Đặc tả có cấu trúc thay cho một đoạn mô tả bằng lời: model tuân thủ danh
   // sách mục chắc hơn văn xuôi, và người dùng sửa được đúng mục cần sửa.
   const { buildImageSpec, imageSpecToPrompt, sanitizeSpec } = await import("./image-spec");
-  const refs = await referenceImagesOf(chars);
+  // Gom ảnh mẫu và đánh số cùng một chỗ: tách ra hai nơi là nguồn gốc của lỗi
+  // "nhân vật vẽ ra không giống ảnh mẫu" (số hiệu lệch một bậc khi có nhân vật
+  // thiếu ảnh).
+  const { collectCharacterRefs } = await import("./character-refs");
+  const { images: refs, characters: charRefs } = await collectCharacterRefs(chars);
   const baseSpec = buildImageSpec({
     description,
     aspectRatio,
-    characters: chars.map((c) => ({
-      name: c.name,
-      promptDescription: c.promptDescription,
-      hasReference: !!c.referenceImageUrl,
-    })),
+    characters: charRefs,
     visual: visualOf(brand),
     textInImage: opts.textInImage,
   });
