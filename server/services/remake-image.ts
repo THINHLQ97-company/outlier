@@ -147,6 +147,12 @@ export async function generateRemakeImage(opts: {
   aspectRatio?: string;
   /** Vẽ theo phương án thứ mấy (0-based). Mặc định phương án đầu. */
   conceptIndex?: number;
+  /**
+   * Ảnh mới có tự thành "ảnh đang chọn" không. Mặc định có (người vẽ là chủ).
+   * Người khác vẽ thêm vào bản của chủ thì không — không được đổi ảnh mà chủ
+   * sắp đem đăng.
+   */
+  selectAfter?: boolean;
   /** Người dùng tự tả, bỏ qua phương án AI đề xuất. */
   customPrompt?: string;
   /** Đặc tả người dùng đã sửa tay — vẽ lại đúng theo bản này. */
@@ -241,7 +247,11 @@ export async function generateRemakeImage(opts: {
   await db
     .update(remakes)
     // Ảnh mới vẽ được chọn luôn: gần như lúc nào người dùng cũng muốn dùng cái vừa ra.
-    .set({ imagesJson: images, selectedImageUrl: url, updatedAt: new Date() })
+    .set({
+      imagesJson: images,
+      ...(opts.selectAfter === false ? {} : { selectedImageUrl: url }),
+      updatedAt: new Date(),
+    })
     .where(eq(remakes.id, opts.remakeId));
 
   return {

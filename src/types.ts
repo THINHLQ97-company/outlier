@@ -688,6 +688,9 @@ export interface RemakeRow {
   imageError?: string | null;
   /** Hướng nội dung chủ trang đặt lúc tạo bản viết. */
   directionText?: string | null;
+  isMine?: boolean;
+  /** Được sửa chữ, xoá, đăng bài, đổi ảnh đang chọn (chủ hoặc admin). */
+  canEdit?: boolean;
   /** Bài đã đăng lên trang nào. */
   publishedJson?: PublishedRecord[];
   createdAt: string;

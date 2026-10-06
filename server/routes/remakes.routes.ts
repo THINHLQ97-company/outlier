@@ -139,14 +139,30 @@ async function autoDrawImage(remakeId: string): Promise<void> {
   console.log(`[remake] Đã đề xuất 3 phương án và vẽ phương án 1 cho bản viết ${remakeId}.`);
 }
 
+/**
+ * Thư viện remake là của CHUNG cả nhóm (quyết định chủ dự án 2026-10-06, task
+ * #5985): ai đăng nhập cũng XEM được mọi bản viết và VẼ THÊM phương án ảnh.
+ *
+ * Còn SỬA CHỮ, XOÁ, ĐĂNG BÀI, ĐỔI ẢNH ĐANG CHỌN thì chỉ chủ bản viết và admin —
+ * đó là những thao tác đổi thứ người khác sắp đem đăng. Vẽ thêm thì chỉ THÊM
+ * một phương án, không đụng gì tới bản của người ta.
+ */
+async function canEditRemake(row: { owner: string }, username: string): Promise<boolean> {
+  return row.owner === username || (await isActiveAdmin(username));
+}
+
 export function registerRemakeRoutes(app: Express) {
   app.get("/api/remakes", requireAuth, async (req, res) => {
     if (dbDown(res)) return;
     const username = getAuthUser(req)!;
     try {
-      const rows = await getDb().select().from(remakes).where(eq(remakes.owner, username))
-        .orderBy(desc(remakes.createdAt)).limit(50);
-      res.json(rows);
+      // Thư viện dùng chung: không lọc theo người tạo. Trước đây lọc owner nên
+      // mỗi người chỉ thấy bản của mình, thư viện không dùng chung được.
+      const rows = await getDb().select().from(remakes).orderBy(desc(remakes.createdAt)).limit(100);
+      const admin = await isActiveAdmin(username);
+      // Kèm cờ quyền để giao diện ẩn nút sửa/xoá/đăng — bấm vào rồi mới báo
+      // "không có quyền" là bắt người dùng đoán.
+      res.json(rows.map((r) => ({ ...r, isMine: r.owner === username, canEdit: admin || r.owner === username })));
     } catch (e: any) {
       console.error("remakes list:", e?.message || e);
       res.status(500).json({ error: "Không tải được danh sách bản viết." });
@@ -161,7 +177,7 @@ export function registerRemakeRoutes(app: Express) {
     const username = getAuthUser(req)!;
     const ids = String(req.query.ids || "").split(",").map((x) => x.trim()).filter((x) => UUID_RE.test(x));
     try {
-      const all = await getDb().select().from(remakes).where(eq(remakes.owner, username)).orderBy(desc(remakes.createdAt)).limit(500);
+      const all = await getDb().select().from(remakes).orderBy(desc(remakes.createdAt)).limit(500);
       const rows = ids.length ? all.filter((r) => ids.includes(r.id)) : all;
 
       const csv = toCsv(
@@ -197,10 +213,8 @@ export function registerRemakeRoutes(app: Express) {
       const [row] = await getDb().select().from(remakes).where(eq(remakes.id, id));
       if (!row) return res.status(404).json({ error: "Không tìm thấy bản viết." });
       const username = getAuthUser(req)!;
-      if (row.owner !== username && !(await isActiveAdmin(username))) {
-        return res.status(403).json({ error: "Không có quyền xem bản viết này." });
-      }
-      res.json(row);
+      // Ai đăng nhập cũng xem được — thư viện dùng chung.
+      res.json({ ...row, isMine: row.owner === username, canEdit: await canEditRemake(row, username) });
     } catch (e: any) {
       console.error("remake get:", e?.message || e);
       res.status(500).json({ error: "Không tải được bản viết." });
@@ -478,10 +492,7 @@ export function registerRemakeRoutes(app: Express) {
     try {
       const [row] = await getDb().select().from(remakes).where(eq(remakes.id, id));
       if (!row) return res.status(404).json({ error: "Không tìm thấy bản viết." });
-      const me = getAuthUser(req)!;
-      if (row.owner !== me && !(await isActiveAdmin(me))) {
-        return res.status(403).json({ error: "Không có quyền với bản viết này." });
-      }
+      // Ai cũng đề xuất được: chỉ là gợi ý phương án ảnh, không đổi bài của chủ.
       const { proposeConceptsForRemake } = await import("../services/remake-image");
       res.json({ concepts: await proposeConceptsForRemake(id, 3) });
     } catch (e: any) {
@@ -498,13 +509,15 @@ export function registerRemakeRoutes(app: Express) {
       const [row] = await getDb().select().from(remakes).where(eq(remakes.id, id));
       if (!row) return res.status(404).json({ error: "Không tìm thấy bản viết." });
       const username = getAuthUser(req)!;
-      if (row.owner !== username && !(await isActiveAdmin(username))) {
-        return res.status(403).json({ error: "Không có quyền sửa bản viết này." });
-      }
+      // Ai cũng vẽ thêm được. Nhưng ảnh mới chỉ tự thành "ảnh đang chọn" khi
+      // người vẽ là chủ hoặc admin — người khác vẽ thêm không được đổi ảnh mà
+      // chủ bản viết sắp đem đăng.
+      const owner = await canEditRemake(row, username);
 
       const { generateRemakeImage } = await import("../services/remake-image");
       const out = await generateRemakeImage({
         remakeId: id,
+        selectAfter: owner,
         aspectRatio: typeof req.body?.aspectRatio === "string" ? req.body.aspectRatio : undefined,
         customPrompt: typeof req.body?.prompt === "string" ? req.body.prompt : undefined,
         // Vẽ phương án thứ mấy trong ba phương án đã đề xuất.
@@ -535,9 +548,9 @@ export function registerRemakeRoutes(app: Express) {
       const [row] = await getDb().select().from(remakes).where(eq(remakes.id, id));
       if (!row) return res.status(404).json({ error: "Không tìm thấy bản viết." });
       const username = getAuthUser(req)!;
-      if (row.owner !== username && !(await isActiveAdmin(username))) {
-        return res.status(403).json({ error: "Không có quyền sửa bản viết này." });
-      }
+      // Chỉnh ảnh = THÊM một biến thể mới, ảnh cũ giữ nguyên — ai cũng làm được.
+      // Chỉ chủ/admin mới để biến thể mới thành ảnh đang chọn.
+      const owner = await canEditRemake(row, username);
 
       const images = (row.imagesJson || []) as any[];
       const targetUrl = String(req.body?.imageUrl || row.selectedImageUrl || images[images.length - 1]?.url || "");
@@ -580,7 +593,11 @@ export function registerRemakeRoutes(app: Express) {
 
       await getDb()
         .update(remakes)
-        .set({ imagesJson: [...images, newImage], selectedImageUrl: newUrl, updatedAt: new Date() })
+        .set({
+          imagesJson: [...images, newImage],
+          ...(owner ? { selectedImageUrl: newUrl } : {}),
+          updatedAt: new Date(),
+        })
         .where(eq(remakes.id, id));
 
       res.json({ image: newImage });

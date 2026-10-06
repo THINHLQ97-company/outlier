@@ -28,6 +28,7 @@ export default function RemakeImages({
   concepts = [],
   autoDrawing = false,
   autoDrawError = null,
+  canEdit = true,
   onChanged,
 }: {
   remakeId: string;
@@ -40,6 +41,8 @@ export default function RemakeImages({
   autoDrawing?: boolean;
   /** Lý do tự vẽ thất bại (nếu có). */
   autoDrawError?: string | null;
+  /** Đổi ảnh đang chọn được không (chủ bản viết hoặc admin). Vẽ thêm thì ai cũng được. */
+  canEdit?: boolean;
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -441,11 +444,11 @@ export default function RemakeImages({
                             <span className="ds-badge ds-badge-success">
                               <Check className="w-3 h-3" aria-hidden="true" /> Đang chọn
                             </span>
-                          ) : (
+                          ) : canEdit ? (
                             <button type="button" onClick={() => handleSelect(img.url)} className="ds-btn ds-btn-ghost ds-btn-sm">
                               Chọn
                             </button>
-                          )}
+                          ) : null}
                           <button
                             type="button"
                             onClick={() => setEditing(img)}

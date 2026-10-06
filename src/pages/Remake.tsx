@@ -762,7 +762,11 @@ function RemakeDetailPanel({
     setDraftText(row.draft || "");
   }, [row.id, row.draft]);
 
-  const editable = row.status === "ready" && !watching && !rechecking && !revising;
+  // Thư viện dùng chung: bản của người khác thì xem và vẽ thêm ảnh được, còn
+  // sửa chữ / xoá / đăng là của chủ và admin. Ẩn hẳn nút thay vì để bấm rồi mới
+  // báo "không có quyền". Server vẫn kiểm lại, đây chỉ là giao diện.
+  const canEdit = row.canEdit !== false;
+  const editable = canEdit && row.status === "ready" && !watching && !rechecking && !revising;
 
   async function doCopy() {
     try {
@@ -803,6 +807,9 @@ function RemakeDetailPanel({
               <span className={`ds-badge ${STATUS_META[row.status].cls}`}>{STATUS_META[row.status].label}</span>
               <span className="text-[11px] text-stone-400">{FORMAT_LABEL[row.format]}</span>
               <span className="text-[11px] text-stone-400">{formatDate(row.createdAt)}</span>
+              {row.owner && !row.isMine && (
+                <span className="text-[11px] px-1.5 py-0.5 rounded bg-stone-100 text-stone-600">của {row.owner}</span>
+              )}
               {row.sourceUrl && (
                 <a
                   href={row.sourceUrl}
@@ -815,12 +822,14 @@ function RemakeDetailPanel({
               )}
             </div>
           </div>
-          <button
-            onClick={onRequestDelete}
-            className="flex items-center gap-1 text-xs font-medium text-red-600 hover:bg-red-50 px-2.5 py-1.5 rounded-lg transition-colors shrink-0"
-          >
-            <Trash2 className="w-3.5 h-3.5" aria-hidden="true" /> Xoá bản viết
-          </button>
+          {canEdit && (
+            <button
+              onClick={onRequestDelete}
+              className="flex items-center gap-1 text-xs font-medium text-red-600 hover:bg-red-50 px-2.5 py-1.5 rounded-lg transition-colors shrink-0"
+            >
+              <Trash2 className="w-3.5 h-3.5" aria-hidden="true" /> Xoá bản viết
+            </button>
+          )}
         </div>
 
         {watchTimedOut ? (
@@ -932,13 +941,21 @@ function RemakeDetailPanel({
           </div>
           </form>
 
-          <PublishPanel
-            remakeId={row.id}
-            hasDraft={!!row.draft?.trim()}
-            hasImage={!!row.selectedImageUrl}
-            published={row.publishedJson}
-            onChanged={onChanged}
-          />
+          {/* Đăng bài là việc của chủ bản viết. */}
+          {canEdit ? (
+            <PublishPanel
+              remakeId={row.id}
+              hasDraft={!!row.draft?.trim()}
+              hasImage={!!row.selectedImageUrl}
+              published={row.publishedJson}
+              onChanged={onChanged}
+            />
+          ) : (
+            <p className="text-xs text-stone-500 bg-stone-50 border border-stone-200 rounded-lg px-3 py-2">
+              Bản viết của {row.owner || "người khác"} — bạn xem và vẽ thêm phương án ảnh được; sửa chữ, xoá và đăng bài là
+              việc của người tạo hoặc quản trị viên.
+            </p>
+          )}
 
           <RemakeImages
             remakeId={row.id}
@@ -946,6 +963,7 @@ function RemakeDetailPanel({
             selectedUrl={row.selectedImageUrl}
             hasDraft={!!row.draft?.trim()}
             concepts={row.imageConceptsJson || []}
+            canEdit={canEdit}
             autoDrawing={!!drawing}
             autoDrawError={row.imageError || null}
             onChanged={onChanged}

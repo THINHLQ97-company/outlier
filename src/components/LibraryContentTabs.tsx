@@ -102,7 +102,9 @@ export function PostsTab() {
 
 /** Hình ảnh: mọi ảnh đã vẽ cho các bản remake. */
 export function ImagesTab() {
-  const [items, setItems] = useState<{ url: string; prompt: string; remakeId: string; createdAt: string }[]>([]);
+  const [items, setItems] = useState<
+    { url: string; prompt: string; remakeId: string; createdAt: string; canEdit: boolean; owner?: string }[]
+  >([]);
   const [zoom, setZoom] = useState<{ url: string; prompt: string; remakeId: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -154,6 +156,9 @@ export function ImagesTab() {
             prompt: img.prompt,
             remakeId: r.id,
             createdAt: img.createdAt,
+            // Thư viện dùng chung: ai cũng xem và thả tim được, xoá thì chỉ chủ/admin.
+            canEdit: r.canEdit !== false,
+            owner: r.owner,
           })),
         );
         all.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
@@ -208,6 +213,7 @@ export function ImagesTab() {
                 <a href={imageDisplayUrl(img.url) || img.url} download className="text-stone-400 hover:text-stone-700 p-1" title="Tải ảnh về" aria-label="Tải ảnh về">
                   <Download className="w-3.5 h-3.5" aria-hidden="true" />
                 </a>
+                {img.canEdit && (
                 <button
                   type="button"
                   onClick={() => setDeleteTarget({ url: img.url, remakeId: img.remakeId })}
@@ -218,6 +224,7 @@ export function ImagesTab() {
                 >
                   <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                 </button>
+                )}
               </div>
             </div>
           </div>
