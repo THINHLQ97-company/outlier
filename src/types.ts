@@ -710,11 +710,16 @@ export interface PublishedRecord {
 
 /** Một phương án ảnh — mirror server/db/schema.ts (RemakeImage). */
 export interface ImageConcept {
+  /** Thể loại tổng quan: cartoon | chat | review | social | text_card. */
+  format?: string;
   title: string;
   why: string;
   layout: string;
   characters: string[];
   panels: { scene: string; action: string; expression: string; dialogue: string | null }[];
+  messages?: { from: string; text: string }[];
+  caption?: string | null;
+  review?: { business: string; rating: number; reviewer: string; text: string; reply?: string | null } | null;
 }
 
 export interface RemakeImage {

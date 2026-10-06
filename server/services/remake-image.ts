@@ -121,9 +121,20 @@ async function loadImageContext(remakeId: string) {
 export async function proposeConceptsForRemake(remakeId: string, count = 3) {
   const ctx = await loadImageContext(remakeId);
   const { proposeImageConcepts } = await import("./image-concepts");
+  // Trang hay đăng thể loại gì: khuôn ảnh quen + định dạng trang tự khai. Thể
+  // loại hợp trang được xếp đầu — trang sống bằng ảnh chat thì chat lên trước.
+  const pageFormatHints: string[] = [];
+  const v = visualOf(ctx.brand);
+  if (v?.template) pageFormatHints.push(`Khuôn ảnh quen của trang: ${v.template}`);
+  const pages = await ctx.db.select().from(brandFanpages).where(eq(brandFanpages.brandId, ctx.row.brandId));
+  const declared = [...new Set(pages.flatMap((pg) => (pg.formats as string[]) || []))];
+  if (declared.length) pageFormatHints.push(`Định dạng trang hay dùng: ${declared.join(", ")}`);
+
   const concepts = await proposeImageConcepts(
     {
       draft: ctx.row.draft!,
+      brandName: ctx.brand?.name,
+      pageFormatHints,
       characterNames: ctx.chars.map((c) => c.name),
       // Chỉ nhân vật KHÔNG có ảnh mẫu mới được tả ngoại hình bằng chữ — có ảnh
       // mẫu mà còn tả bằng chữ thì chữ giành quyền với ảnh, nhân vật vẽ ra sai.
@@ -180,13 +191,25 @@ export async function generateRemakeImage(opts: {
   // Chỉ đính ảnh mẫu của nhân vật CÓ TRONG BÀI — bài chỉ có Gèn mà đính cả
   // ảnh Gàn thì model hay vẽ thêm Gàn, hoặc pha hai người thành một.
   const usedChars = pickCharactersInUse(chars, concept, opts.customPrompt);
-  const refs = await collectCharacterRefs(usedChars, { sourceImageUrl: ctx.sourceImageUrl });
+
+  // Ảnh gốc chỉ làm mẫu bố cục khi CÙNG thể loại: bài gốc là truyện tranh mà
+  // phương án là ảnh chat thì bắt chép bố cục truyện tranh vào ảnh chat là vô
+  // nghĩa — model sẽ ra một thứ lai.
+  const { formatFromImageKind } = await import("../../shared/post-formats");
+  const sourceFormat = formatFromImageKind((ctx.decon?.imageReading as any)?.imageKind) || "cartoon";
+  const conceptFormat = concept?.format || "cartoon";
+  const useSource = sourceFormat === conceptFormat;
+  const refs = await collectCharacterRefs(usedChars, { sourceImageUrl: useSource ? ctx.sourceImageUrl : null });
 
   // Ghi rõ đã đính ảnh nào và thiếu ảnh nào vì sao. Trước đây thiếu ảnh mẫu là
   // im lặng — model vẽ theo chữ, ra nhân vật "na ná", không ai biết tại sao.
   const attachLog = [
     ...refs.characters.map((c) => (c.refIndex ? `${c.name}=#${c.refIndex}` : `${c.name}=THIẾU(${c.missingReason})`)),
-    refs.sourceIndex ? `ảnh gốc=#${refs.sourceIndex}` : `ảnh gốc=THIẾU(${refs.sourceMissingReason || "bài không có ảnh"})`,
+    refs.sourceIndex
+      ? `ảnh gốc=#${refs.sourceIndex}`
+      : !useSource
+      ? `ảnh gốc=BỎ (bài gốc là ${sourceFormat}, phương án là ${conceptFormat})`
+      : `ảnh gốc=THIẾU(${refs.sourceMissingReason || "bài không có ảnh"})`,
   ].join(", ");
   console.log(`[remake-image] ${opts.remakeId}: đính ${refs.images.length} ảnh — ${attachLog}`);
 
@@ -276,7 +299,11 @@ export async function generateRemakeImage(opts: {
  */
 export function pickCharactersInUse(
   chars: CharacterRow[],
-  concept: { characters?: string[]; panels?: { scene?: string; action?: string; dialogue?: string | null }[] } | null,
+  concept: {
+    characters?: string[];
+    panels?: { scene?: string; action?: string; dialogue?: string | null }[];
+    messages?: { from?: string; text?: string }[];
+  } | null,
   customPrompt?: string,
 ): CharacterRow[] {
   const byName = new Map(chars.map((c) => [c.name, c]));
@@ -286,6 +313,8 @@ export function pickCharactersInUse(
   const text = [
     customPrompt || "",
     ...(concept?.panels || []).flatMap((p) => [p.scene || "", p.action || "", p.dialogue || ""]),
+    // Tin nhắn / bình luận: người gửi là nhân vật thì cần ảnh mẫu cho ảnh đại diện.
+    ...((concept as any)?.messages || []).map((m: any) => `${m.from || ""} ${m.text || ""}`),
   ].join(" ");
   const mentioned = chars.filter((c) => text.includes(c.name));
   return mentioned.length ? mentioned : chars;

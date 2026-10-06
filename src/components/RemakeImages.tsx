@@ -5,6 +5,7 @@ import type { RemakeImage, ImageConcept } from "../types";
 import { imageDisplayUrl } from "../services/http";
 import ImageRegionEditor from "./ImageRegionEditor";
 import ImageSpecEditor, { ResetSpecButton, type ImageSpec } from "./ImageSpecEditor";
+import { postFormat } from "../../shared/post-formats";
 
 // Ảnh cho bản viết. Khác luồng "Sáng tạo" (vẽ meme theo dàn nhân vật cố định):
 // ở đây ảnh bám nhận diện của thương hiệu người dùng.
@@ -219,14 +220,14 @@ export default function RemakeImages({
                           <p className="text-sm font-semibold text-stone-800">
                             {i + 1}. {c.title}
                           </p>
-                          <span className="text-[10px] text-stone-400 shrink-0">{c.layout}</span>
+                          {/* Thể loại đứng đầu thẻ: ba phương án có thể là ba
+                              thể loại khác nhau, phải nhìn ra ngay. */}
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-storm-50 text-storm-700 shrink-0">
+                            {postFormat(c.format).label}
+                          </span>
                         </div>
                         {c.why && <p className="text-xs text-stone-500">{c.why}</p>}
-                        {c.panels.some((p) => p.dialogue) && (
-                          <p className="text-[11px] text-stone-600 italic line-clamp-2">
-                            "{c.panels.map((p) => p.dialogue).filter(Boolean).join(" / ")}"
-                          </p>
-                        )}
+                        <ConceptPreview concept={c} />
                         <button
                           type="button"
                           onClick={() => handleGenerate(i)}
@@ -506,4 +507,54 @@ export default function RemakeImages({
       </div>
     </div>
   );
+}
+
+/**
+ * Xem trước nội dung một phương án theo đúng thể loại — để chọn phương án mà
+ * không phải vẽ thử từng cái (mỗi lần vẽ đều tốn phí).
+ */
+function ConceptPreview({ concept: c }: { concept: ImageConcept }) {
+  const fmt = postFormat(c.format).id;
+
+  if ((fmt === "chat" || fmt === "social") && c.messages?.length) {
+    return (
+      <div className="text-[11px] bg-stone-50 border border-stone-200 rounded-lg p-2 flex flex-col gap-1">
+        {c.caption && <p className="font-semibold text-stone-700 truncate">{c.caption}</p>}
+        {c.messages.slice(0, 4).map((m, k) => (
+          <p key={k} className="text-stone-600 line-clamp-1">
+            <span className="font-medium text-stone-800">{m.from}:</span> {m.text}
+          </p>
+        ))}
+        {c.messages.length > 4 && <p className="text-stone-400">+{c.messages.length - 4} dòng nữa</p>}
+      </div>
+    );
+  }
+
+  if (fmt === "review" && c.review) {
+    return (
+      <div className="text-[11px] bg-stone-50 border border-stone-200 rounded-lg p-2">
+        <p className="font-semibold text-stone-700 truncate">{c.review.business}</p>
+        <p className="text-amber-500" aria-label={`${c.review.rating} trên 5 sao`}>
+          {"★".repeat(c.review.rating)}
+          <span className="text-stone-300">{"★".repeat(5 - c.review.rating)}</span>
+        </p>
+        <p className="text-stone-600 line-clamp-2">
+          <span className="font-medium text-stone-800">{c.review.reviewer}:</span> {c.review.text}
+        </p>
+      </div>
+    );
+  }
+
+  if (fmt === "text_card" && c.caption) {
+    return <p className="text-[11px] text-stone-700 font-medium bg-stone-50 border border-stone-200 rounded-lg p-2 line-clamp-3">{c.caption}</p>;
+  }
+
+  if (c.panels.some((p) => p.dialogue)) {
+    return (
+      <p className="text-[11px] text-stone-600 italic line-clamp-2">
+        "{c.panels.map((p) => p.dialogue).filter(Boolean).join(" / ")}"
+      </p>
+    );
+  }
+  return null;
 }

@@ -1,3 +1,5 @@
+import { postFormat } from "../../shared/post-formats";
+
 // Bản ĐẶC TẢ ẢNH có cấu trúc — thứ thật sự điều khiển việc vẽ.
 //
 // Học từ marcow-crop: thay vì một đoạn mô tả bằng lời rồi hy vọng model hiểu
@@ -16,6 +18,14 @@ export interface ImageSpec {
   art_style?: { name: string; descriptor: Record<string, any> };
   /** Ảnh gốc của bài đang remake — mẫu BỐ CỤC, không phải mẫu nhân vật. */
   source_layout_reference?: string;
+  /** Thể loại post: cartoon, tin nhắn, đánh giá, bình luận, thẻ chữ. */
+  post_format?: { id: string; label: string };
+  /** Tin nhắn / bình luận nguyên văn (thể loại chat, social). */
+  messages?: { from: string; text: string }[];
+  /** Tên cuộc trò chuyện, chú thích bài đăng, hoặc chữ chính của thẻ chữ. */
+  caption?: string;
+  /** Đánh giá (thể loại review). */
+  review?: { business: string; rating: number; reviewer: string; text: string; reply?: string | null };
   /** Cảnh cần vẽ, viết bằng tiếng Anh vì đi thẳng vào model vẽ. */
   scene: string;
   characters: { name: string; keep_appearance_from_reference_image?: string; note?: string }[];
@@ -134,12 +144,63 @@ export function buildImageSpec(input: SpecInput): ImageSpec {
  */
 export function specFromConcept(
   concept: {
+    format?: string;
     title: string;
     layout: string;
     panels: { scene: string; action: string; expression: string; dialogue: string | null }[];
+    messages?: { from: string; text: string }[];
+    caption?: string | null;
+    review?: { business: string; rating: number; reviewer: string; text: string; reply?: string | null } | null;
   },
   input: Omit<SpecInput, "description" | "textInImage">,
 ): ImageSpec {
+  const format = postFormat(concept.format);
+
+  // Thể loại KHÔNG phải cartoon: cảnh là một ảnh chụp màn hình / thẻ chữ, nội
+  // dung là chữ nguyên văn. Gemini vẽ cả chữ (quyết định chủ dự án), nên chữ
+  // phải ngắn và được đưa NGUYÊN VĂN — không để model tự diễn đạt lại.
+  if (format.id !== "cartoon") {
+    const texts: string[] = [];
+    if (concept.caption) texts.push(concept.caption);
+    for (const m of concept.messages || []) texts.push(m.text);
+    if (concept.review) {
+      texts.push(concept.review.business, concept.review.reviewer, concept.review.text);
+      if (concept.review.reply) texts.push(concept.review.reply);
+    }
+
+    const base = buildImageSpec({
+      ...input,
+      description: `${format.label}: ${concept.title}`,
+      textInImage: texts.join(" / ") || null,
+    });
+
+    const rules = [format.drawGuide, ...base.rules];
+    rules.push(
+      "Every Vietnamese text must be copied EXACTLY as given, character by character, with correct diacritics. Do not translate, shorten, rephrase or add text.",
+    );
+    if (format.id === "chat" && (concept.messages || []).length) {
+      const first = concept.messages![0].from;
+      rules.push(
+        `Messages from "${first}" sit on the RIGHT (the phone owner); everyone else on the LEFT. Avatars of our characters must match their reference images.`,
+      );
+    }
+    if (format.id === "review" && concept.review) {
+      rules.push(`Show exactly ${concept.review.rating} out of 5 stars filled.`);
+    }
+
+    return {
+      ...base,
+      layout: concept.layout,
+      post_format: { id: format.id, label: format.label },
+      ...(concept.caption ? { caption: concept.caption } : {}),
+      ...(concept.messages?.length ? { messages: concept.messages } : {}),
+      ...(concept.review ? { review: concept.review } : {}),
+      // Thể loại chữ không có khung — bỏ trống để không lẫn với cartoon.
+      panels: undefined,
+      rules,
+    };
+  }
+
   const hasDialogue = concept.panels.some((p) => p.dialogue);
   const base = buildImageSpec({
     ...input,
@@ -166,6 +227,7 @@ export function specFromConcept(
   return {
     ...base,
     layout: concept.layout,
+    post_format: { id: "cartoon", label: format.label },
     panels: concept.panels.map((p, i) => ({ panel: i + 1, ...p })),
     rules,
   };
