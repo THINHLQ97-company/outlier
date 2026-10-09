@@ -341,6 +341,7 @@ export default function Channels() {
                 </div>
                 <div className="text-[10px] text-stone-400 mt-1 flex items-center gap-1">
                   <Clock className="w-2.5 h-2.5" aria-hidden="true" /> {formatRelative(c.lastScanAt)}
+                  {c.isMine === false && <span className="truncate">· {c.owner} theo dõi</span>}
                 </div>
               </button>
             ))
@@ -713,6 +714,9 @@ function ChannelDetailPanel({
               </a>
             </div>
             {detail.note && <p className="text-xs text-stone-500 mt-1.5 italic">"{detail.note}"</p>}
+            {detail.isMine === false && (
+              <p className="text-[11px] text-stone-400 mt-1">Kênh do {detail.owner} thêm — cả đội dùng chung.</p>
+            )}
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -743,12 +747,15 @@ function ChannelDetailPanel({
               {watching ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="w-4 h-4" aria-hidden="true" />}
               {watching ? "Đang làm mới..." : "Làm mới"}
             </button>
-            <button
-              onClick={onRequestDelete}
-              className="flex items-center gap-1 text-xs font-medium text-red-600 hover:bg-red-50 px-2.5 py-1.5 rounded-lg transition-colors"
-            >
-              <Trash2 className="w-3.5 h-3.5" aria-hidden="true" /> Bỏ theo dõi
-            </button>
+            {/* Danh sách dùng chung: chỉ người thêm kênh và admin bỏ theo dõi được. */}
+            {detail.canEdit !== false && (
+              <button
+                onClick={onRequestDelete}
+                className="flex items-center gap-1 text-xs font-medium text-red-600 hover:bg-red-50 px-2.5 py-1.5 rounded-lg transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" aria-hidden="true" /> Bỏ theo dõi
+              </button>
+            )}
           </div>
         </div>
 

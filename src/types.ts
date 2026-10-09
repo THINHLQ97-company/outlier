@@ -537,6 +537,10 @@ export interface WatchedChannel {
   errorMessage?: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Danh sách kênh dùng chung — kênh này do mình thêm hay người khác. */
+  isMine?: boolean;
+  /** Được sửa ghi chú / bỏ theo dõi (người thêm kênh hoặc admin). */
+  canEdit?: boolean;
 }
 
 export interface WatchedChannelDetail extends WatchedChannel {

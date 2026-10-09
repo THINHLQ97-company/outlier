@@ -403,15 +403,24 @@ async function scanChannelViaApify(
   return { candidates, warning: out.warning };
 }
 
+// Kênh theo dõi DÙNG CHUNG (task #6208): ai đăng nhập cũng xem, làm mới, sửa
+// số liệu được — một người theo dõi một kênh là cả đội cùng hưởng, không ai
+// phải thêm lại (và trả tiền quét lại) kênh người khác đã thêm.
+// Ghi chú, tạm dừng, bỏ theo dõi thì chỉ người thêm kênh và admin: đó là
+// quyết định của người theo dõi, người khác bấm nhầm là mất kênh của cả đội.
+async function canManageChannel(chan: { owner: string }, username: string): Promise<boolean> {
+  return chan.owner === username || (await isActiveAdmin(username));
+}
+
 export function registerChannelRoutes(app: Express) {
   app.get("/api/channels", requireAuth, async (req, res) => {
     if (dbDown(res)) return;
     const username = getAuthUser(req)!;
     try {
       const rows = await getDb().select().from(watchedChannels)
-        .where(eq(watchedChannels.owner, username))
-        .orderBy(desc(watchedChannels.updatedAt)).limit(100);
-      res.json(rows);
+        .orderBy(desc(watchedChannels.updatedAt)).limit(300);
+      const admin = await isActiveAdmin(username);
+      res.json(rows.map((r) => ({ ...r, isMine: r.owner === username, canEdit: r.owner === username || admin })));
     } catch (e: any) {
       console.error("channels list:", e?.message || e);
       res.status(500).json({ error: "Không tải được danh sách kênh." });
@@ -459,8 +468,16 @@ export function registerChannelRoutes(app: Express) {
 
     try {
       const [existing] = await getDb().select().from(watchedChannels)
-        .where(and(eq(watchedChannels.owner, username), eq(watchedChannels.channelUrl, url)));
-      if (existing) return res.status(409).json({ error: "Kênh này đã có trong danh sách theo dõi.", id: existing.id });
+        .where(eq(watchedChannels.channelUrl, url));
+      // Kiểm trùng trên TOÀN BỘ danh sách chung, không chỉ của mình.
+      if (existing) {
+        return res.status(409).json({
+          error: existing.owner === username
+            ? "Kênh này đã có trong danh sách theo dõi."
+            : `Kênh này đã được ${existing.owner} theo dõi — mở luôn kênh đó cho bạn.`,
+          id: existing.id,
+        });
+      }
 
       const [row] = await getDb().insert(watchedChannels)
         .values({ owner: username, platform, channelUrl: url, note, useApify, scanStatus: "scanning" })
@@ -482,10 +499,6 @@ export function registerChannelRoutes(app: Express) {
     try {
       const [chan] = await getDb().select().from(watchedChannels).where(eq(watchedChannels.id, id));
       if (!chan) return res.status(404).json({ error: "Không tìm thấy kênh." });
-      const username = getAuthUser(req)!;
-      if (chan.owner !== username && !(await isActiveAdmin(username))) {
-        return res.status(403).json({ error: "Không có quyền làm mới kênh này." });
-      }
       if (chan.scanStatus === "scanning") return res.status(409).json({ error: "Kênh này đang được quét, chờ một chút." });
 
       res.json({ ...chan, scanStatus: "scanning", polling: true, message: "Đang lấy bài mới, khoảng 30-60 giây." });
@@ -505,9 +518,6 @@ export function registerChannelRoutes(app: Express) {
       const [chan] = await getDb().select().from(watchedChannels).where(eq(watchedChannels.id, id));
       if (!chan) return res.status(404).json({ error: "Không tìm thấy kênh." });
       const username = getAuthUser(req)!;
-      if (chan.owner !== username && !(await isActiveAdmin(username))) {
-        return res.status(403).json({ error: "Không có quyền xem kênh này." });
-      }
       // Gom bài của MỌI lần quét kênh này, không chỉ lần gần nhất.
       //
       // Trước đây chỉ đọc lastJobId. Hồi mỗi lần quét đều xin 20 bài thì phiên
@@ -540,7 +550,7 @@ export function registerChannelRoutes(app: Express) {
         })
         .slice(0, 100);
 
-      res.json({ ...chan, items });
+      res.json({ ...chan, items, isMine: chan.owner === username, canEdit: await canManageChannel(chan, username) });
     } catch (e: any) {
       console.error("channel items:", e?.message || e);
       res.status(500).json({ error: "Không tải được bài của kênh." });
@@ -555,10 +565,13 @@ export function registerChannelRoutes(app: Express) {
       const [chan] = await getDb().select().from(watchedChannels).where(eq(watchedChannels.id, id));
       if (!chan) return res.status(404).json({ error: "Không tìm thấy kênh." });
       const username = getAuthUser(req)!;
-      if (chan.owner !== username && !(await isActiveAdmin(username))) {
-        return res.status(403).json({ error: "Không có quyền sửa kênh này." });
-      }
       const patch: Record<string, any> = { updatedAt: new Date() };
+      // Ghi chú / tạm dừng là việc của người theo dõi; số người theo dõi là số
+      // liệu chung, ai nhìn thấy trên trang cũng điền được.
+      const touchesOwnerFields = typeof req.body?.note === "string" || typeof req.body?.isActive === "boolean";
+      if (touchesOwnerFields && !(await canManageChannel(chan, username))) {
+        return res.status(403).json({ error: "Chỉ người thêm kênh hoặc admin mới sửa ghi chú / tạm dừng kênh này." });
+      }
       if (typeof req.body?.note === "string") patch.note = req.body.note.trim() || null;
       if (typeof req.body?.isActive === "boolean") patch.isActive = req.body.isActive;
 
@@ -586,7 +599,7 @@ export function registerChannelRoutes(app: Express) {
       // đúng lỗi cũ: biết số mà không dùng được.
       if (followersChanged) await applyFollowersToItems(id, row.followerCount ?? null);
 
-      res.json(row);
+      res.json({ ...row, isMine: row.owner === username, canEdit: await canManageChannel(row, username) });
     } catch (e: any) {
       console.error("channel patch:", e?.message || e);
       res.status(500).json({ error: "Không lưu được thay đổi." });
@@ -628,8 +641,8 @@ export function registerChannelRoutes(app: Express) {
       const [chan] = await getDb().select().from(watchedChannels).where(eq(watchedChannels.id, id));
       if (!chan) return res.status(404).json({ error: "Không tìm thấy kênh." });
       const username = getAuthUser(req)!;
-      if (chan.owner !== username && !(await isActiveAdmin(username))) {
-        return res.status(403).json({ error: "Không có quyền xoá kênh này." });
+      if (!(await canManageChannel(chan, username))) {
+        return res.status(403).json({ error: "Chỉ người thêm kênh hoặc admin mới bỏ theo dõi được." });
       }
       await getDb().delete(channelSeenItems).where(eq(channelSeenItems.channelId, id));
       await getDb().delete(watchedChannels).where(eq(watchedChannels.id, id));
