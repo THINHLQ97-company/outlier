@@ -9,8 +9,8 @@
 // "Unexpected response from webpage request" với mọi video TikTok, nên tải trực
 // tiếp không còn chạy.
 import { estimateCostUsd, isApifyConfigured } from "./apify";
+import { apifyErrorMessage, runApifySync } from "./apify-run";
 
-const API_BASE = "https://api.apify.com/v2";
 const RUN_TIMEOUT_MS = 240_000;
 
 export type PostKind = "video" | "post" | "image" | "unknown";
@@ -151,23 +151,18 @@ export async function fetchPostViaApify(url: string): Promise<FetchOutcome> {
   const actor = actorForPost(platform);
   if (!actor) return { warning: `Chưa hỗ trợ lấy bài lẻ từ ${platform}.` };
 
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), RUN_TIMEOUT_MS);
   try {
     // Trần tiền cứng do Apify áp phía họ — chặn được cả khi code mình tính sai
-    // số kết quả (xem maxChargePerRunUsd trong apify.ts).
+    // số kết quả (xem maxChargePerRunUsd trong apify.ts). Qua hàng đợi chung
+    // (apify-run.ts) để không dính 402 hết RAM khi nhiều người quét cùng lúc.
     const { maxChargePerRunUsd } = await import("./apify");
-    const runUrl =
-      `${API_BASE}/acts/${encodeURIComponent(actor)}/run-sync-get-dataset-items` +
-      `?maxTotalChargeUsd=${maxChargePerRunUsd()}`;
-    const res = await fetch(runUrl, {
-      method: "POST",
-      signal: ctrl.signal,
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey()}` },
-      body: JSON.stringify(inputForPost(platform, url)),
+    const res = await runApifySync(actor, inputForPost(platform, url), {
+      token: apiKey(),
+      maxTotalChargeUsd: maxChargePerRunUsd(),
+      clientTimeoutMs: RUN_TIMEOUT_MS,
     });
-    const body = await res.text();
-    if (!res.ok) return { warning: `Không lấy được bài (${res.status}): ${body.slice(0, 160)}` };
+    const body = res.body;
+    if (!res.ok) return { warning: `Không lấy được bài: ${apifyErrorMessage(res)}` };
 
     let data: any;
     try { data = JSON.parse(body); } catch { return { warning: "Phản hồi không đọc được." }; }
@@ -189,7 +184,5 @@ export async function fetchPostViaApify(url: string): Promise<FetchOutcome> {
     return { post, costUsd: estimateCostUsd(1) };
   } catch (e: any) {
     return { warning: `Không lấy được bài: ${e?.message || e}` };
-  } finally {
-    clearTimeout(timer);
   }
 }

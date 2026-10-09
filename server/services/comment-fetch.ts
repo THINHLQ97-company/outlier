@@ -10,8 +10,8 @@
 // nó. Xin 50 nhận về 476. Vì vậy ở đây có hai lớp chặn: `resultsLimit` gửi cho
 // actor, và `maxTotalChargeUsd` do Apify tự áp phía họ.
 import { maxChargePerRunUsd, USD_PER_RESULT } from "./apify";
+import { apifyErrorMessage, runApifySync } from "./apify-run";
 
-const API_BASE = "https://api.apify.com/v2";
 const RUN_TIMEOUT_MS = 180_000;
 
 /** Mỗi nền tảng một actor. Chỉ nền tảng nào có tên ở đây mới lấy được. */
@@ -73,28 +73,22 @@ export async function fetchComments(
   }
 
   const safeLimit = Math.min(300, Math.max(10, limit));
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), RUN_TIMEOUT_MS);
   try {
-    const runUrl =
-      `${API_BASE}/acts/${encodeURIComponent(actor)}/run-sync-get-dataset-items` +
-      `?maxTotalChargeUsd=${maxChargePerRunUsd()}`;
-    const res = await fetch(runUrl, {
-      method: "POST",
-      signal: ctrl.signal,
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apifyToken()}` },
-      body: JSON.stringify({
+    const res = await runApifySync(
+      actor,
+      {
         startUrls: [{ url }],
         // TÊN TRƯỜNG NÀY PHẢI ĐÚNG — xem ghi chú đầu tệp.
         resultsLimit: safeLimit,
         includeNestedComments: false,
         viewOption: "RANKED_THREADED",
-      }),
-    });
+      },
+      { token: apifyToken(), maxTotalChargeUsd: maxChargePerRunUsd(), clientTimeoutMs: RUN_TIMEOUT_MS },
+    );
 
-    const body = await res.text();
+    const body = res.body;
     if (!res.ok) {
-      return { comments: [], costUsd: 0, warning: `Không lấy được bình luận (${res.status}): ${body.slice(0, 160)}` };
+      return { comments: [], costUsd: 0, warning: `Không lấy được bình luận: ${apifyErrorMessage(res)}` };
     }
 
     let data: any;
@@ -131,8 +125,6 @@ export async function fetchComments(
   } catch (e: any) {
     if (e?.name === "AbortError") return { comments: [], costUsd: 0, warning: "Quá lâu không phản hồi." };
     return { comments: [], costUsd: 0, warning: e?.message || "Lỗi khi lấy bình luận." };
-  } finally {
-    clearTimeout(timer);
   }
 }
 

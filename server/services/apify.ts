@@ -9,8 +9,8 @@
 import { and, eq, gte, inArray, sql } from "drizzle-orm";
 import { getDb, isDbConfigured } from "../db/client";
 import { apifyCache, apifyUsage } from "../db/schema";
+import { apifyErrorMessage, runApifySync } from "./apify-run";
 
-const API_BASE = "https://api.apify.com/v2";
 const RUN_TIMEOUT_MS = 180_000;
 
 export interface ApifyMetrics {
@@ -216,27 +216,15 @@ async function writeCache(entries: { key: string; value: ApifyMetrics; raw?: any
 
 /** Chạy actor đồng bộ, lấy thẳng dataset. Một lượt chạy cho NHIỀU url. */
 async function runActorSync(actorId: string, input: Record<string, any>): Promise<any[]> {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), RUN_TIMEOUT_MS);
-  try {
-    const url =
-      `${API_BASE}/acts/${encodeURIComponent(actorId)}/run-sync-get-dataset-items` +
-      `?maxTotalChargeUsd=${maxChargePerRunUsd()}`;
-    const res = await fetch(url, {
-      method: "POST",
-      signal: ctrl.signal,
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apifyToken()}` },
-      body: JSON.stringify(input),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`Apify ${res.status}: ${body.slice(0, 200)}`);
-    }
-    const data = await res.json();
-    return Array.isArray(data) ? data : [];
-  } finally {
-    clearTimeout(timer);
-  }
+  // Qua hàng đợi chung (apify-run.ts) — gọi thẳng là lý do dính 402 hết RAM.
+  const res = await runApifySync(actorId, input, {
+    token: apifyToken(),
+    maxTotalChargeUsd: maxChargePerRunUsd(),
+    clientTimeoutMs: RUN_TIMEOUT_MS,
+  });
+  if (!res.ok) throw new Error(apifyErrorMessage(res));
+  const data = JSON.parse(res.body || "[]");
+  return Array.isArray(data) ? data : [];
 }
 
 /** Đọc số từ nhiều tên trường khác nhau giữa các actor. */
