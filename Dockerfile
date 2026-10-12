@@ -11,8 +11,14 @@ WORKDIR /app
 # python3: chạy yt-dlp và sidecar f2 (Douyin) — f2 không có bản Node nên giữ
 #          đúng MỘT script Python thay vì viết lại phần chống bot của Douyin.
 # Cài qua venv để không đụng Python hệ thống (PEP 668).
+#
+# ffmpeg lấy bản static dựng sẵn thay vì `apt-get install ffmpeg` (2026-10-09):
+# bản apt kéo theo ~145MB thư viện (cairo, gdk, icu…), cài nguội mất vài phút,
+# đẩy tổng thời gian build quá 5 phút — Vibe Host bỏ chờ và báo "fetch failed"
+# 6/6 lần. Bản static là 2 file, có sẵn libass/freetype cho phụ đề và chữ.
+COPY --from=mwader/static-ffmpeg:7.1 /ffmpeg /ffprobe /usr/local/bin/
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg python3 python3-venv ca-certificates \
+ && apt-get install -y --no-install-recommends python3 python3-venv ca-certificates \
  && python3 -m venv /opt/mediatools \
  && /opt/mediatools/bin/pip install --no-cache-dir --upgrade pip yt-dlp \
  && /opt/mediatools/bin/pip install --no-cache-dir "f2==0.0.1.7" \
