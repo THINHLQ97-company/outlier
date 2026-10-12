@@ -2,7 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import fs from "fs";
 import path from "path";
-import { isDue, nextRunAt, shouldScanChannel, vnDate } from "../services/channel-daily-scan";
+import { isDue, nextRunAt, orderForScan, shouldScanChannel, vnDate } from "../services/channel-daily-scan";
 
 // Tự quét mọi kênh lúc 8:00 giờ Việt Nam (task #6269).
 const at = (iso: string) => new Date(iso);
@@ -62,5 +62,16 @@ describe("quét nối tiếp, không quét lại từ đầu", () => {
   test("job sáng đi đúng đường quét tay, lần lượt từng kênh", () => {
     const job = fs.readFileSync(path.join(process.cwd(), "server", "services", "channel-daily-scan.ts"), "utf8");
     assert.match(job, /for \(const c of targets\) \{[\s\S]*await refreshChannelInBackground\(c\.id\)/);
+  });
+});
+
+describe("luân phiên khi ngân sách không đủ cho mọi kênh", () => {
+  test("kênh chưa quét lần nào đứng đầu, rồi tới kênh lâu chưa quét nhất", () => {
+    const rows = [
+      { id: "moi-quet", lastScanAt: new Date("2026-10-12T03:20:00Z") },
+      { id: "chua-quet", lastScanAt: null },
+      { id: "bi-bo-hom-qua", lastScanAt: new Date("2026-10-10T01:00:00Z") },
+    ];
+    assert.deepEqual(orderForScan(rows).map((r) => r.id), ["chua-quet", "bi-bo-hom-qua", "moi-quet"]);
   });
 });

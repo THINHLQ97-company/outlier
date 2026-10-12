@@ -62,6 +62,20 @@ export function shouldScanChannel(
   return now.getTime() - updated > STALE_SCANNING_MS;
 }
 
+/**
+ * Kênh lâu chưa quét được thì quét TRƯỚC (chưa quét lần nào đứng đầu).
+ *
+ * Ngân sách Apify ngày có trần: 2026-10-12 lượt đầu chỉ đủ cho 14/28 kênh.
+ * Quét theo thứ tự thêm kênh thì ngày nào cũng đúng những kênh cuối danh sách
+ * hết tiền và không bao giờ được quét. Xếp theo mốc quét cuối thì kênh hôm nay
+ * bị bỏ sẽ đứng đầu hàng ngày mai — luân phiên công bằng. Kênh lỗi không dời
+ * mốc nên vẫn giữ chỗ ưu tiên.
+ */
+export function orderForScan<T extends { lastScanAt: Date | string | null }>(rows: T[]): T[] {
+  const t = (c: T) => (c.lastScanAt ? new Date(c.lastScanAt).getTime() : -Infinity);
+  return [...rows].sort((a, b) => t(a) - t(b));
+}
+
 export interface DailyScanResult {
   ran: boolean;
   date: string;
@@ -87,7 +101,7 @@ export async function runDailyChannelScan(reason: string, now = new Date()): Pro
 
     const db = getDb();
     const rows = await db.select().from(watchedChannels).orderBy(asc(watchedChannels.createdAt));
-    const targets = rows.filter((c) => shouldScanChannel(c, now));
+    const targets = orderForScan(rows.filter((c) => shouldScanChannel(c, now)));
     const skipped = rows.length - targets.length;
     console.log(`[daily-scan] ${reason}: quét ${targets.length}/${rows.length} kênh (bỏ ${skipped} kênh tắt/đang quét).`);
 
