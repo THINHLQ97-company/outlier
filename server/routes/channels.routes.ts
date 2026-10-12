@@ -253,10 +253,13 @@ export async function refreshChannelInBackground(channelId: string, limit?: numb
     }
 
     if (r.candidates.length === 0) {
+      // KHÔNG dời lastScanAt: nó là mốc "quét nối tiếp từ đây" — lần sau chỉ
+      // xin bài mới hơn mốc này. Dời mốc khi chưa lấy được gì là bỏ sót vĩnh
+      // viễn mọi bài đăng giữa lần quét thành công trước và lúc lỗi.
       await db.update(watchedChannels).set({
         scanStatus: "error",
         errorMessage: r.warning || "Không lấy được bài nào từ kênh này.",
-        lastScanAt: new Date(), updatedAt: new Date(),
+        updatedAt: new Date(),
       }).where(eq(watchedChannels.id, channelId));
       return;
     }
@@ -425,6 +428,13 @@ export function registerChannelRoutes(app: Express) {
       console.error("channels list:", e?.message || e);
       res.status(500).json({ error: "Không tải được danh sách kênh." });
     }
+  });
+
+  // Tình trạng tự quét buổi sáng — để trang Kênh theo dõi nói được "lần cuối
+  // tự quét lúc nào, lần tới lúc nào".
+  app.get("/api/channels/auto-scan", requireAuth, async (_req, res) => {
+    const { dailyScanStatus } = await import("../services/channel-daily-scan");
+    res.json(await dailyScanStatus());
   });
 
   // ===== Thêm kênh vào danh sách theo dõi =====

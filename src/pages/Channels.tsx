@@ -32,6 +32,8 @@ import {
   type AddChannelInput,
   repairChannel,
   patchChannel,
+  getAutoScanStatus,
+  type AutoScanStatus,
 } from "../services/channels";
 import { imageDisplayUrl } from "../services/http";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -254,8 +256,9 @@ export default function Channels() {
         <div>
           <h1 className="text-lg font-bold text-stone-800 font-display">Kênh theo dõi</h1>
           <p className="text-sm text-stone-500">
-            Thêm kênh đối thủ vào danh sách, rồi bấm "Làm mới" mỗi ngày để xem họ vừa đăng gì — bài mới sẽ được đánh dấu rõ.
+            Thêm kênh đối thủ vào danh sách — mỗi sáng app tự lấy bài mới của mọi kênh, bài mới được đánh dấu rõ.
           </p>
+          <AutoScanLine />
         </div>
         <button onClick={() => setShowAddForm(true)} className="ds-btn ds-btn-primary shrink-0">
           <Plus className="w-4 h-4" aria-hidden="true" /> Thêm kênh
@@ -560,6 +563,34 @@ function AddChannelForm({
         onCancel={() => setPaidConfirm(null)}
       />
     </div>
+  );
+}
+
+/** Một dòng: lịch tự quét buổi sáng, lần gần nhất và lần tới. */
+function AutoScanLine() {
+  const [st, setSt] = useState<AutoScanStatus | null>(null);
+  useEffect(() => {
+    getAutoScanStatus().then(setSt).catch(() => setSt(null));
+  }, []);
+  if (!st) return null;
+  if (!st.enabled) {
+    return <p className="text-[11px] text-stone-400 mt-0.5">Tự quét buổi sáng đang tắt.</p>;
+  }
+  const next = new Date(st.nextRunAt).toLocaleString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    day: "2-digit",
+    month: "2-digit",
+  });
+  const last = st.lastRunDate ? st.lastRunDate.split("-").reverse().join("/") : null;
+  return (
+    <p className="text-[11px] text-stone-400 mt-0.5 flex items-center gap-1">
+      <Clock className="w-3 h-3" aria-hidden="true" />
+      {st.running
+        ? "Đang tự quét mọi kênh…"
+        : `Tự quét mọi kênh lúc ${st.hour}:00 mỗi sáng, chỉ lấy bài mới từ lần quét trước · lần tới ${next}` +
+          (last ? ` · lần gần nhất ${last}` : "")}
+    </p>
   );
 }
 

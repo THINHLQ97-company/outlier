@@ -168,3 +168,19 @@ export async function repairChannel(id: string): Promise<{ checked: number; fixe
   if (!res.ok) return asError(res, "Không sửa được số liệu.");
   return res.json();
 }
+
+export interface AutoScanStatus {
+  enabled: boolean;
+  hour: number;
+  /** Ngày (giờ VN) của lượt tự quét gần nhất, YYYY-MM-DD. */
+  lastRunDate: string | null;
+  nextRunAt: string;
+  running: boolean;
+}
+
+/** Tình trạng tự quét mọi kênh mỗi sáng. */
+export async function getAutoScanStatus(): Promise<AutoScanStatus> {
+  const res = await fetch("/api/channels/auto-scan", { headers: authHeaders() });
+  if (!res.ok) return asError(res, "Không đọc được lịch tự quét.");
+  return res.json();
+}
