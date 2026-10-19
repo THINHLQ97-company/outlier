@@ -13,6 +13,7 @@ import { listCharacters } from "../services/characters";
 import type { CharacterRow } from "../types";
 import type { BrandFanpage } from "../types";
 import FanpageStatsPanel from "./FanpageStatsPanel";
+import FanpagePostsPanel from "./FanpagePostsPanel";
 import { imageDisplayUrl } from "../services/http";
 import MetaTokenExchange from "./MetaTokenExchange";
 import MetaTokenStatus from "./MetaTokenStatus";
@@ -56,6 +57,8 @@ export default function BrandFanpages({
   // chứ không dùng một cờ chung — bấm quét trang này không được làm đơ trang kia.
   const [busyId, setBusyId] = useState<string | null>(null);
   const [tokenFor, setTokenFor] = useState<string | null>(null);
+  // Trang nào đang mở tab "Bài viết" (mặc định là "Tổng quan").
+  const [postsTabFor, setPostsTabFor] = useState<Record<string, boolean>>({});
   const [token, setToken] = useState("");
   // Link dạng facebook.com/tenpage thường đoán được, nhưng không phải lúc nào
   // cũng vậy — cho nhập thẳng Page ID thay vì để người dùng bí.
@@ -448,7 +451,37 @@ export default function BrandFanpages({
                     </div>
                   )}
 
-                  {fp.metaStatsJson && <FanpageStatsPanel stats={fp.metaStatsJson} />}
+                  {connected && (
+                    <div className="mt-3 pt-3 border-t border-stone-200">
+                      <div className="flex gap-1.5" role="tablist" aria-label="Nội dung của trang">
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={!postsTabFor[fp.id]}
+                          className={`ds-btn ds-btn-sm ${!postsTabFor[fp.id] ? "ds-btn-primary" : ""}`}
+                          onClick={() => setPostsTabFor((m) => ({ ...m, [fp.id]: false }))}
+                        >
+                          Tổng quan
+                        </button>
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={!!postsTabFor[fp.id]}
+                          className={`ds-btn ds-btn-sm ${postsTabFor[fp.id] ? "ds-btn-primary" : ""}`}
+                          onClick={() => setPostsTabFor((m) => ({ ...m, [fp.id]: true }))}
+                        >
+                          Bài viết &amp; quảng cáo
+                        </button>
+                      </div>
+                      {postsTabFor[fp.id] && (
+                        <div className="mt-3">
+                          <FanpagePostsPanel fanpageId={fp.id} />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {(!connected || !postsTabFor[fp.id]) && fp.metaStatsJson && <FanpageStatsPanel stats={fp.metaStatsJson} />}
                 </li>
               );
             })}

@@ -13,6 +13,7 @@ import {
   Scissors,
   PenLine,
   Eye,
+  Megaphone,
   Clapperboard,
   Menu,
   X,
@@ -63,6 +64,7 @@ const NAV_GROUPS: NavGroup[] = [
       // người dùng mất thời gian thử rồi thất vọng. Đường /videos vẫn chạy để
       // không hỏng link cũ — bật lại ở đây khi tính năng ổn định.
       { to: "/studio", label: "Sáng tạo nhanh", icon: Wand2 },
+      { to: "/ad-orders", label: "Đặt quảng cáo", icon: Megaphone },
     ],
   },
   {
