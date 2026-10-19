@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import { runMigrations } from "./server/db/migrate";
 import { startMetaTokenJob } from "./server/services/meta-token-job";
 import { startChannelDailyScanJob } from "./server/services/channel-daily-scan";
+import { startFanpageAdsJob } from "./server/services/fanpage-ads-job";
 import { seedAll } from "./server/db/seed";
 import { isDbConfigured } from "./server/db/client";
 import { registerAuthRoutes } from "./server/routes/auth.routes";
@@ -22,6 +23,7 @@ import { registerRadarRoutes } from "./server/routes/radar.routes";
 import { registerDeconstructRoutes } from "./server/routes/deconstruct.routes";
 import { registerRemakeRoutes } from "./server/routes/remakes.routes";
 import { registerChannelRoutes } from "./server/routes/channels.routes";
+import { registerAdOrderRoutes } from "./server/routes/ad-orders.routes";
 import { registerVideoRoutes } from "./server/routes/videos.routes";
 import { registerGalleryRoutes } from "./server/routes/gallery.routes";
 import { registerRagRoutes } from "./server/routes/rag.routes";
@@ -139,6 +141,7 @@ async function startServer() {
 
   // Kênh theo dõi — xem đối thủ vừa đăng gì (docs/PRD.md §4 J2)
   registerChannelRoutes(app);
+  registerAdOrderRoutes(app);
 
   // Dựng video từ bản viết (docs/PRD.md §4 J5)
   registerVideoRoutes(app);
@@ -176,6 +179,8 @@ async function startServer() {
     startMetaTokenJob();
     // Mỗi sáng 8:00 tự quét mọi kênh theo dõi, nối tiếp từ lần quét trước.
     startChannelDailyScanJob();
+    // Mỗi giờ: bài trang nhà + bài nào đang chạy quảng cáo + đơn đặt quảng cáo.
+    startFanpageAdsJob();
   });
 }
 

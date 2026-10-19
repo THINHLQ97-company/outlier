@@ -2,7 +2,7 @@
 // Pipeline: THU (signals) → LỌC (rubric_versions + signals.score_json) →
 // DỊCH (scripts) → VẼ (posts.image_variants/overlay_json) → DUYỆT (posts
 // status/checklist_json) → ĐĂNG (posts.fb_post_url, thủ công trong iMVP).
-import { pgTable, uuid, text, boolean, timestamp, jsonb, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, boolean, timestamp, jsonb, integer, index, real, uniqueIndex } from "drizzle-orm/pg-core";
 
 // ===== users — username/password (HMAC token) HOẶC đăng nhập Google (SSO) =====
 // authProvider: "local" (username+password) | "google" (Google SSO, không mật khẩu).
@@ -985,6 +985,17 @@ export const brandFanpages = pgTable("brand_fanpages", {
    */
   metaStatsJson: jsonb("meta_stats_json").$type<FanpageStatsSnapshot | null>(),
 
+  // ── Quảng cáo của trang (task #6843) — job mỗi giờ ghi vào đây ──
+  /** Lần đồng bộ bài + quảng cáo gần nhất. */
+  metaPostsSyncedAt: timestamp("meta_posts_synced_at", { withTimezone: true }),
+  /**
+   * ok | no_user_token | missing_ads_read | no_ad_account | error — vì sao
+   * thấy hoặc không thấy quảng cáo. Thiếu quyền mà im lặng thì trông y như
+   * "trang không chạy quảng cáo nào", và không ai biết phải sửa gì.
+   */
+  metaAdsStatus: text("meta_ads_status"),
+  metaAdsNote: text("meta_ads_note"),
+
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
@@ -1006,3 +1017,73 @@ export const appSettings = pgTable("app_settings", {
 });
 
 export type AppSettingRow = typeof appSettings.$inferSelect;
+
+// ===== fanpage_posts — bài của TRANG NHÀ MÌNH, kèm tình trạng quảng cáo =====
+// Trước đây bài trang nhà chỉ đọc khi bấm đồng bộ rồi vứt (chỉ giữ thống kê).
+// Muốn biết bài nào đang chạy quảng cáo theo giờ thì phải có chỗ lưu từng bài.
+// Đồng bộ mỗi giờ từ Graph (miễn phí) — xem server/services/fanpage-ads-job.ts.
+export const fanpagePosts = pgTable("fanpage_posts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  fanpageId: uuid("fanpage_id").notNull(),
+  /** Mã bài trên Graph, dạng {pageId}_{postId} — khớp creative.effective_object_story_id. */
+  postId: text("post_id").notNull(),
+  message: text("message"),
+  permalink: text("permalink"),
+  thumbnailUrl: text("thumbnail_url"),
+  mediaType: text("media_type"),
+  createdTime: timestamp("created_time", { withTimezone: true }),
+  likes: integer("likes").notNull().default(0),
+  comments: integer("comments").notNull().default(0),
+  shares: integer("shares").notNull().default(0),
+
+  /** Đang có ít nhất một quảng cáo ACTIVE đẩy bài này. */
+  adActive: boolean("ad_active").notNull().default(false),
+  adCount: integer("ad_count").notNull().default(0),
+  /** Tổng chi tiêu trọn đời các quảng cáo đẩy bài (đơn vị tiền của tài khoản QC). */
+  adSpend: real("ad_spend"),
+  adCurrency: text("ad_currency"),
+  adImpressions: integer("ad_impressions"),
+  adReach: integer("ad_reach"),
+  adIds: jsonb("ad_ids").$type<string[]>(),
+  /** Lần đầu và lần cuối job thấy bài đang chạy quảng cáo. */
+  adFirstSeenAt: timestamp("ad_first_seen_at", { withTimezone: true }),
+  adLastSeenAt: timestamp("ad_last_seen_at", { withTimezone: true }),
+
+  syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  postUniq: uniqueIndex("fanpage_posts_fanpage_post_uniq").on(t.fanpageId, t.postId),
+  fanpageIdx: index("fanpage_posts_fanpage_idx").on(t.fanpageId),
+}));
+
+export type FanpagePostRow = typeof fanpagePosts.$inferSelect;
+
+// ===== ad_orders — thành viên đặt "bài này cần chạy quảng cáo" =====
+// Đơn CHỈ cần bài + ghi chú (quyết định chủ dự án 2026-10-19): người chạy tự
+// set-up trên trình quản lý quảng cáo. Mọi đơn về MỘT người cố định (admin
+// chọn trong cài đặt). Job mỗi giờ thấy bài thật sự chạy → tự sang dang_chay;
+// quảng cáo tắt → da_xong.
+//   cho_chay → dang_chay → da_xong      (huy: người đặt / người chạy / admin)
+export const adOrders = pgTable("ad_orders", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  fanpageId: uuid("fanpage_id").notNull(),
+  postId: text("post_id").notNull(),
+  /** Chụp lại lúc đặt — bài bị xoá trên Facebook thì đơn vẫn đọc được. */
+  postMessage: text("post_message"),
+  postPermalink: text("post_permalink"),
+  postThumbnailUrl: text("post_thumbnail_url"),
+  note: text("note"),
+  requestedBy: text("requested_by").notNull(),
+  assignee: text("assignee"),
+  status: text("status").notNull().default("cho_chay"),
+  /** Ai/cái gì đổi trạng thái lần cuối — "system" là job tự phát hiện. */
+  statusBy: text("status_by"),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  endedAt: timestamp("ended_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  statusIdx: index("ad_orders_status_idx").on(t.status),
+  postIdx: index("ad_orders_post_idx").on(t.fanpageId, t.postId),
+}));
+
+export type AdOrderRow = typeof adOrders.$inferSelect;

@@ -122,19 +122,46 @@ function countOf(p: any, key: string): number {
  * Lấy các bài gần nhất, tự lật trang cho tới khi đủ `limit`.
  * Bài không có chữ (chỉ ảnh, chỉ chia sẻ) bị loại: bóc giọng cần có chữ để trích.
  */
-export async function fetchPagePosts(pageId: string, token: string, limit = 100): Promise<MetaPost[]> {
+const POST_FIELDS =
+  "id,message,created_time,permalink_url,full_picture,attachments{media_type}," +
+  "likes.summary(true).limit(0),comments.summary(true).limit(0),shares";
+
+function toMetaPost(p: any): MetaPost {
+  return {
+    id: String(p.id),
+    message: String(p.message || "").trim(),
+    createdTime: p.created_time,
+    permalink: p.permalink_url,
+    likes: countOf(p, "likes"),
+    comments: countOf(p, "comments"),
+    shares: p.shares?.count ?? 0,
+    mediaType: mediaTypeOf(p),
+    thumbnailUrl: p.full_picture || undefined,
+  };
+}
+
+/** Một bài theo mã Graph ({pageId}_{postId}) — cho bài cũ đang được chạy quảng cáo. */
+export async function fetchPost(postId: string, token: string): Promise<MetaPost> {
+  return toMetaPost(await graphGet(postId, token, { fields: POST_FIELDS }));
+}
+
+/**
+ * `includeEmpty`: giữ cả bài không có chữ (chỉ ảnh/video). Bóc giọng thì bỏ,
+ * nhưng danh mục bài + quảng cáo thì cần đủ — bài chạy quảng cáo hay chỉ có ảnh.
+ */
+export async function fetchPagePosts(
+  pageId: string,
+  token: string,
+  limit = 100,
+  opts: { includeEmpty?: boolean } = {},
+): Promise<MetaPost[]> {
   const out: MetaPost[] = [];
   let after: string | undefined;
   const perPage = Math.min(100, Math.max(25, limit));
 
   // Trần 10 vòng: page lớn có hàng chục nghìn bài, không lật vô hạn.
   for (let page = 0; page < 10 && out.length < limit; page++) {
-    const params: Record<string, string> = {
-      fields:
-        "id,message,created_time,permalink_url,full_picture,attachments{media_type}," +
-        "likes.summary(true).limit(0),comments.summary(true).limit(0),shares",
-      limit: String(perPage),
-    };
+    const params: Record<string, string> = { fields: POST_FIELDS, limit: String(perPage) };
     if (after) params.after = after;
 
     const d = await graphGet(`${pageId}/posts`, token, params);
@@ -142,19 +169,9 @@ export async function fetchPagePosts(pageId: string, token: string, limit = 100)
     if (rows.length === 0) break;
 
     for (const p of rows) {
-      const message = String(p.message || "").trim();
-      if (!message) continue;
-      out.push({
-        id: String(p.id),
-        message,
-        createdTime: p.created_time,
-        permalink: p.permalink_url,
-        likes: countOf(p, "likes"),
-        comments: countOf(p, "comments"),
-        shares: p.shares?.count ?? 0,
-        mediaType: mediaTypeOf(p),
-        thumbnailUrl: p.full_picture || undefined,
-      });
+      const post = toMetaPost(p);
+      if (!post.message && !opts.includeEmpty) continue;
+      out.push(post);
       if (out.length >= limit) break;
     }
 
