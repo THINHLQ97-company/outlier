@@ -341,6 +341,14 @@ export default function Channels() {
                     </span>
                   )}
                   {c.scanStatus === "error" && <span className="ds-badge ds-badge-danger">Lỗi</span>}
+                  {(c.autoScanTier === "dormant_skip" || c.autoScanTier === "dormant_check") && (
+                    <span
+                      className="ds-badge"
+                      title="Lâu không có bài mới nên không tự quét mỗi sáng nữa (để tiết kiệm phí), chỉ kiểm tra lại mỗi tuần. Bấm Làm mới để quét lại và đưa kênh lên đầu hàng."
+                    >
+                      Ngủ đông · tự quét mỗi tuần
+                    </span>
+                  )}
                 </div>
                 <div className="text-[10px] text-stone-400 mt-1 flex items-center gap-1">
                   <Clock className="w-2.5 h-2.5" aria-hidden="true" /> {formatRelative(c.lastScanAt)}
@@ -588,7 +596,7 @@ function AutoScanLine() {
       <Clock className="w-3 h-3" aria-hidden="true" />
       {st.running
         ? "Đang tự quét mọi kênh…"
-        : `Tự quét mọi kênh lúc ${st.hour}:00 mỗi sáng, chỉ lấy bài mới từ lần quét trước · lần tới ${next}` +
+        : `Tự quét lúc ${st.hour}:00 mỗi sáng, chỉ lấy bài mới từ lần quét trước — kênh vừa bấm Làm mới được quét trước, kênh lâu không ra bài chỉ kiểm tra mỗi tuần · lần tới ${next}` +
           (last ? ` · lần gần nhất ${last}` : "")}
     </p>
   );

@@ -12,9 +12,9 @@
 //   2. LẦN LƯỢT, không chạy song song — mấy chục kênh có phí cùng lúc là đúng
 //      kịch bản dính 402 hết RAM bên Apify. Ngân sách Apify ngày vẫn áp như quét tay.
 //   3. Không ném lỗi ra ngoài — một kênh hỏng không được làm dừng các kênh khác.
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, isNotNull, sql } from "drizzle-orm";
 import { getDb, isDbConfigured } from "../db/client";
-import { watchedChannels } from "../db/schema";
+import { radarItems, radarJobs, watchedChannels } from "../db/schema";
 import { allSettings, setSetting } from "./app-settings";
 
 export const LAST_RUN_KEY = "channel_daily_scan_last_date";
@@ -76,6 +76,87 @@ export function orderForScan<T extends { lastScanAt: Date | string | null }>(row
   return [...rows].sort((a, b) => t(a) - t(b));
 }
 
+// ── Xếp hàng theo mức hoạt động (task #6849) ──────────────────────────────
+// Ngân sách Apify ngày không đủ cho mọi kênh, nên tiền phải đi vào kênh đáng
+// xem: kênh người ta vừa tự bấm quét, rồi kênh đang ra bài đều. Kênh có phí
+// lâu không ra bài thì quét mỗi sáng chỉ để nhận về con số 0 — ngừng quét hằng
+// ngày, chỉ kiểm tra lại mỗi tuần để biết kênh "sống lại" chưa.
+
+const DAY = 86_400_000;
+const MANUAL_PRIORITY_DAYS = 7;
+const ACTIVE_DAYS = 7;
+
+export function dormantDays(): number {
+  const n = Number(process.env.CHANNEL_DORMANT_DAYS);
+  return Number.isFinite(n) && n >= 3 ? n : 21;
+}
+export function dormantRecheckDays(): number {
+  const n = Number(process.env.CHANNEL_DORMANT_RECHECK_DAYS);
+  return Number.isFinite(n) && n >= 1 ? n : 7;
+}
+
+export type ScanTier = "manual" | "active" | "quiet" | "dormant_check" | "dormant_skip";
+
+export interface TierInput {
+  useApify: boolean;
+  lastScanAt: Date | string | null;
+  lastManualScanAt?: Date | string | null;
+  /** Bài mới nhất từng thấy của kênh (ngày đăng). null = chưa biết. */
+  lastPostAt?: Date | string | null;
+}
+
+const ms = (v: Date | string | null | undefined) => (v ? new Date(v).getTime() : null);
+
+/** Kênh thuộc nhóm nào trong lượt quét sáng. */
+export function scanTier(c: TierInput, now: Date): ScanTier {
+  const t = now.getTime();
+  const manual = ms(c.lastManualScanAt);
+  if (manual != null && t - manual <= MANUAL_PRIORITY_DAYS * DAY) return "manual";
+
+  const post = ms(c.lastPostAt);
+  // Chưa biết bài mới nhất (chưa quét được lần nào) thì coi như đang hoạt động.
+  if (post == null || t - post <= ACTIVE_DAYS * DAY) return "active";
+  // Kênh miễn phí không tốn tiền — ít ra bài cũng cứ quét mỗi ngày.
+  if (!c.useApify || t - post <= dormantDays() * DAY) return "quiet";
+
+  const scanned = ms(c.lastScanAt);
+  return scanned == null || t - scanned >= dormantRecheckDays() * DAY ? "dormant_check" : "dormant_skip";
+}
+
+const TIER_ORDER: Record<ScanTier, number> = { manual: 0, active: 1, quiet: 2, dormant_check: 3, dormant_skip: 4 };
+
+/**
+ * Thứ tự quét: theo nhóm, trong nhóm thì kênh lâu chưa quét trước (luân phiên
+ * công bằng khi thiếu ngân sách); nhóm "vừa quét tay" thì ai bấm gần nhất trước.
+ * Bỏ hẳn nhóm dormant_skip.
+ */
+export function planDailyScan<T extends TierInput>(rows: T[], now: Date): { targets: T[]; dormant: T[] } {
+  const withTier = rows.map((c) => ({ c, tier: scanTier(c, now) }));
+  const dormant = withTier.filter((x) => x.tier === "dormant_skip").map((x) => x.c);
+  const targets = withTier
+    .filter((x) => x.tier !== "dormant_skip")
+    .sort((a, b) => {
+      if (a.tier !== b.tier) return TIER_ORDER[a.tier] - TIER_ORDER[b.tier];
+      if (a.tier === "manual") return (ms(b.c.lastManualScanAt) ?? 0) - (ms(a.c.lastManualScanAt) ?? 0);
+      return (ms(a.c.lastScanAt) ?? -Infinity) - (ms(b.c.lastScanAt) ?? -Infinity);
+    })
+    .map((x) => x.c);
+  return { targets, dormant };
+}
+
+/** Ngày đăng của bài mới nhất từng thấy, theo từng kênh — đọc từ bài đã lưu. */
+export async function lastPostAtByChannel(): Promise<Map<string, Date>> {
+  const rows = await getDb()
+    .select({ channelId: radarJobs.watchedChannelId, last: sql<Date | null>`max(${radarItems.publishedAt})` })
+    .from(radarItems)
+    .innerJoin(radarJobs, eq(radarItems.jobId, radarJobs.id))
+    .where(isNotNull(radarJobs.watchedChannelId))
+    .groupBy(radarJobs.watchedChannelId);
+  const out = new Map<string, Date>();
+  for (const r of rows) if (r.channelId && r.last) out.set(r.channelId, new Date(r.last));
+  return out;
+}
+
 export interface DailyScanResult {
   ran: boolean;
   date: string;
@@ -101,9 +182,22 @@ export async function runDailyChannelScan(reason: string, now = new Date()): Pro
 
     const db = getDb();
     const rows = await db.select().from(watchedChannels).orderBy(asc(watchedChannels.createdAt));
-    const targets = orderForScan(rows.filter((c) => shouldScanChannel(c, now)));
+    const lastPost = await lastPostAtByChannel();
+    const eligible = rows
+      .filter((c) => shouldScanChannel(c, now))
+      .map((c) => ({ ...c, lastPostAt: lastPost.get(c.id) ?? null }));
+    const { targets, dormant } = planDailyScan(eligible, now);
     const skipped = rows.length - targets.length;
-    console.log(`[daily-scan] ${reason}: quét ${targets.length}/${rows.length} kênh (bỏ ${skipped} kênh tắt/đang quét).`);
+    const counts = targets.reduce<Record<string, number>>((m, c) => {
+      const t = scanTier(c, now);
+      m[t] = (m[t] || 0) + 1;
+      return m;
+    }, {});
+    console.log(
+      `[daily-scan] ${reason}: quét ${targets.length}/${rows.length} kênh — vừa quét tay ${counts.manual || 0}, ` +
+        `đang hoạt động ${counts.active || 0}, ít ra bài ${counts.quiet || 0}, kiểm tra kênh ngủ đông ${counts.dormant_check || 0}; ` +
+        `bỏ ${dormant.length} kênh ngủ đông, ${skipped - dormant.length} kênh tắt/đang quét.`,
+    );
 
     const { refreshChannelInBackground } = await import("../routes/channels.routes");
     let ok = 0;

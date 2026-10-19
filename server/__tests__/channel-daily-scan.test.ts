@@ -75,3 +75,56 @@ describe("luân phiên khi ngân sách không đủ cho mọi kênh", () => {
     assert.deepEqual(orderForScan(rows).map((r) => r.id), ["chua-quet", "bi-bo-hom-qua", "moi-quet"]);
   });
 });
+
+describe("ưu tiên kênh hoạt động, bỏ kênh ngủ đông (task #6849)", () => {
+  const now = new Date("2026-10-19T01:00:00Z");
+  const daysAgo = (d: number) => new Date(now.getTime() - d * 86_400_000);
+  // import trễ để không đổi dòng import ở đầu tệp
+  const load = () => import("../services/channel-daily-scan");
+
+  test("kênh vừa bấm Làm mới tay lên đầu, kể cả khi đang ngủ đông", async () => {
+    const { scanTier } = await load();
+    assert.equal(scanTier({ useApify: true, lastScanAt: daysAgo(1), lastManualScanAt: daysAgo(2), lastPostAt: daysAgo(60) }, now), "manual");
+  });
+
+  test("kênh có bài trong 7 ngày là đang hoạt động; chưa biết bài mới nhất cũng coi là hoạt động", async () => {
+    const { scanTier } = await load();
+    assert.equal(scanTier({ useApify: true, lastScanAt: daysAgo(1), lastPostAt: daysAgo(3) }, now), "active");
+    assert.equal(scanTier({ useApify: true, lastScanAt: null, lastPostAt: null }, now), "active");
+  });
+
+  test("kênh có phí 21 ngày không ra bài: ngừng quét hằng ngày, chỉ kiểm tra lại mỗi tuần", async () => {
+    const { scanTier } = await load();
+    assert.equal(scanTier({ useApify: true, lastScanAt: daysAgo(2), lastPostAt: daysAgo(40) }, now), "dormant_skip");
+    assert.equal(scanTier({ useApify: true, lastScanAt: daysAgo(8), lastPostAt: daysAgo(40) }, now), "dormant_check");
+  });
+
+  test("kênh miễn phí không bao giờ ngủ đông — không tốn tiền", async () => {
+    const { scanTier } = await load();
+    assert.equal(scanTier({ useApify: false, lastScanAt: daysAgo(1), lastPostAt: daysAgo(90) }, now), "quiet");
+  });
+
+  test("thứ tự: quét tay (mới bấm trước) → hoạt động → ít ra bài → kiểm tra ngủ đông; bỏ kênh ngủ đông", async () => {
+    const { planDailyScan } = await load();
+    const rows = [
+      { id: "ngu-dong", useApify: true, lastScanAt: daysAgo(1), lastPostAt: daysAgo(50) },
+      { id: "kiem-tra-tuan", useApify: true, lastScanAt: daysAgo(9), lastPostAt: daysAgo(50) },
+      { id: "it-ra-bai", useApify: true, lastScanAt: daysAgo(1), lastPostAt: daysAgo(10) },
+      { id: "hoat-dong-moi-quet", useApify: true, lastScanAt: daysAgo(0.5), lastPostAt: daysAgo(1) },
+      { id: "hoat-dong-lau-chua-quet", useApify: true, lastScanAt: daysAgo(3), lastPostAt: daysAgo(1) },
+      { id: "tay-cu", useApify: true, lastScanAt: daysAgo(1), lastManualScanAt: daysAgo(5), lastPostAt: daysAgo(1) },
+      { id: "tay-moi", useApify: true, lastScanAt: daysAgo(1), lastManualScanAt: daysAgo(1), lastPostAt: daysAgo(30) },
+    ];
+    const { targets, dormant } = planDailyScan(rows, now);
+    assert.deepEqual(targets.map((r) => r.id), [
+      "tay-moi", "tay-cu", "hoat-dong-lau-chua-quet", "hoat-dong-moi-quet", "it-ra-bai", "kiem-tra-tuan",
+    ]);
+    assert.deepEqual(dormant.map((r) => r.id), ["ngu-dong"]);
+  });
+
+  test("bấm Làm mới tay thì ghi lại lần quét tay", () => {
+    const src = fs.readFileSync(path.join(process.cwd(), "server", "routes", "channels.routes.ts"), "utf8");
+    const body = src.slice(src.indexOf('app.post("/api/channels/:id/refresh"'), src.indexOf('app.get("/api/channels/:id/items"'));
+    assert.match(body, /lastManualScanAt: new Date\(\)/);
+  });
+});

@@ -1,0 +1,1 @@
+ALTER TABLE "watched_channels" ADD COLUMN "last_manual_scan_at" timestamp with time zone;

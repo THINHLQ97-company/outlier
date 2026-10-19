@@ -423,7 +423,22 @@ export function registerChannelRoutes(app: Express) {
       const rows = await getDb().select().from(watchedChannels)
         .orderBy(desc(watchedChannels.updatedAt)).limit(300);
       const admin = await isActiveAdmin(username);
-      res.json(rows.map((r) => ({ ...r, isMine: r.owner === username, canEdit: r.owner === username || admin })));
+      // Nhóm trong lượt tự quét sáng — để giao diện báo kênh nào đang "ngủ đông".
+      const { lastPostAtByChannel, scanTier } = await import("../services/channel-daily-scan");
+      const lastPost = await lastPostAtByChannel().catch(() => new Map<string, Date>());
+      const now = new Date();
+      res.json(
+        rows.map((r) => {
+          const lastPostAt = lastPost.get(r.id) ?? null;
+          return {
+            ...r,
+            lastPostAt,
+            autoScanTier: r.isActive ? scanTier({ ...r, lastPostAt }, now) : null,
+            isMine: r.owner === username,
+            canEdit: r.owner === username || admin,
+          };
+        }),
+      );
     } catch (e: any) {
       console.error("channels list:", e?.message || e);
       res.status(500).json({ error: "Không tải được danh sách kênh." });
@@ -490,7 +505,7 @@ export function registerChannelRoutes(app: Express) {
       }
 
       const [row] = await getDb().insert(watchedChannels)
-        .values({ owner: username, platform, channelUrl: url, note, useApify, scanStatus: "scanning" })
+        .values({ owner: username, platform, channelUrl: url, note, useApify, scanStatus: "scanning", lastManualScanAt: new Date() })
         .returning();
 
       res.status(201).json({ ...row, polling: true, message: "Đã thêm kênh. Đang lấy bài lần đầu, khoảng 30-60 giây." });
@@ -510,6 +525,9 @@ export function registerChannelRoutes(app: Express) {
       const [chan] = await getDb().select().from(watchedChannels).where(eq(watchedChannels.id, id));
       if (!chan) return res.status(404).json({ error: "Không tìm thấy kênh." });
       if (chan.scanStatus === "scanning") return res.status(409).json({ error: "Kênh này đang được quét, chờ một chút." });
+      // Có người tự bấm quét = kênh đang được để mắt tới → lượt quét sáng xếp lên
+      // đầu, và kênh ngủ đông được đánh thức lại.
+      await getDb().update(watchedChannels).set({ lastManualScanAt: new Date() }).where(eq(watchedChannels.id, id));
 
       res.json({ ...chan, scanStatus: "scanning", polling: true, message: "Đang lấy bài mới, khoảng 30-60 giây." });
       void refreshChannelInBackground(id, Math.min(Math.max(1, Number(req.body?.limit) || DEFAULT_LIMIT), 50));

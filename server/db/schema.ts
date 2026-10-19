@@ -854,6 +854,11 @@ export const watchedChannels = pgTable("watched_channels", {
    * máy hay xoá dữ liệu trình duyệt thì con số vẫn đúng.
    */
   scanCount: integer("scan_count").notNull().default(0),
+  /**
+   * Lần cuối có NGƯỜI bấm "Làm mới" (hoặc thêm kênh) — kênh người ta đang để
+   * mắt tới thì lượt tự quét buổi sáng xếp lên đầu (task #6849).
+   */
+  lastManualScanAt: timestamp("last_manual_scan_at", { withTimezone: true }),
   lastJobId: uuid("last_job_id"),            // phiên quét gần nhất
   lastNewCount: integer("last_new_count").notNull().default(0),
   scanStatus: text("scan_status").notNull().default("idle"), // idle|scanning|error

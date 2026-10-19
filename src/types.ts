@@ -541,6 +541,11 @@ export interface WatchedChannel {
   isMine?: boolean;
   /** Được sửa ghi chú / bỏ theo dõi (người thêm kênh hoặc admin). */
   canEdit?: boolean;
+  lastManualScanAt?: string | null;
+  /** Ngày đăng của bài mới nhất từng thấy. */
+  lastPostAt?: string | null;
+  /** Nhóm trong lượt tự quét buổi sáng. */
+  autoScanTier?: "manual" | "active" | "quiet" | "dormant_check" | "dormant_skip" | null;
 }
 
 export interface WatchedChannelDetail extends WatchedChannel {
