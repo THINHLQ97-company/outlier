@@ -157,6 +157,11 @@ export async function lastPostAtByChannel(): Promise<Map<string, Date>> {
   return out;
 }
 
+/** Lỗi do tài khoản Apify hết hạn mức (tháng / gói) — không phải lỗi riêng của kênh. */
+export function isApifyQuotaError(msg: string | null | undefined): boolean {
+  return /not-enough-usage|monthly usage hard limit|platform-feature-disabled|exceed.*usage/i.test(msg || "");
+}
+
 export interface DailyScanResult {
   ran: boolean;
   date: string;
@@ -202,7 +207,14 @@ export async function runDailyChannelScan(reason: string, now = new Date()): Pro
     const { refreshChannelInBackground } = await import("../routes/channels.routes");
     let ok = 0;
     let failed = 0;
+    // Apify báo hết hạn mức của tài khoản → các kênh có phí còn lại chắc chắn
+    // cũng hỏng; bỏ qua luôn thay vì gọi từng kênh để nhận cùng một lỗi.
+    let paidBlocked = false;
     for (const c of targets) {
+      if (paidBlocked && c.useApify) {
+        failed++;
+        continue;
+      }
       try {
         await refreshChannelInBackground(c.id);
         const [after] = await db
@@ -211,6 +223,10 @@ export async function runDailyChannelScan(reason: string, now = new Date()): Pro
           .where(eq(watchedChannels.id, c.id));
         if (after?.scanStatus === "error") {
           failed++;
+          if (c.useApify && isApifyQuotaError(after.errorMessage)) {
+            paidBlocked = true;
+            console.warn("[daily-scan] Apify đã hết hạn mức tài khoản — bỏ qua các kênh có phí còn lại của lượt này.");
+          }
           console.warn(`[daily-scan] ${c.channelName || c.channelUrl}: ${after.errorMessage || "lỗi"}`);
         } else ok++;
       } catch (e: any) {

@@ -128,3 +128,22 @@ describe("ưu tiên kênh hoạt động, bỏ kênh ngủ đông (task #6849)",
     assert.match(body, /lastManualScanAt: new Date\(\)/);
   });
 });
+
+describe("Apify hết hạn mức thì dừng gọi cho kênh có phí (task #6858)", () => {
+  test("nhận ra lỗi hết hạn mức của tài khoản, không nhầm với lỗi riêng của kênh", async () => {
+    const { isApifyQuotaError } = await import("../services/channel-daily-scan");
+    assert.equal(
+      isApifyQuotaError('Không lấy được số liệu từ Apify: Apify 402: { "error": { "type": "not-enough-usage-to-run-paid-actor", "message": "Your remaining usage of $0.000195 ..." } }'),
+      true,
+    );
+    assert.equal(isApifyQuotaError("Không tìm thấy kết quả nào cho truy vấn này."), false);
+    assert.equal(isApifyQuotaError(null), false);
+  });
+
+  test("trang Kênh theo dõi không còn hiện hộp lỗi, chỉ hiện 'Cập nhật gần nhất'", () => {
+    const ui = fs.readFileSync(path.join(process.cwd(), "src", "pages", "Channels.tsx"), "utf8");
+    assert.doesNotMatch(ui, /\{detail\.errorMessage\}/);
+    assert.doesNotMatch(ui, />Lỗi</);
+    assert.match(ui, /Cập nhật gần nhất: /);
+  });
+});

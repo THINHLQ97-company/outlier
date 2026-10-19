@@ -106,6 +106,18 @@ function formatRelative(iso: string | null | undefined): string {
   return d.toLocaleDateString("vi-VN");
 }
 
+/**
+ * "Cập nhật gần nhất: …" — mốc lần quét THÀNH CÔNG gần nhất (quét hỏng không
+ * dời mốc này), nên đúng là dữ liệu đang xem mới tới đâu.
+ */
+function lastUpdatedLabel(iso: string | null | undefined): string {
+  if (!iso) return "Chưa cập nhật lần nào";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "Chưa cập nhật lần nào";
+  const at = d.toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" });
+  return `Cập nhật gần nhất: ${at} (${formatRelative(iso).toLowerCase()})`;
+}
+
 export default function Channels() {
   const [channels, setChannels] = useState<WatchedChannel[]>([]);
   // Lọc theo nền tảng. Mỗi nền tảng quét bằng đường khác nhau và chi phí khác
@@ -340,7 +352,6 @@ export default function Channels() {
                       <Loader2 className="w-2.5 h-2.5 animate-spin" aria-hidden="true" /> Đang quét
                     </span>
                   )}
-                  {c.scanStatus === "error" && <span className="ds-badge ds-badge-danger">Lỗi</span>}
                   {(c.autoScanTier === "dormant_skip" || c.autoScanTier === "dormant_check") && (
                     <span
                       className="ds-badge"
@@ -351,7 +362,7 @@ export default function Channels() {
                   )}
                 </div>
                 <div className="text-[10px] text-stone-400 mt-1 flex items-center gap-1">
-                  <Clock className="w-2.5 h-2.5" aria-hidden="true" /> {formatRelative(c.lastScanAt)}
+                  <Clock className="w-2.5 h-2.5" aria-hidden="true" /> {lastUpdatedLabel(c.lastScanAt)}
                   {c.isMine === false && <span className="truncate">· {c.owner} theo dõi</span>}
                 </div>
               </button>
@@ -736,7 +747,7 @@ function ChannelDetailPanel({
                 </span>
               )}
               <span className="text-[11px] text-stone-400 flex items-center gap-1">
-                <Clock className="w-3 h-3" aria-hidden="true" /> {formatRelative(detail.lastScanAt)}
+                <Clock className="w-3 h-3" aria-hidden="true" /> {lastUpdatedLabel(detail.lastScanAt)}
               </span>
               {detail.useApify && (
                 <span className="ds-badge ds-badge-warning">
@@ -810,15 +821,9 @@ function ChannelDetailPanel({
           </div>
         ) : null}
 
-        {detail.scanStatus === "error" && detail.errorMessage && (
-          <div role="alert" className="ds-alert ds-alert-danger mt-2">
-            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
-            <span className="flex-1">{detail.errorMessage}</span>
-            <button onClick={onRefresh} className="font-medium underline shrink-0">
-              Thử lại
-            </button>
-          </div>
-        )}
+        {/* Lần quét hỏng KHÔNG hiện lỗi (quyết định chủ dự án 2026-10-19): người xem
+            chỉ cần biết dữ liệu mới tới đâu — dòng "Cập nhật gần nhất" ở trên. Lý do
+            hỏng vẫn nằm trong errorMessage và log server cho người sửa. */}
 
         {/* Nhập tay số người theo dõi.
             Với trang của người khác, Meta chỉ cho đọc số công khai khi ứng dụng
