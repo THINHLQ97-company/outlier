@@ -107,6 +107,21 @@ function formatRelative(iso: string | null | undefined): string {
 }
 
 /**
+ * Lỗi quét → câu người dùng hiểu được. Không đưa nguyên văn JSON của Apify ra
+ * màn hình; lý do kỹ thuật vẫn nằm trong log server.
+ */
+export function friendlyScanError(msg: string | null | undefined): string {
+  const m = msg || "";
+  if (/not-enough-usage|monthly usage hard limit|exceed.*usage/i.test(m)) {
+    return "Chưa lấy được bài mới: tài khoản Apify (dịch vụ quét có phí) đã hết hạn mức tháng này — cần nâng gói hoặc đợi sang chu kỳ mới.";
+  }
+  if (/Apify đang bận|memory-limit/i.test(m)) return "Chưa lấy được bài mới: dịch vụ quét đang bận, thử lại sau 1–2 phút.";
+  if (/Hôm nay đã lấy .* chạm trần/i.test(m)) return "Chưa lấy được bài mới: đã dùng hết ngân sách quét có phí của hôm nay (admin nâng được trong Cài đặt).";
+  if (/Không tìm thấy kết quả|Không lấy được bài nào/i.test(m)) return "Chưa lấy được bài mới: kênh không trả về bài nào — kiểm tra lại link kênh.";
+  return `Chưa lấy được bài mới: ${m.replace(/\{[\s\S]*$/, "").trim() || "dịch vụ quét báo lỗi"}`;
+}
+
+/**
  * "Cập nhật gần nhất: …" — mốc lần quét THÀNH CÔNG gần nhất (quét hỏng không
  * dời mốc này), nên đúng là dữ liệu đang xem mới tới đâu.
  */
@@ -140,6 +155,9 @@ export default function Channels() {
   const tickTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [watchElapsedSec, setWatchElapsedSec] = useState(0);
   const [watchTimedOut, setWatchTimedOut] = useState(false);
+  // Lỗi của LẦN BẤM "Làm mới" vừa rồi — chỉ hiện cho lần bấm đó, không đeo
+  // theo kênh mãi (danh sách chỉ hiện "Cập nhật gần nhất").
+  const [refreshFailure, setRefreshFailure] = useState<{ id: string; message: string } | null>(null);
 
   async function reloadList() {
     setLoading(true);
@@ -172,7 +190,7 @@ export default function Channels() {
     setChannels((prev) => prev.map((c) => (c.id === row.id ? { ...c, ...row } : c)));
   }
 
-  function startWatching(id: string) {
+  function startWatching(id: string, fromManualRefresh = false) {
     stopWatching();
     setWatchTimedOut(false);
     const startedAt = Date.now();
@@ -184,7 +202,12 @@ export default function Channels() {
       onUpdate: (d) => {
         setDetail(d);
         syncChannelInList(d);
-        if (d.scanStatus !== "scanning") stopWatching();
+        if (d.scanStatus !== "scanning") {
+          stopWatching();
+          if (fromManualRefresh && d.scanStatus === "error") {
+            setRefreshFailure({ id, message: friendlyScanError(d.errorMessage) });
+          }
+        }
       },
       onTimeout: () => {
         setWatchTimedOut(true);
@@ -218,6 +241,7 @@ export default function Channels() {
   useEffect(() => {
     setDetail(null);
     setDetailError(null);
+    setRefreshFailure(null);
     if (selectedId) loadAndWatch(selectedId);
     return () => stopWatching();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -225,12 +249,13 @@ export default function Channels() {
 
   async function handleRefresh(id: string) {
     setDetailError(null);
+    setRefreshFailure(null);
     try {
       const result = await refreshChannel(id);
       syncChannelInList(result);
       if (selectedId === id) {
         setDetail((prev) => (prev ? { ...prev, ...result } : prev));
-        startWatching(id);
+        startWatching(id, true);
       }
     } catch (e: any) {
       setDetailError(e?.message || "Không làm mới được kênh.");
@@ -394,6 +419,8 @@ export default function Channels() {
                 watching={detail.scanStatus === "scanning"}
                 watchElapsedSec={watchElapsedSec}
                 watchTimedOut={watchTimedOut}
+                refreshFailure={refreshFailure?.id === detail.id ? refreshFailure.message : null}
+                onDismissFailure={() => setRefreshFailure(null)}
                 onRefresh={() => handleRefresh(detail.id)}
                 onRequestDelete={() => setDeleteTarget(detail)}
               />
@@ -696,6 +723,8 @@ function ChannelDetailPanel({
   watching,
   watchElapsedSec,
   watchTimedOut,
+  refreshFailure,
+  onDismissFailure,
   onRefresh,
   onRequestDelete,
   onRefreshed,
@@ -704,6 +733,9 @@ function ChannelDetailPanel({
   watching: boolean;
   watchElapsedSec: number;
   watchTimedOut: boolean;
+  /** Lỗi của lần bấm "Làm mới" vừa rồi (đã dịch sang lời dễ hiểu). */
+  refreshFailure?: string | null;
+  onDismissFailure?: () => void;
   onRefresh: () => void;
   onRequestDelete: () => void;
   onRefreshed?: () => void;
@@ -821,9 +853,20 @@ function ChannelDetailPanel({
           </div>
         ) : null}
 
-        {/* Lần quét hỏng KHÔNG hiện lỗi (quyết định chủ dự án 2026-10-19): người xem
-            chỉ cần biết dữ liệu mới tới đâu — dòng "Cập nhật gần nhất" ở trên. Lý do
-            hỏng vẫn nằm trong errorMessage và log server cho người sửa. */}
+        {/* Lỗi chỉ hiện NGAY LÚC bấm "Làm mới" mà hỏng (quyết định chủ dự án
+            2026-10-19): bấm xong không ra bài thì phải biết vì sao. Mở lại kênh
+            sau đó thì không đeo lỗi cũ — chỉ còn dòng "Cập nhật gần nhất". */}
+        {refreshFailure && !watching && (
+          <div role="alert" className="ds-alert ds-alert-danger mt-2">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
+            <span className="flex-1">
+              {refreshFailure} {lastUpdatedLabel(detail.lastScanAt).replace("Cập nhật gần nhất", "Đang hiện dữ liệu cập nhật lúc")}.
+            </span>
+            <button type="button" onClick={onDismissFailure} className="shrink-0" aria-label="Ẩn thông báo">
+              <X className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
+          </div>
+        )}
 
         {/* Nhập tay số người theo dõi.
             Với trang của người khác, Meta chỉ cho đọc số công khai khi ứng dụng

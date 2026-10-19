@@ -147,3 +147,24 @@ describe("Apify hết hạn mức thì dừng gọi cho kênh có phí (task #68
     assert.match(ui, /Cập nhật gần nhất: /);
   });
 });
+
+describe("bấm Làm mới mà hỏng thì báo ngay, bằng lời dễ hiểu (task #6867)", () => {
+  const ui = fs.readFileSync(path.join(process.cwd(), "src", "pages", "Channels.tsx"), "utf8");
+
+  test("lỗi chỉ gắn với lần bấm Làm mới, đổi kênh là xoá", () => {
+    assert.match(ui, /startWatching\(id, true\)/);
+    assert.match(ui, /if \(fromManualRefresh && d\.scanStatus === "error"\)/);
+    assert.match(ui, /setRefreshFailure\(null\);\n\s+if \(selectedId\) loadAndWatch/);
+  });
+
+  test("dịch lỗi hết hạn mức Apify sang lời dễ hiểu, không đưa JSON ra màn hình", async () => {
+    // Chạy thật hàm dịch: cắt riêng thân hàm ra để khỏi nạp cả trang React.
+    const start = ui.indexOf("export function friendlyScanError");
+    const body = ui.slice(start, ui.indexOf("\n}\n", start) + 2).replace("export function", "function");
+    const fn = new Function(`${body.replace(/: string \| null \| undefined\): string/, ")").replace("(msg", "(msg")}; return friendlyScanError;`)();
+    const quota = fn('Không lấy được số liệu từ Apify: Apify 402: { "error": { "type": "not-enough-usage-to-run-paid-actor" } }');
+    assert.match(quota, /hết hạn mức tháng/);
+    assert.doesNotMatch(quota, /\{/);
+    assert.match(fn("Lỗi lạ: { json }"), /^Chưa lấy được bài mới: Lỗi lạ:$/);
+  });
+});
