@@ -63,7 +63,8 @@ async function applyAds(fanpageId: string, byStory: Map<string, StoryAds>, now: 
           adImpressions: ad.impressions,
           adReach: ad.reach,
           adCurrency: ad.currency,
-          adFirstSeenAt: r.adFirstSeenAt ?? now,
+          // "Chạy từ": ngày bắt đầu thật của quảng cáo, không phải lúc job phát hiện.
+          adFirstSeenAt: ad.startedAt ? new Date(ad.startedAt) : r.adFirstSeenAt ?? now,
           adLastSeenAt: now,
         })
         .where(eq(fanpagePosts.id, r.id));

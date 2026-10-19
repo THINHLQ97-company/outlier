@@ -97,8 +97,16 @@ export async function listConnectedFanpages(): Promise<ConnectedFanpage[]> {
   return res.json();
 }
 
-export async function listFanpagePosts(fanpageId: string, adsOnly = false): Promise<FanpagePostsResult> {
-  const res = await fetch(`/api/fanpages/${fanpageId}/posts${adsOnly ? "?ads=1" : ""}`, {
+export async function listFanpagePosts(
+  fanpageId: string,
+  opts: { adsOnly?: boolean; from?: string; to?: string } = {},
+): Promise<FanpagePostsResult> {
+  const q = new URLSearchParams();
+  if (opts.adsOnly) q.set("ads", "1");
+  if (opts.from) q.set("from", opts.from);
+  if (opts.to) q.set("to", opts.to);
+  const qs = q.toString();
+  const res = await fetch(`/api/fanpages/${fanpageId}/posts${qs ? `?${qs}` : ""}`, {
     headers: authHeaders(false),
   });
   if (!res.ok) return asError(res, "Không tải được bài của trang.");

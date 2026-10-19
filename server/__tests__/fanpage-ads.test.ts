@@ -84,3 +84,57 @@ describe("ai được đổi trạng thái đơn", () => {
     assert.equal(canSetOrderStatus({ username: "trieu", isAdmin: false, runner: "thinh" }, order, "huy"), false);
   });
 });
+
+describe("chỉ coi là đang chạy khi quảng cáo THẬT SỰ phân phối (task #6850)", async () => {
+  const { isAdRunning } = await import("../services/fanpage-ads");
+  const now = new Date("2026-10-19T03:00:00Z");
+  const recent = new Map([["dang-phat", 1200]]);
+
+  test("ACTIVE + có lượt hiển thị 2 ngày gần nhất → đang chạy", () => {
+    assert.equal(isAdRunning({ id: "dang-phat", effective_status: "ACTIVE", created_time: "2026-09-01T00:00:00Z" }, now, recent), true);
+  });
+  test("ACTIVE nhưng nhóm quảng cáo đã qua ngày kết thúc → KHÔNG chạy (lỗi bài đã dừng vẫn hiện)", () => {
+    assert.equal(
+      isAdRunning({ id: "dang-phat", effective_status: "ACTIVE", adset: { end_time: "2026-10-10T00:00:00Z" } }, now, recent),
+      false,
+    );
+  });
+  test("ACTIVE nhưng không có lượt hiển thị nào gần đây (hết ngân sách, đã hoàn tất) → KHÔNG chạy", () => {
+    assert.equal(isAdRunning({ id: "im-lang", effective_status: "ACTIVE", created_time: "2026-06-23T00:00:00Z" }, now, recent), false);
+  });
+  test("quảng cáo vừa tạo chưa kịp phân phối vẫn tính là đang chạy", () => {
+    assert.equal(isAdRunning({ id: "moi", effective_status: "ACTIVE", created_time: "2026-10-19T01:00:00Z" }, now, recent), true);
+  });
+  test("'Chạy từ' lấy ngày bắt đầu sớm nhất của quảng cáo, không phải lúc hệ thống phát hiện", () => {
+    const ads = [
+      { id: "dang-phat", effective_status: "ACTIVE", adset: { start_time: "2026-10-05T02:00:00Z" }, creative: { effective_object_story_id: "1_9" } },
+      { id: "moi", effective_status: "ACTIVE", created_time: "2026-10-19T01:00:00Z", creative: { effective_object_story_id: "1_9" } },
+    ];
+    const s = aggregateAdsByStory(ads, "1", null, { now, recentImpressions: recent }).byStory.get("1_9")!;
+    assert.equal(s.startedAt, "2026-10-05T02:00:00Z");
+    assert.equal(s.adIds.length, 2);
+  });
+});
+
+describe("lọc danh mục bài theo khoảng ngày (giờ Việt Nam)", async () => {
+  const { parseDayRange } = await import("../routes/ad-orders.routes");
+  test("đến ngày tính trọn ngày đó", () => {
+    const r = parseDayRange("2026-10-01", "2026-10-19");
+    assert.equal(r.from!.toISOString(), "2026-09-30T17:00:00.000Z");
+    assert.equal(r.to!.toISOString(), "2026-10-19T17:00:00.000Z");
+  });
+  test("bỏ trống = không giới hạn; sai định dạng hoặc ngược chiều thì báo lỗi", () => {
+    assert.deepEqual(parseDayRange(undefined, ""), { from: undefined, to: undefined, fromDay: undefined, toDay: undefined });
+    assert.ok(parseDayRange("19/10/2026", undefined).error);
+    assert.ok(parseDayRange("2026-10-20", "2026-10-01").error);
+  });
+});
+
+test("danh mục bài xếp theo thời gian, không đẩy bài chạy QC lên trước", async () => {
+  const fs = await import("fs");
+  const path = await import("path");
+  const src = fs.readFileSync(path.join(process.cwd(), "server", "routes", "ad-orders.routes.ts"), "utf8");
+  const body = src.slice(src.indexOf('app.get("/api/fanpages/:fid/posts"'), src.indexOf('app.post("/api/fanpages/:fid/posts/sync"'));
+  assert.match(body, /orderBy\(desc\(fanpagePosts\.createdTime\)\)/);
+  assert.doesNotMatch(body, /\.sort\(/);
+});

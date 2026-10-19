@@ -5,7 +5,7 @@
 // chạy quảng cáo (một người cố định admin chọn) và admin; người đặt chỉ huỷ
 // được đơn của mình khi đơn còn "chờ chạy".
 import type { Express } from "express";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt } from "drizzle-orm";
 import { getDb, isDbConfigured } from "../db/client";
 import { adOrders, brandFanpages, brands, fanpagePosts, users } from "../db/schema";
 import { requireAdmin, requireAuth, getAuthUser } from "../auth-mw";
@@ -40,6 +40,23 @@ export function canSetOrderStatus(
 ): boolean {
   if (who.isAdmin || (who.runner && who.username === who.runner)) return true;
   return who.username === order.requestedBy && next === "huy" && order.status === "cho_chay";
+}
+
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** "YYYY-MM-DD" theo giờ VN → mốc UTC; `to` tính hết ngày đó (trả mốc đầu ngày hôm sau). Thuần, để test. */
+export function parseDayRange(
+  from: unknown,
+  to: unknown,
+): { from?: Date; to?: Date; fromDay?: string; toDay?: string; error?: string } {
+  const f = typeof from === "string" && from ? from : undefined;
+  const t = typeof to === "string" && to ? to : undefined;
+  if ((f && !DAY_RE.test(f)) || (t && !DAY_RE.test(t))) return { error: "Ngày không hợp lệ (dạng YYYY-MM-DD)." };
+  const fromD = f ? new Date(`${f}T00:00:00+07:00`) : undefined;
+  const toD = t ? new Date(new Date(`${t}T00:00:00+07:00`).getTime() + 86_400_000) : undefined;
+  if ((fromD && isNaN(fromD.getTime())) || (toD && isNaN(toD.getTime()))) return { error: "Ngày không hợp lệ." };
+  if (fromD && toD && fromD >= toD) return { error: "Ngày bắt đầu phải trước ngày kết thúc." };
+  return { from: fromD, to: toD, fromDay: f, toDay: t };
 }
 
 const syncing = new Set<string>();
@@ -79,11 +96,19 @@ export function registerAdOrderRoutes(app: Express) {
       const db = getDb();
       const [fp] = await db.select().from(brandFanpages).where(eq(brandFanpages.id, fid));
       if (!fp) return res.status(404).json({ error: "Không tìm thấy trang." });
-      const where =
-        req.query.ads === "1"
-          ? and(eq(fanpagePosts.fanpageId, fid), eq(fanpagePosts.adActive, true))
-          : eq(fanpagePosts.fanpageId, fid);
-      const posts = await db.select().from(fanpagePosts).where(where).orderBy(desc(fanpagePosts.createdTime)).limit(200);
+      // Khoảng ngày đăng (giờ Việt Nam), dạng YYYY-MM-DD, cả hai đầu đều tính.
+      const range = parseDayRange(req.query.from, req.query.to);
+      if (range.error) return res.status(400).json({ error: range.error });
+      const conds = [eq(fanpagePosts.fanpageId, fid)];
+      if (req.query.ads === "1") conds.push(eq(fanpagePosts.adActive, true));
+      if (range.from) conds.push(gte(fanpagePosts.createdTime, range.from));
+      if (range.to) conds.push(lt(fanpagePosts.createdTime, range.to));
+      const posts = await db
+        .select()
+        .from(fanpagePosts)
+        .where(and(...conds))
+        .orderBy(desc(fanpagePosts.createdTime))
+        .limit(500);
 
       // Đơn còn mở của từng bài — để nút "Đặt chạy quảng cáo" biết đã có người đặt.
       const ids = posts.map((p) => p.postId);
@@ -95,10 +120,9 @@ export function registerAdOrderRoutes(app: Express) {
         : [];
       const orderByPost = new Map(orders.map((o) => [o.postId, o]));
 
-      // Bài đang chạy quảng cáo lên đầu, rồi tới bài mới nhất.
-      const items = posts
-        .map((p) => ({ ...p, openOrder: orderByPost.get(p.postId) || null }))
-        .sort((a, b) => Number(b.adActive) - Number(a.adActive));
+      // Đúng thứ tự thời gian (mới nhất trước). Bản đầu đẩy bài chạy QC lên
+      // trên rồi mới tới ngày — danh sách trông lộn xộn, khó dò theo ngày.
+      const items = posts.map((p) => ({ ...p, openOrder: orderByPost.get(p.postId) || null }));
 
       res.json({
         fanpageId: fid,
@@ -106,6 +130,8 @@ export function registerAdOrderRoutes(app: Express) {
         adsStatus: fp.metaAdsStatus,
         adsNote: fp.metaAdsNote,
         activeCount: posts.filter((p) => p.adActive).length,
+        from: range.fromDay,
+        to: range.toDay,
         items,
       });
     } catch (e: any) {

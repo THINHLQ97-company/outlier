@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, RefreshCw, ExternalLink, Megaphone, AlertTriangle, X, Heart, MessageCircle, Share2, Eye } from "lucide-react";
 import {
   listFanpagePosts,
@@ -91,6 +91,22 @@ function OrderModal({
   );
 }
 
+/** YYYY-MM-DD của `n` ngày trước, theo giờ Việt Nam — giá trị cho ô chọn ngày. */
+function daysAgoISO(n: number): string {
+  return new Date(Date.now() + 7 * 3600_000 - n * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** Nhãn ngày đăng theo giờ VN, vd "Thứ Hai, 19/10/2026". */
+function vnDay(iso: string): string {
+  return new Date(iso).toLocaleDateString("vi-VN", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    weekday: "long",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
 function PostRow({ post, onOrder }: { post: FanpagePost; onOrder: (p: FanpagePost) => void }) {
   const thumb = imageDisplayUrl(post.thumbnailUrl);
   const everRan = !post.adActive && !!post.adLastSeenAt;
@@ -167,10 +183,13 @@ export default function FanpagePostsPanel({
   const [syncing, setSyncing] = useState(false);
   const [ordering, setOrdering] = useState<FanpagePost | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  // Khoảng ngày đăng, mặc định 30 ngày gần nhất. Rỗng = không giới hạn.
+  const [from, setFrom] = useState(() => daysAgoISO(30));
+  const [to, setTo] = useState("");
 
   const load = useCallback(async () => {
     try {
-      const r = await listFanpagePosts(fanpageId);
+      const r = await listFanpagePosts(fanpageId, { from, to });
       setData(r);
       setError(null);
       onChanged?.(r);
@@ -179,7 +198,7 @@ export default function FanpagePostsPanel({
     } finally {
       setLoading(false);
     }
-  }, [fanpageId, onChanged]);
+  }, [fanpageId, onChanged, from, to]);
 
   useEffect(() => {
     setLoading(true);
@@ -188,6 +207,17 @@ export default function FanpagePostsPanel({
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fanpageId]);
+
+  // Đổi khoảng ngày thì tải lại, giữ nguyên bộ lọc "đang chạy quảng cáo".
+  const firstRange = useRef(true);
+  useEffect(() => {
+    if (firstRange.current) {
+      firstRange.current = false;
+      return;
+    }
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [from, to]);
 
   async function refresh() {
     setSyncing(true);
@@ -211,6 +241,14 @@ export default function FanpagePostsPanel({
   }
 
   const items = data ? (adsOnly ? data.items.filter((p) => p.adActive) : data.items) : [];
+  // Chia theo ngày đăng (giờ VN) — server đã xếp mới nhất trước.
+  const groups: { day: string; posts: FanpagePost[] }[] = [];
+  for (const p of items) {
+    const day = p.createdTime ? vnDay(p.createdTime) : "Không rõ ngày";
+    const last = groups[groups.length - 1];
+    if (last && last.day === day) last.posts.push(p);
+    else groups.push({ day, posts: [p] });
+  }
   const activeCount = data?.activeCount ?? 0;
 
   return (
@@ -240,8 +278,53 @@ export default function FanpagePostsPanel({
         </button>
       </div>
 
+      <div className="flex items-end gap-2 flex-wrap">
+        <div>
+          <label className="ds-label" htmlFor={`fp-from-${fanpageId}`}>Đăng từ ngày</label>
+          <input
+            id={`fp-from-${fanpageId}`}
+            type="date"
+            className="ds-input text-xs"
+            value={from}
+            max={to || undefined}
+            onChange={(e) => setFrom(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="ds-label" htmlFor={`fp-to-${fanpageId}`}>Đến ngày</label>
+          <input
+            id={`fp-to-${fanpageId}`}
+            type="date"
+            className="ds-input text-xs"
+            value={to}
+            min={from || undefined}
+            onChange={(e) => setTo(e.target.value)}
+          />
+        </div>
+        <div className="flex gap-1" role="group" aria-label="Chọn nhanh khoảng ngày">
+          {[
+            { label: "7 ngày", f: daysAgoISO(7) },
+            { label: "30 ngày", f: daysAgoISO(30) },
+            { label: "Tất cả", f: "" },
+          ].map((o) => (
+            <button
+              key={o.label}
+              type="button"
+              className={`ds-btn ds-btn-sm ${from === o.f && !to ? "ds-btn-secondary" : "ds-btn-ghost"}`}
+              onClick={() => {
+                setFrom(o.f);
+                setTo("");
+              }}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <p className="text-[11px] text-stone-400">
-        Cập nhật tự động mỗi giờ · lần cuối {data?.syncedAt ? formatDateTime(data.syncedAt) : "chưa có"}
+        Xếp theo ngày đăng, mới nhất trước · cập nhật tự động mỗi giờ · lần cuối{" "}
+        {data?.syncedAt ? formatDateTime(data.syncedAt) : "chưa có"}
       </p>
 
       {error && (
@@ -271,19 +354,30 @@ export default function FanpagePostsPanel({
 
       {data && !error && data.items.length === 0 ? (
         <div className="ds-empty">
-          <div className="ds-empty-title">Chưa có bài nào</div>
-          <p className="text-sm text-stone-500">Chưa đồng bộ bài — bấm Làm mới ngay.</p>
+          <div className="ds-empty-title">Không có bài nào trong khoảng ngày này</div>
+          <p className="text-sm text-stone-500">
+            {data.syncedAt ? "Thử chọn khoảng ngày rộng hơn." : "Chưa đồng bộ bài — bấm Làm mới ngay."}
+          </p>
         </div>
       ) : data && items.length === 0 ? (
         <div className="ds-empty">
-          <div className="ds-empty-title">Chưa có bài nào đang chạy quảng cáo</div>
+          <div className="ds-empty-title">Không có bài nào đang chạy quảng cáo trong khoảng ngày này</div>
         </div>
       ) : (
-        <ul className="flex flex-col gap-2">
-          {items.map((p) => (
-            <PostRow key={p.postId} post={p} onOrder={setOrdering} />
+        <div className="flex flex-col gap-3">
+          {groups.map((g) => (
+            <section key={g.day} aria-label={`Bài đăng ${g.day}`}>
+              <h4 className="text-xs font-semibold text-stone-500 mb-1.5">
+                {g.day} <span className="font-normal text-stone-400">· {g.posts.length} bài</span>
+              </h4>
+              <ul className="flex flex-col gap-2">
+                {g.posts.map((p) => (
+                  <PostRow key={p.postId} post={p} onOrder={setOrdering} />
+                ))}
+              </ul>
+            </section>
           ))}
-        </ul>
+        </div>
       )}
 
       {ordering && (

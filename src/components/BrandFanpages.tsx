@@ -57,8 +57,9 @@ export default function BrandFanpages({
   // chứ không dùng một cờ chung — bấm quét trang này không được làm đơ trang kia.
   const [busyId, setBusyId] = useState<string | null>(null);
   const [tokenFor, setTokenFor] = useState<string | null>(null);
-  // Trang nào đang mở tab "Bài viết" (mặc định là "Tổng quan").
-  const [postsTabFor, setPostsTabFor] = useState<Record<string, boolean>>({});
+  // Trang nào đang mở tab "Tổng quan". Mặc định mở "Bài viết & quảng cáo"
+  // (quyết định chủ dự án 2026-10-19: bài viết là thứ xem hằng ngày).
+  const [overviewTabFor, setOverviewTabFor] = useState<Record<string, boolean>>({});
   const [token, setToken] = useState("");
   // Link dạng facebook.com/tenpage thường đoán được, nhưng không phải lúc nào
   // cũng vậy — cho nhập thẳng Page ID thay vì để người dùng bí.
@@ -457,23 +458,23 @@ export default function BrandFanpages({
                         <button
                           type="button"
                           role="tab"
-                          aria-selected={!postsTabFor[fp.id]}
-                          className={`ds-btn ds-btn-sm ${!postsTabFor[fp.id] ? "ds-btn-primary" : ""}`}
-                          onClick={() => setPostsTabFor((m) => ({ ...m, [fp.id]: false }))}
+                          aria-selected={!overviewTabFor[fp.id]}
+                          className={`ds-btn ds-btn-sm ${!overviewTabFor[fp.id] ? "ds-btn-primary" : ""}`}
+                          onClick={() => setOverviewTabFor((m) => ({ ...m, [fp.id]: false }))}
                         >
-                          Tổng quan
+                          Bài viết &amp; quảng cáo
                         </button>
                         <button
                           type="button"
                           role="tab"
-                          aria-selected={!!postsTabFor[fp.id]}
-                          className={`ds-btn ds-btn-sm ${postsTabFor[fp.id] ? "ds-btn-primary" : ""}`}
-                          onClick={() => setPostsTabFor((m) => ({ ...m, [fp.id]: true }))}
+                          aria-selected={!!overviewTabFor[fp.id]}
+                          className={`ds-btn ds-btn-sm ${overviewTabFor[fp.id] ? "ds-btn-primary" : ""}`}
+                          onClick={() => setOverviewTabFor((m) => ({ ...m, [fp.id]: true }))}
                         >
-                          Bài viết &amp; quảng cáo
+                          Tổng quan
                         </button>
                       </div>
-                      {postsTabFor[fp.id] && (
+                      {!overviewTabFor[fp.id] && (
                         <div className="mt-3">
                           <FanpagePostsPanel fanpageId={fp.id} />
                         </div>
@@ -481,7 +482,7 @@ export default function BrandFanpages({
                     </div>
                   )}
 
-                  {(!connected || !postsTabFor[fp.id]) && fp.metaStatsJson && <FanpageStatsPanel stats={fp.metaStatsJson} />}
+                  {(!connected || overviewTabFor[fp.id]) && fp.metaStatsJson && <FanpageStatsPanel stats={fp.metaStatsJson} />}
                 </li>
               );
             })}
