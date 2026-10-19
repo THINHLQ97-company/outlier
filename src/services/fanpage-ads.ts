@@ -79,6 +79,8 @@ export interface FanpagePost {
   adReach: number | null;
   adFirstSeenAt: string | null;
   adLastSeenAt: string | null;
+  /** Đã chạy QC nay đã dừng: lúc quảng cáo cuối cùng dừng (gần đúng). */
+  adEndedAt: string | null;
   openOrder: AdOrder | null;
 }
 
@@ -88,6 +90,7 @@ export interface FanpagePostsResult {
   adsStatus: AdsStatus | null;
   adsNote: string | null;
   activeCount: number;
+  stoppedCount: number;
   items: FanpagePost[];
 }
 

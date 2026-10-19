@@ -1,0 +1,1 @@
+ALTER TABLE "fanpage_posts" ADD COLUMN "ad_ended_at" timestamp with time zone;

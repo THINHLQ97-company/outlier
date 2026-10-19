@@ -5,7 +5,7 @@
 // chạy quảng cáo (một người cố định admin chọn) và admin; người đặt chỉ huỷ
 // được đơn của mình khi đơn còn "chờ chạy".
 import type { Express } from "express";
-import { and, desc, eq, gte, inArray, lt } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, lt } from "drizzle-orm";
 import { getDb, isDbConfigured } from "../db/client";
 import { adOrders, brandFanpages, brands, fanpagePosts, users } from "../db/schema";
 import { requireAdmin, requireAuth, getAuthUser } from "../auth-mw";
@@ -100,7 +100,9 @@ export function registerAdOrderRoutes(app: Express) {
       const range = parseDayRange(req.query.from, req.query.to);
       if (range.error) return res.status(400).json({ error: range.error });
       const conds = [eq(fanpagePosts.fanpageId, fid)];
+      // ads=1: đang chạy QC · ads=stopped: đã chạy nay đã dừng.
       if (req.query.ads === "1") conds.push(eq(fanpagePosts.adActive, true));
+      if (req.query.ads === "stopped") conds.push(eq(fanpagePosts.adActive, false), isNotNull(fanpagePosts.adEndedAt));
       if (range.from) conds.push(gte(fanpagePosts.createdTime, range.from));
       if (range.to) conds.push(lt(fanpagePosts.createdTime, range.to));
       const posts = await db
@@ -130,6 +132,7 @@ export function registerAdOrderRoutes(app: Express) {
         adsStatus: fp.metaAdsStatus,
         adsNote: fp.metaAdsNote,
         activeCount: posts.filter((p) => p.adActive).length,
+        stoppedCount: posts.filter((p) => !p.adActive && p.adEndedAt).length,
         from: range.fromDay,
         to: range.toDay,
         items,

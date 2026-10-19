@@ -138,3 +138,61 @@ test("danh mục bài xếp theo thời gian, không đẩy bài chạy QC lên 
   assert.match(body, /orderBy\(desc\(fanpagePosts\.createdTime\)\)/);
   assert.doesNotMatch(body, /\.sort\(/);
 });
+
+describe("bài đã chạy quảng cáo nay đã dừng (task #6856)", () => {
+  const now = new Date("2026-10-19T03:00:00Z");
+  const recent = new Map([["chay", 500]]);
+  const ins = (impressions: string, spend = "10000") => ({ data: [{ impressions, spend }] });
+
+  test("quảng cáo đã tạm dừng nhưng từng có lượt hiển thị → bài 'đã dừng', kèm ngày dừng", () => {
+    const { byStory } = aggregateAdsByStory(
+      [{
+        id: "tam-dung", effective_status: "PAUSED", updated_time: "2026-10-12T08:00:00Z",
+        adset: { start_time: "2026-10-01T00:00:00Z" }, creative: { effective_object_story_id: "1_5" }, insights: ins("9000", "250000"),
+      }],
+      "1", "VND", { now, recentImpressions: recent },
+    );
+    const s = byStory.get("1_5")!;
+    assert.equal(s.running, false);
+    assert.equal(s.endedAt, "2026-10-12T08:00:00Z");
+    assert.equal(s.startedAt, "2026-10-01T00:00:00Z");
+    assert.equal(s.spend, 250000);
+  });
+
+  test("hết lịch nhóm quảng cáo thì ngày dừng là ngày kết thúc lịch", () => {
+    const s = aggregateAdsByStory(
+      [{ id: "het-lich", effective_status: "ACTIVE", adset: { end_time: "2026-10-15T17:00:00Z" }, updated_time: "2026-10-01T00:00:00Z",
+         creative: { effective_object_story_id: "1_6" }, insights: ins("100") }],
+      "1", null, { now, recentImpressions: recent },
+    ).byStory.get("1_6")!;
+    assert.equal(s.running, false);
+    assert.equal(s.endedAt, "2026-10-15T17:00:00Z");
+  });
+
+  test("quảng cáo chưa từng phân phối (bản nháp, bị từ chối) không tính là đã chạy", () => {
+    const { byStory } = aggregateAdsByStory(
+      [{ id: "nhap", effective_status: "PAUSED", creative: { effective_object_story_id: "1_7" }, insights: ins("0") },
+       { id: "khong-so", effective_status: "PAUSED", creative: { effective_object_story_id: "1_8" } }],
+      "1", null, { now, recentImpressions: recent },
+    );
+    assert.equal(byStory.size, 0);
+  });
+
+  test("còn một quảng cáo đang chạy thì bài là đang chạy, không có ngày dừng; chi tiêu cộng cả QC cũ", () => {
+    const s = aggregateAdsByStory(
+      [{ id: "cu", effective_status: "PAUSED", updated_time: "2026-10-10T00:00:00Z", creative: { effective_object_story_id: "1_9" }, insights: ins("800", "40000") },
+       { id: "chay", effective_status: "ACTIVE", creative: { effective_object_story_id: "1_9" }, insights: ins("500", "20000") }],
+      "1", null, { now, recentImpressions: recent },
+    ).byStory.get("1_9")!;
+    assert.equal(s.running, true);
+    assert.equal(s.endedAt, null);
+    assert.equal(s.spend, 60000);
+  });
+
+  test("đơn đặt quảng cáo chỉ dựa vào bài ĐANG chạy, không phải bài đã dừng", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const job = fs.readFileSync(path.join(process.cwd(), "server", "services", "fanpage-ads-job.ts"), "utf8");
+    assert.match(job, /const running = byStory\.get\(o\.postId\)\?\.running === true;/);
+  });
+});

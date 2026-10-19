@@ -109,7 +109,7 @@ function vnDay(iso: string): string {
 
 function PostRow({ post, onOrder }: { post: FanpagePost; onOrder: (p: FanpagePost) => void }) {
   const thumb = imageDisplayUrl(post.thumbnailUrl);
-  const everRan = !post.adActive && !!post.adLastSeenAt;
+  const stopped = !post.adActive && !!post.adEndedAt;
   const order = post.openOrder;
   return (
     <li
@@ -127,7 +127,7 @@ function PostRow({ post, onOrder }: { post: FanpagePost; onOrder: (p: FanpagePos
           {post.adActive && (
             <span className="ds-badge ds-badge-primary ds-badge-dot">Đang chạy quảng cáo</span>
           )}
-          {everRan && <span className="ds-badge opacity-70">Đã chạy QC</span>}
+          {stopped && <span className="ds-badge ds-badge-warning">Đã dừng quảng cáo</span>}
           {post.createdTime && <span className="text-[11px] text-stone-400">Đăng {formatDay(post.createdTime)}</span>}
         </div>
         <p className="text-sm text-stone-700 mt-1 line-clamp-2">{post.message || "(Bài không có chữ)"}</p>
@@ -137,6 +137,16 @@ function PostRow({ post, onOrder }: { post: FanpagePost; onOrder: (p: FanpagePos
             <span>Đã chi {formatMoney(post.adSpend, post.adCurrency)}</span>
             <span>{formatNumber(post.adImpressions)} lượt hiển thị</span>
             {post.adFirstSeenAt && <span>Chạy từ {formatDay(post.adFirstSeenAt)}</span>}
+          </div>
+        )}
+        {stopped && (
+          <div className="flex items-center gap-x-4 gap-y-1 mt-1.5 text-xs text-amber-800 flex-wrap">
+            <span>
+              Đã chạy {post.adFirstSeenAt ? `${formatDay(post.adFirstSeenAt)} – ` : "đến "}
+              {formatDay(post.adEndedAt!)}
+            </span>
+            <span>Tổng chi {formatMoney(post.adSpend, post.adCurrency)}</span>
+            <span>{formatNumber(post.adImpressions)} lượt hiển thị</span>
           </div>
         )}
 
@@ -179,7 +189,7 @@ export default function FanpagePostsPanel({
   const [data, setData] = useState<FanpagePostsResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [adsOnly, setAdsOnly] = useState(false);
+  const [adFilter, setAdFilter] = useState<"all" | "running" | "stopped">("all");
   const [syncing, setSyncing] = useState(false);
   const [ordering, setOrdering] = useState<FanpagePost | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -203,7 +213,7 @@ export default function FanpagePostsPanel({
   useEffect(() => {
     setLoading(true);
     setData(null);
-    setAdsOnly(false);
+    setAdFilter("all");
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fanpageId]);
@@ -240,7 +250,11 @@ export default function FanpagePostsPanel({
     );
   }
 
-  const items = data ? (adsOnly ? data.items.filter((p) => p.adActive) : data.items) : [];
+  const items = data
+    ? data.items.filter((p) =>
+        adFilter === "running" ? p.adActive : adFilter === "stopped" ? !p.adActive && !!p.adEndedAt : true,
+      )
+    : [];
   // Chia theo ngày đăng (giờ VN) — server đã xếp mới nhất trước.
   const groups: { day: string; posts: FanpagePost[] }[] = [];
   for (const p of items) {
@@ -250,27 +264,28 @@ export default function FanpagePostsPanel({
     else groups.push({ day, posts: [p] });
   }
   const activeCount = data?.activeCount ?? 0;
+  const stoppedCount = data?.stoppedCount ?? 0;
+  const filters = [
+    { id: "all" as const, label: "Tất cả" },
+    { id: "running" as const, label: `Đang chạy QC (${activeCount})` },
+    { id: "stopped" as const, label: `Đã dừng QC (${stoppedCount})` },
+  ];
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-1.5" role="group" aria-label="Lọc bài">
-          <button
-            type="button"
-            className={`ds-btn ds-btn-sm ${!adsOnly ? "ds-btn-primary" : ""}`}
-            aria-pressed={!adsOnly}
-            onClick={() => setAdsOnly(false)}
-          >
-            Tất cả
-          </button>
-          <button
-            type="button"
-            className={`ds-btn ds-btn-sm ${adsOnly ? "ds-btn-primary" : ""}`}
-            aria-pressed={adsOnly}
-            onClick={() => setAdsOnly(true)}
-          >
-            Đang chạy quảng cáo ({activeCount})
-          </button>
+          {filters.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              className={`ds-btn ds-btn-sm ${adFilter === f.id ? "ds-btn-primary" : ""}`}
+              aria-pressed={adFilter === f.id}
+              onClick={() => setAdFilter(f.id)}
+            >
+              {f.label}
+            </button>
+          ))}
         </div>
         <button type="button" className="ds-btn ds-btn-sm" onClick={refresh} disabled={syncing}>
           {syncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> : <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />}
@@ -361,7 +376,11 @@ export default function FanpagePostsPanel({
         </div>
       ) : data && items.length === 0 ? (
         <div className="ds-empty">
-          <div className="ds-empty-title">Không có bài nào đang chạy quảng cáo trong khoảng ngày này</div>
+          <div className="ds-empty-title">
+            {adFilter === "stopped"
+              ? "Không có bài nào đã dừng quảng cáo trong khoảng ngày này"
+              : "Không có bài nào đang chạy quảng cáo trong khoảng ngày này"}
+          </div>
         </div>
       ) : (
         <div className="flex flex-col gap-3">

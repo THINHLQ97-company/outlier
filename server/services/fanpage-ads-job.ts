@@ -20,6 +20,7 @@ export interface FanpageAdsSyncResult {
   posts: number;
   adsStatus: AdsStatus;
   activePosts: number;
+  stoppedPosts: number;
   note?: string;
   ordersChanged: number;
 }
@@ -56,7 +57,9 @@ async function applyAds(fanpageId: string, byStory: Map<string, StoryAds>, now: 
       await db
         .update(fanpagePosts)
         .set({
-          adActive: true,
+          // byStory có cả bài đã dừng QC — chỉ bài còn QC thật sự phân phối mới là "đang chạy".
+          adActive: ad.running,
+          adEndedAt: ad.running ? null : ad.endedAt ? new Date(ad.endedAt) : r.adEndedAt ?? now,
           adCount: ad.adIds.length,
           adIds: ad.adIds,
           adSpend: ad.spend,
@@ -65,12 +68,12 @@ async function applyAds(fanpageId: string, byStory: Map<string, StoryAds>, now: 
           adCurrency: ad.currency,
           // "Chạy từ": ngày bắt đầu thật của quảng cáo, không phải lúc job phát hiện.
           adFirstSeenAt: ad.startedAt ? new Date(ad.startedAt) : r.adFirstSeenAt ?? now,
-          adLastSeenAt: now,
+          ...(ad.running ? { adLastSeenAt: now } : {}),
         })
         .where(eq(fanpagePosts.id, r.id));
     } else if (r.adActive) {
-      // Quảng cáo đã tắt: giữ số liệu cũ (chi tiêu trọn đời vẫn đúng), chỉ hạ cờ.
-      await db.update(fanpagePosts).set({ adActive: false, adCount: 0 }).where(eq(fanpagePosts.id, r.id));
+      // Quảng cáo không còn trong tài khoản (đã xoá): giữ số liệu cũ, ghi là đã dừng từ lúc này.
+      await db.update(fanpagePosts).set({ adActive: false, adEndedAt: now }).where(eq(fanpagePosts.id, r.id));
     }
   }
 }
@@ -92,7 +95,7 @@ async function applyOrders(fanpageId: string, byStory: Map<string, StoryAds>, no
 
   let changed = 0;
   for (const o of open) {
-    const running = byStory.has(o.postId);
+    const running = byStory.get(o.postId)?.running === true;
     const seen = lastSeen.get(o.postId);
     const seenSinceStart = !!(seen && o.startedAt && seen.getTime() >= o.startedAt.getTime());
     const next = autoOrderStatus(o.status, running, seenSinceStart);
@@ -157,7 +160,12 @@ export async function syncFanpageAds(fanpageId: string): Promise<FanpageAdsSyncR
         .where(and(eq(fanpagePosts.fanpageId, fanpageId), inArray(fanpagePosts.postId, missing)));
       const have = new Set(existing.map((r) => r.postId));
       const extra: MetaPost[] = [];
-      for (const id of missing.filter((m) => !have.has(m)).slice(0, 30)) {
+      // Bài đang chạy QC lấy trước; bài đã dừng lấy dần mỗi giờ (trần 30 bài/lượt).
+      const todo = missing
+        .filter((m) => !have.has(m))
+        .sort((a, b) => Number(byStory!.get(b)!.running) - Number(byStory!.get(a)!.running))
+        .slice(0, 30);
+      for (const id of todo) {
         try {
           extra.push(await fetchPost(id, pageToken));
         } catch (e: any) {
@@ -176,7 +184,16 @@ export async function syncFanpageAds(fanpageId: string): Promise<FanpageAdsSyncR
     .set({ metaPostsSyncedAt: now, metaAdsStatus: adsStatus, metaAdsNote: note ?? null })
     .where(eq(brandFanpages.id, fanpageId));
 
-  return { fanpageId, posts: recent.length, adsStatus, activePosts: byStory?.size ?? 0, note, ordersChanged };
+  const all = byStory ? [...byStory.values()] : [];
+  return {
+    fanpageId,
+    posts: recent.length,
+    adsStatus,
+    activePosts: all.filter((v) => v.running).length,
+    stoppedPosts: all.filter((v) => !v.running).length,
+    note,
+    ordersChanged,
+  };
 }
 
 let running = false;
@@ -195,7 +212,7 @@ export async function sweepFanpageAds(reason: string): Promise<FanpageAdsSyncRes
         const r = await syncFanpageAds(p.id);
         out.push(r);
         console.log(
-          `[fanpage-ads] ${reason} · ${p.name || p.id}: ${r.posts} bài, ${r.activePosts} bài đang chạy QC, quảng cáo=${r.adsStatus}` +
+          `[fanpage-ads] ${reason} · ${p.name || p.id}: ${r.posts} bài, ${r.activePosts} bài đang chạy QC, ${r.stoppedPosts} bài đã dừng QC, quảng cáo=${r.adsStatus}` +
             (r.ordersChanged ? `, ${r.ordersChanged} đơn đổi trạng thái` : "") +
             (r.adsStatus !== "ok" && r.note ? ` — ${r.note}` : ""),
         );

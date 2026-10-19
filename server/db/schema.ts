@@ -1053,6 +1053,8 @@ export const fanpagePosts = pgTable("fanpage_posts", {
   /** Lần đầu và lần cuối job thấy bài đang chạy quảng cáo. */
   adFirstSeenAt: timestamp("ad_first_seen_at", { withTimezone: true }),
   adLastSeenAt: timestamp("ad_last_seen_at", { withTimezone: true }),
+  /** Bài đã chạy QC nay đã dừng: lúc quảng cáo cuối cùng dừng (ước lượng, xem fanpage-ads.ts). */
+  adEndedAt: timestamp("ad_ended_at", { withTimezone: true }),
 
   syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({

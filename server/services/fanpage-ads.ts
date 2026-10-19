@@ -17,6 +17,7 @@ export interface RawAd {
   id: string;
   effective_status?: string;
   created_time?: string;
+  updated_time?: string;
   adset?: { start_time?: string; end_time?: string };
   creative?: { effective_object_story_id?: string };
   insights?: { data?: { spend?: string; impressions?: string; reach?: string }[] };
@@ -30,6 +31,14 @@ export interface StoryAds {
   currency: string | null;
   /** Ngày bắt đầu sớm nhất của các quảng cáo đẩy bài (lịch nhóm QC, không có thì ngày tạo QC). */
   startedAt: string | null;
+  /** Có ít nhất một quảng cáo đang THẬT SỰ chạy bài này. false = đã chạy, nay đã dừng. */
+  running: boolean;
+  /**
+   * Bài đã dừng: lúc quảng cáo cuối cùng dừng — ngày kết thúc lịch nhóm QC nếu
+   * đã qua, không thì lần sửa cuối của quảng cáo (thường là lúc bấm tạm dừng).
+   * Là ước lượng gần đúng: Meta không trả "ngày phân phối cuối" cho từng QC.
+   */
+  endedAt: string | null;
 }
 
 export class MetaAdsError extends Error {
@@ -109,8 +118,16 @@ export function isAdRunning(ad: RawAd, now: Date, recentImpressions?: Map<string
   return Number.isFinite(created) && now.getTime() - created < NEW_AD_GRACE_MS;
 }
 
+/** Lúc một quảng cáo đã dừng thì dừng (xem StoryAds.endedAt). */
+function adEndedAt(ad: RawAd, now: Date): string | null {
+  const end = ad.adset?.end_time;
+  if (end && new Date(end).getTime() <= now.getTime()) return end;
+  return ad.updated_time || null;
+}
+
 /**
- * Gom quảng cáo theo bài được đẩy, chỉ lấy bài của `pageId`.
+ * Gom quảng cáo theo bài được đẩy, chỉ lấy bài của `pageId` — gồm cả quảng
+ * cáo ĐÃ DỪNG nếu từng có lượt hiển thị (để biết bài nào đã từng chạy).
  * Quảng cáo không trỏ vào bài có sẵn (bài chỉ để chạy QC, không đăng lên
  * trang) thì không có mã bài — đếm riêng ở `unmatched`.
  */
@@ -124,15 +141,25 @@ export function aggregateAdsByStory(
   let unmatched = 0;
   const now = opts.now ?? new Date();
   for (const ad of ads) {
-    if (!isAdRunning(ad, now, opts.recentImpressions)) continue;
+    const ins = ad.insights?.data?.[0];
+    const running = isAdRunning(ad, now, opts.recentImpressions);
+    // Quảng cáo chưa từng phân phối (bản nháp, bị từ chối) không tính là "đã chạy".
+    if (!running && !((num(ins?.impressions) ?? 0) > 0)) continue;
     const story = ad.creative?.effective_object_story_id;
     if (!story) {
       unmatched++;
       continue;
     }
     if (!story.startsWith(`${pageId}_`)) continue; // quảng cáo của trang khác cùng tài khoản
-    const ins = ad.insights?.data?.[0];
-    const cur = byStory.get(story) || { adIds: [], spend: null, impressions: null, reach: null, currency, startedAt: null };
+    const cur: StoryAds = byStory.get(story) || {
+      adIds: [], spend: null, impressions: null, reach: null, currency, startedAt: null, running: false, endedAt: null,
+    };
+    if (running) {
+      cur.running = true;
+    } else {
+      const ended = adEndedAt(ad, now);
+      if (ended && (!cur.endedAt || new Date(ended).getTime() > new Date(cur.endedAt).getTime())) cur.endedAt = ended;
+    }
     const start = ad.adset?.start_time || ad.created_time || null;
     if (start && (!cur.startedAt || new Date(start).getTime() < new Date(cur.startedAt).getTime())) cur.startedAt = start;
     cur.adIds.push(String(ad.id));
@@ -144,6 +171,8 @@ export function aggregateAdsByStory(
     if (r != null) cur.reach = Math.max(cur.reach ?? 0, r);
     byStory.set(story, cur);
   }
+  // Còn một quảng cáo đang chạy thì bài đang chạy — không có "ngày dừng".
+  for (const v of byStory.values()) if (v.running) v.endedAt = null;
   return { byStory, unmatched };
 }
 
@@ -153,7 +182,15 @@ export interface PageAdsResult {
   accounts: number;
 }
 
-/** Quảng cáo ĐANG CHẠY của một trang, qua mọi tài khoản quảng cáo user token vào được. */
+/**
+ * Mọi trạng thái quảng cáo còn xem được — trừ DELETED. Mặc định Graph chỉ trả
+ * ACTIVE + PAUSED, bỏ sót quảng cáo đã lưu trữ (ARCHIVED) và nhóm/chiến dịch đã tắt.
+ */
+const AD_STATUSES = [
+  "ACTIVE", "PAUSED", "CAMPAIGN_PAUSED", "ADSET_PAUSED", "ARCHIVED", "IN_PROCESS", "WITH_ISSUES",
+];
+
+/** Quảng cáo đang chạy VÀ đã chạy của một trang, qua mọi tài khoản quảng cáo user token vào được. */
 export async function fetchActiveAdsForPage(pageId: string, userToken: string): Promise<PageAdsResult> {
   const accounts = await graphAll("me/adaccounts", userToken, { fields: "id,currency,account_status", limit: "50" }, 5);
   if (accounts.length === 0) {
@@ -169,9 +206,9 @@ export async function fetchActiveAdsForPage(pageId: string, userToken: string): 
   for (const acc of accounts) {
     const ads: RawAd[] = await graphAll(`${acc.id}/ads`, userToken, {
       fields:
-        "id,effective_status,created_time,adset{start_time,end_time}," +
+        "id,effective_status,created_time,updated_time,adset{start_time,end_time}," +
         "creative{effective_object_story_id},insights.date_preset(maximum){spend,impressions,reach}",
-      effective_status: JSON.stringify(["ACTIVE"]),
+      effective_status: JSON.stringify(AD_STATUSES),
       limit: "200",
     });
     if (ads.length === 0) continue;
@@ -187,6 +224,8 @@ export async function fetchActiveAdsForPage(pageId: string, userToken: string): 
         cur.impressions = (cur.impressions ?? 0) + (v.impressions ?? 0);
         cur.reach = Math.max(cur.reach ?? 0, v.reach ?? 0);
         if (v.startedAt && (!cur.startedAt || v.startedAt < cur.startedAt)) cur.startedAt = v.startedAt;
+        cur.running = cur.running || v.running;
+        cur.endedAt = cur.running ? null : [cur.endedAt, v.endedAt].filter(Boolean).sort().pop() ?? null;
       }
     }
   }
