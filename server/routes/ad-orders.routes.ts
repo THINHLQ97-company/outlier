@@ -155,7 +155,12 @@ export function registerAdOrderRoutes(app: Express) {
       res.json(await syncFanpageAds(fid));
     } catch (e: any) {
       console.warn("fanpage posts sync:", e?.message || e);
-      res.status(400).json({ error: e?.message || "Không đồng bộ được." });
+      const slow = e?.name === "TimeoutError" || /aborted|timeout|fetch failed/i.test(String(e?.message || ""));
+      res.status(slow ? 504 : 400).json({
+        error: slow
+          ? "Meta phản hồi quá chậm, chưa đồng bộ được — thử lại sau ít phút (hệ thống vẫn tự đồng bộ mỗi giờ)."
+          : e?.message || "Không đồng bộ được.",
+      });
     } finally {
       syncing.delete(fid);
     }

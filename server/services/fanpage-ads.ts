@@ -67,14 +67,42 @@ export function classifyAdsError(e: { code?: number; message?: string } | undefi
   return new MetaAdsError("error", `Meta báo lỗi khi đọc quảng cáo: ${msg.slice(0, 200) || "không rõ"}`);
 }
 
+const GRAPH_TIMEOUT_MS = 60_000;
+
+/** Lỗi mạng / quá thời gian (không phải Meta trả lỗi) → câu tiếng Việt. Thuần, để test. */
+export function networkAdsError(e: any): MetaAdsError {
+  if (e?.name === "TimeoutError" || e?.name === "AbortError") {
+    return new MetaAdsError(
+      "error",
+      "Meta phản hồi quá chậm ở lần đồng bộ này — đang hiện kết quả lần trước, hệ thống tự thử lại sau 1 giờ (hoặc bấm Làm mới ngay).",
+    );
+  }
+  return new MetaAdsError(
+    "error",
+    "Không kết nối được tới Meta ở lần đồng bộ này — đang hiện kết quả lần trước, hệ thống tự thử lại sau 1 giờ.",
+  );
+}
+
+/**
+ * Một lần gọi Graph. Quá thời gian thì thử lại MỘT lần: lỗi 2026-10-19 là
+ * Meta lúc nhanh lúc chậm với cùng một truy vấn (10:43 qua, 13:55 hỏng).
+ */
 async function graph(path: string, token: string, params: Record<string, string> = {}): Promise<any> {
   const url = path.startsWith("http") ? new URL(path) : new URL(`${GRAPH}/${path}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   if (!url.searchParams.has("access_token")) url.searchParams.set("access_token", token);
-  const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok || body?.error) throw classifyAdsError(body?.error);
-  return body;
+  for (let attempt = 0; ; attempt++) {
+    let res: Response;
+    try {
+      res = await fetch(url, { signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS) });
+    } catch (e: any) {
+      if (attempt === 0 && (e?.name === "TimeoutError" || e?.name === "AbortError")) continue;
+      throw networkAdsError(e);
+    }
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || body?.error) throw classifyAdsError(body?.error);
+    return body;
+  }
 }
 
 /** Lật hết các trang kết quả của Graph, có trần để không lật vô hạn. */
@@ -209,8 +237,10 @@ export async function fetchActiveAdsForPage(pageId: string, userToken: string): 
         "id,effective_status,created_time,updated_time,adset{start_time,end_time}," +
         "creative{effective_object_story_id},insights.date_preset(maximum){spend,impressions,reach}",
       effective_status: JSON.stringify(AD_STATUSES),
-      limit: "200",
-    });
+      // 50/lần: mỗi quảng cáo kèm số liệu trọn đời — xin 200 một lúc thì Meta
+      // trả chậm quá thời gian chờ ở tài khoản nhiều quảng cáo cũ.
+      limit: "50",
+    }, 80);
     if (ads.length === 0) continue;
     const recentImpressions = await recentImpressionsByAd(acc.id, userToken, now);
     const part = aggregateAdsByStory(ads, pageId, acc.currency || null, { now, recentImpressions });

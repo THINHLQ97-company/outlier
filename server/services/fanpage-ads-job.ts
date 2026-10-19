@@ -8,7 +8,7 @@ import { getDb, isDbConfigured } from "../db/client";
 import { adOrders, brandFanpages, fanpagePosts } from "../db/schema";
 import { decryptToken } from "./meta-token";
 import { fetchPagePosts, fetchPost, type MetaPost } from "./meta-graph";
-import { autoOrderStatus, fetchActiveAdsForPage, MetaAdsError, type AdsStatus, type StoryAds } from "./fanpage-ads";
+import { autoOrderStatus, fetchActiveAdsForPage, MetaAdsError, networkAdsError, type AdsStatus, type StoryAds } from "./fanpage-ads";
 
 const EVERY_MS = 60 * 60_000;
 const FIRST_RUN_DELAY_MS = 90_000;
@@ -143,8 +143,11 @@ export async function syncFanpageAds(fanpageId: string): Promise<FanpageAdsSyncR
         note = `${out.unmatched} quảng cáo trong tài khoản không đẩy bài có sẵn (bài chỉ để chạy quảng cáo) — không gắn được vào bài nào.`;
       }
     } catch (e: any) {
-      adsStatus = e instanceof MetaAdsError ? e.status : "error";
-      note = e?.message || String(e);
+      // Lỗi mạng/quá thời gian không phải MetaAdsError — dịch luôn, đừng để câu
+      // tiếng Anh của trình duyệt ("The operation was aborted…") lên màn hình.
+      const err = e instanceof MetaAdsError ? e : networkAdsError(e);
+      adsStatus = err.status;
+      note = err.message;
     }
   }
 
@@ -218,9 +221,13 @@ export async function sweepFanpageAds(reason: string): Promise<FanpageAdsSyncRes
         );
       } catch (e: any) {
         console.warn(`[fanpage-ads] ${p.name || p.id}: ${e?.message || e}`);
+        // Hỏng ngay ở bước đọc bài (thường là Meta chậm) — giữ kết quả cũ, báo bằng tiếng Việt.
+        const friendly = /aborted|timeout|fetch failed/i.test(String(e?.message || e)) || e?.name === "TimeoutError"
+          ? networkAdsError(e).message
+          : String(e?.message || e).slice(0, 300);
         await getDb()
           .update(brandFanpages)
-          .set({ metaAdsStatus: "error", metaAdsNote: String(e?.message || e).slice(0, 300) })
+          .set({ metaAdsStatus: "error", metaAdsNote: friendly })
           .where(eq(brandFanpages.id, p.id))
           .catch(() => {});
       }

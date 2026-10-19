@@ -196,3 +196,23 @@ describe("bài đã chạy quảng cáo nay đã dừng (task #6856)", () => {
     assert.match(job, /const running = byStory\.get\(o\.postId\)\?\.running === true;/);
   });
 });
+
+describe("Meta chậm / mất kết nối → báo tiếng Việt, giữ kết quả cũ (task #6868)", async () => {
+  const { networkAdsError } = await import("../services/fanpage-ads");
+  test("quá thời gian chờ không còn hiện câu tiếng Anh của trình duyệt", () => {
+    const e = Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
+    const m = networkAdsError(e).message;
+    assert.match(m, /Meta phản hồi quá chậm/);
+    assert.match(m, /kết quả lần trước/);
+    assert.doesNotMatch(m, /aborted/);
+  });
+  test("mất kết nối cũng báo tiếng Việt", () => {
+    assert.match(networkAdsError(new TypeError("fetch failed")).message, /Không kết nối được tới Meta/);
+  });
+  test("đọc quảng cáo xin 50 quảng cáo mỗi lần (200 làm Meta trả quá chậm)", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const src = fs.readFileSync(path.join(process.cwd(), "server", "services", "fanpage-ads.ts"), "utf8");
+    assert.match(src, /effective_status: JSON\.stringify\(AD_STATUSES\),[\s\S]{0,200}limit: "50",/);
+  });
+});
