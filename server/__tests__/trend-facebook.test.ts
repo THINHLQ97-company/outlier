@@ -5,13 +5,14 @@ import { briefFromClaude } from "../services/trend-claude";
 import { normalizeSettings } from "../services/trend-workflow-settings";
 import { obtainTrendPost, type FacebookCheckpoint } from "../services/trend-facebook";
 import { structureFetchedPost } from "../services/fetched-post-structure";
-import { mockDb } from "./trend-workflow-safety.test";
+import { mockDb } from "./helpers/trend-mock-db";
 import { runTrendWorkflow } from "../services/trend-workflow";
 const url = "https://www.facebook.com/example/posts/123";
 const config = normalizeSettings({ apifyEnabled: true });
 const input = { summary: "Hãng công nghệ ra mắt máy tính mới", confidence: "sourced" as const,
-  claims: [{ text: "Hãng công nghệ ra mắt máy tính mới", urls: ["https://news.example.com/a", url] }], facebookCandidates: [{ url, reason: "Bài gốc liên quan" }] };
-const brief = () => briefFromClaude("Máy tính mới", input);
+  claims: [{ text: "Hãng công nghệ ra mắt máy tính mới", urls: ["https://news.example.com/a", url] }], facebookCandidates: [{ url, reason: "Bài gốc liên quan" }],
+  decision: "pursue" as const, rationale: "Sự kiện mới, cộng đồng đang bàn", suggestedAngle: "Gàn thử máy mới" };
+const brief = () => ({ ...briefFromClaude("Máy tính mới", input), decision: "pursue" as const, decisionRationale: input.rationale });
 test("Facebook: bài lẻ hợp lệ, loại trang/hồ sơ/nhóm và hostname giả", () => {
   for (const raw of [url, "https://fb.watch/abc/", "https://facebook.com/groups/123/posts/456", "https://facebook.com/permalink.php?story_fbid=123&id=2", "https://facebook.com/photo.php?fbid=123", "https://facebook.com/share/p/abc", "https://facebook.com/reel/123", "https://facebook.com/u/videos/123"]) assert.ok(facebookPostUrl(raw), raw);
   for (const raw of ["https://facebook.com/", "https://facebook.com/example", "https://facebook.com/groups/123", "https://facebook.com/profile.php?id=1", "https://facebook.com/example/posts", "https://facebook.com/story.php", "https://facebook.com.evil.com/u/posts/1", "file:///etc/passwd"]) assert.equal(facebookPostUrl(raw), null, raw);

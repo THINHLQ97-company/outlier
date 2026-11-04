@@ -40,6 +40,7 @@ function Gate() {
         <Route path="/brands" element={<Brands />} />
         <Route path="/radar" element={<Radar />} />
         <Route path="/trend-radar" element={<TrendRadar />} />
+        <Route path="/trend-radar/settings" element={<TrendRadar settingsPage />} />
         <Route path="/channels" element={<Channels />} />
         <Route path="/ad-orders" element={<AdOrders />} />
         <Route path="/deconstruct" element={<Deconstruct />} />

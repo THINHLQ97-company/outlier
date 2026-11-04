@@ -1,40 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Loader2, Telescope, ExternalLink, Eye, Play, Send, KeyRound, AlertTriangle, X } from "lucide-react";
-import { useAppContext } from "../AppContext";
+import { Loader2, Telescope, Play, Send, X, Settings as SettingsIcon } from "lucide-react";
 import ConfirmDialog from "../components/ConfirmDialog";
+import DateRangeFilter, { inDateRange, rangeDescription } from "../components/trend/DateRangeFilter";
+import type { DateRange } from "../components/trend/DateRangeFilter";
+import TrendCardView, { isTargetError, trendGroup } from "../components/trend/TrendCardView";
+import type { TrendGroup } from "../components/trend/TrendCardView";
 import * as api from "../services/trend-workflow";
 import type { TrendItem, TrendSettings, TrendStatus, TrendTargets, TrendCard } from "../services/trend-workflow";
 
-const fmt = (iso?: string | null) => (iso ? new Date(iso).toLocaleString("vi-VN", { hour12: false }) : "Chưa có");
-const dayKey = (iso: string) => new Date(iso).toLocaleDateString("sv-SE");
+const fmt = (iso?: string | null) => (iso ? new Date(iso).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour12: false }) : "Chưa có");
 const msg = (e: unknown, f: string) => (e instanceof Error && e.message ? e.message : f);
 
-function level(it: TrendItem): { label: string; cls: string; note?: string } {
-  const b = it.brief;
-  if (it.status === "excluded") return { label: "Đã bỏ qua", cls: "ds-badge-danger", note: b?.reason || it.error || "Nội dung nhạy cảm nên hệ thống không dùng." };
-  if (it.status === "duplicate") return { label: "Đã bỏ qua", cls: "ds-badge", note: "Trùng với một trend đã dò trước đó." };
-  if (b?.sensitive) return { label: "Nhạy cảm — cần duyệt kỹ", cls: "ds-badge-warning" };
-  if (b?.confidence === "sourced") return { label: "Đu ngay", cls: "ds-badge-success" };
-  return { label: "Chưa xác minh", cls: "ds-badge-info" };
-}
-function step(it: TrendItem): { label: string; cls: string } {
-  if (it.status === "error") return { label: it.attempts >= 3 ? "Đã hết lượt thử" : `Chờ thử lại (${it.attempts ?? 0}/3 lần)`, cls: "ds-badge-danger" };
-  if (it.status === "budget_exhausted") return { label: "Đã hết giới hạn sử dụng AI", cls: "ds-badge-warning" };
-  if (it.status === "awaiting_research") return { label: "Chờ Claude nghiên cứu", cls: "ds-badge-info" };
-  if (it.status === "pending") return { label: "Đang nghiên cứu", cls: "ds-badge-info" };
-  if (it.status === "researched") return { label: "Đang viết bản nháp", cls: "ds-badge-info" };
-  if (it.drafts.length) return { label: "Đã có bản nháp", cls: "ds-badge-success" };
-  return { label: "Chỉ có tóm tắt", cls: "ds-badge" };
-}
-
-export default function TrendRadar() {
-  const { isAdmin } = useAppContext();
+export default function TrendRadar({ settingsPage = false }: { settingsPage?: boolean }) {
   const [items, setItems] = useState<TrendItem[]>([]);
   const [status, setStatus] = useState<TrendStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [day, setDay] = useState("");
+  const [range, setRange] = useState<DateRange>({ preset: "7", from: "", to: "" });
+  const [group, setGroup] = useState<TrendGroup | "all">("all");
   const [card, setCard] = useState<{ item: TrendItem; data?: TrendCard; err?: string } | null>(null);
   const [running, setRunning] = useState(false);
   const [runMsg, setRunMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -54,8 +38,11 @@ export default function TrendRadar() {
   }
   useEffect(() => { mounted.current = true; load(); return () => { mounted.current = false; if (timer.current) clearTimeout(timer.current); }; }, []);
 
-  const days = useMemo(() => Array.from(new Set(items.map((i) => dayKey(i.createdAt)))), [items]);
-  const shown = day ? items.filter((i) => dayKey(i.createdAt) === day) : items;
+  const dated = useMemo(() => items.filter(i => inDateRange(i.createdAt, range)), [items, range]);
+  const shown = group === "all" ? dated : dated.filter(i => trendGroup(i) === group);
+  const tabs: { key: TrendGroup | "all"; label: string }[] = [{ key: "worth", label: "Đáng làm" }, { key: "processing", label: "Đang xử lý" }, { key: "watch", label: "Chờ đánh giá / Theo dõi" }, { key: "skipped", label: "Đã bỏ qua" }, { key: "all", label: "Tất cả" }];
+  const hasTargets = status?.settings?.hasTargets ?? status?.hasTargets;
+  const missingTarget = hasTargets === false || (hasTargets == null && items.some(i => isTargetError(i.error) || isTargetError(i.facebookReason)));
   const lastRun = status?.runs.find((r) => !r.dryRun) || status?.runs[0];
   const lastOutbox = status?.outbox[0];
   const s = status?.settings;
@@ -69,7 +56,12 @@ export default function TrendRadar() {
   async function dryRun() {
     setRunning(true); setRunMsg({ ok: true, text: "Đang bắt đầu lượt chạy thử..." });
     try {
-      const { runId } = await api.runDry();
+      const result = await api.runDry();
+      if (result.status === "refreshed") {
+        setRunning(false); setRunMsg({ ok: true, text: `${result.note || `Đã lấy ${result.created ?? 0} trend về, chờ Claude nghiên cứu.`}` });
+        void load(); return;
+      }
+      const runId = result.runId;
       if (!runId) throw new Error("Chưa nhận được mã lượt chạy; chưa biết kết quả. Hãy kiểm tra lại sau.");
       const started = Date.now();
       const poll = async () => {
@@ -81,11 +73,11 @@ export default function TrendRadar() {
           const run = await api.getRun(runId);
           if (!mounted.current) return;
           if (run.status === "pending" || run.status === "running") {
-            setRunMsg({ ok: true, text: "Lượt chạy thử đang được xử lý. Chưa gửi gì lên Teams." });
+            setRunMsg({ ok: true, text: "Lượt chạy thử đang được xử lý." });
             timer.current = setTimeout(poll, 5000); return;
           }
           setRunning(false);
-          const text = run.status === "done" ? "Chạy thử xong. Bản nháp có thể đã được lưu thật; chưa gửi gì lên Teams." :
+          const text = run.status === "done" ? "Chạy thử xong. Hãy xem kết quả trong danh sách trend." :
             run.status === "partial" ? "Chạy thử xong một phần: có trend chưa xử lý xong, gặp lỗi hoặc hết giới hạn sử dụng AI. Hãy xem danh sách bên dưới." :
             run.status === "error" ? `Lượt chạy thử gặp lỗi${run.error ? `: ${run.error}` : ". Hãy thử lại sau."}` : "Chưa biết kết quả lượt chạy. Hãy kiểm tra lại sau.";
           setRunMsg({ ok: run.status === "done", text });
@@ -110,78 +102,41 @@ export default function TrendRadar() {
   }
 
   const head = !s ? null : !s.enabled ? "Đang tắt" : "Đang bật";
-  const problem = lastRun?.status === "error" ? lastRun.error || "Lần dò gần nhất gặp lỗi." : null;
+  const problem = lastRun?.status === "error";
+
+  if (settingsPage) return <div className="max-w-5xl mx-auto flex flex-col gap-4">
+    <Link to="/trend-radar" className="ds-btn self-start">← Trend chủ động</Link>
+    <h1 className="text-xl font-bold font-display text-stone-800">Cài đặt Trend chủ động</h1>
+    {loading ? <p>Đang tải...</p> : error ? <div role="alert" className="ds-alert ds-alert-danger">{error}</div> : !status?.canConfigure ? <div role="alert" className="ds-alert ds-alert-warning">Chỉ người quản trị tính năng này mới được cài đặt</div> : <>
+      <section className="ds-card"><div className="ds-card-body"><h2 className="ds-card-title mb-3">Chạy thử</h2><div><button type="button" className="ds-btn" onClick={dryRun} disabled={running}>{running ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Play className="w-4 h-4" aria-hidden="true" />} {running ? "Đang chạy thử..." : "Chạy thử ngay"}</button><p className="text-xs text-stone-500 mt-1">Chạy thử để kiểm tra việc lấy trend; kết quả hiện ở danh sách trend. Không dùng để gửi thẻ lên Teams.</p></div>
+      {runMsg && <div role={runMsg.ok ? "status" : "alert"} className={`ds-alert mt-3 ${runMsg.ok ? "ds-alert-success" : "ds-alert-warning"}`}>{runMsg.text}</div>}</div></section>
+      {(status.outbox.some(o => o.status === "unknown") || resolveMsg) && <section className="ds-card" aria-label="Thẻ Teams cần xử lý"><div className="ds-card-body flex flex-col gap-3"><h2 className="ds-card-title">Thẻ Teams cần xử lý</h2><p className="text-sm text-stone-600">Hãy kiểm tra kênh Teams trước khi xử lý để tránh gửi trùng.</p>{resolveMsg && <div role="status" className="ds-alert ds-alert-warning">{resolveMsg}</div>}{status.outbox.filter(o => o.status === "unknown").map(o => <div key={o.id} className="border border-stone-200 rounded-lg p-3 flex flex-wrap gap-2"><span className="text-sm break-all flex-1">Mã lượt gửi: {o.id} · Đã thử {o.attempts} lần</span><button type="button" className="ds-btn ds-btn-sm" disabled={resolving} onClick={() => setResolve({id: o.id, action: "resolved"})}>Đã kiểm, Teams đã nhận</button><button type="button" className="ds-btn ds-btn-sm" disabled={resolving} onClick={() => setResolve({id: o.id, action: "resend"})}>Gửi lại</button></div>)}</div></section>}
+      <Settings isAdmin={true} onSaved={load} />
+      <ConfirmDialog isOpen={!!resolve} title={resolve?.action === "resend" ? "Gửi lại thẻ?" : "Xác nhận đã kiểm tra?"} message={resolve?.action === "resend" ? "Thẻ có thể đã được Teams nhận. Gửi lại có thể tạo thông báo trùng. Bạn đã kiểm tra và vẫn muốn gửi lại?" : "Bạn đã kiểm tra và xác nhận Teams đã nhận thẻ này?"} confirmText={resolve?.action === "resend" ? "Gửi lại" : "Đã kiểm tra"} onConfirm={resolveCard} onCancel={() => setResolve(null)} />
+    </>}
+  </div>;
 
   return (
     <div className="max-w-5xl mx-auto flex flex-col gap-4">
       <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-xl font-bold font-display text-stone-800">Trend chủ động</h1>
-          <p className="text-sm text-stone-500 mt-1">Hệ thống tự dò xu hướng mỗi 2 giờ (từ 8 giờ đến 22 giờ), tìm tin có nguồn và soạn sẵn bản nháp cho từng trang. Mọi bản nháp đều cần người duyệt.</p>
-        </div>
-        {isAdmin && (
-          <button type="button" className="ds-btn" onClick={dryRun} disabled={running}>
-            {running ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Play className="w-4 h-4" aria-hidden="true" />}
-            {running ? "Đang chạy thử..." : "Chạy thử ngay"}
-          </button>
-        )}
+        <div><h1 className="text-xl font-bold font-display text-stone-800">Trend chủ động</h1><p className="text-sm text-stone-500 mt-1">Claude quét và chọn trend đáng làm; Outlier soạn bản nháp cho từng trang.</p></div>
+        {status?.canConfigure && <Link to="/trend-radar/settings" className="ds-btn"><SettingsIcon className="w-4 h-4" aria-hidden="true" /> Cài đặt</Link>}
       </div>
-      {isAdmin && <p className="text-xs text-stone-500 -mt-2">Chạy thử không gửi gì lên Teams, nhưng vẫn lưu bản nháp thật nếu bạn đã chọn trang đích.</p>}
-      {runMsg && <div role={runMsg.ok ? "status" : "alert"} className={`ds-alert ${runMsg.ok ? "ds-alert-success" : "ds-alert-warning"}`}>{runMsg.text}</div>}
-      {error && <div role="alert" className="ds-alert ds-alert-danger">{error}</div>}
+      {error && <div role="alert" className="ds-alert ds-alert-danger">{error} <button type="button" className="underline" onClick={() => { setLoading(true); void load(); }}>Thử lại</button></div>}
+      {loading ? <div role="status" aria-label="Đang tải trend" className="flex flex-col gap-3"><div className="ds-card h-24 animate-pulse bg-stone-100" />{[1, 2, 3].map(n => <div key={n} className="ds-card h-40 animate-pulse bg-stone-100" />)}</div> : status && <>
+        <section className="ds-card" aria-label="Tình trạng"><div className="ds-card-body flex flex-col gap-3">
+          <div className="flex items-center gap-x-5 gap-y-2 flex-wrap text-sm"><span className={`ds-badge ${s?.enabled ? 'ds-badge-success' : ''}`}>{head || 'Chưa rõ'}</span><span>Quét gần nhất: <strong>{fmt(status.lastRefreshAt || lastRun?.createdAt)}</strong>{status.lastRefreshAt && status.refreshedBy ? ` · ${status.refreshedBy}` : lastRun?.dryRun ? ' · chạy thử' : ''}</span></div>
+          {problem && <div role="alert" className="ds-alert ds-alert-warning">Lần chạy gần nhất chưa thành công. Hãy kiểm tra lại trong phần cài đặt.</div>}
+          {missingTarget && <div className="ds-alert ds-alert-warning">Chưa chọn trang đích để soạn bản nháp.{status.canConfigure && <> <Link className="underline" to="/trend-radar/settings">Mở cài đặt</Link></>}</div>}
+          {lastOutbox?.status === 'failed' && <div className="ds-alert ds-alert-warning">Thẻ gần nhất chưa gửi được lên Teams. Hãy kiểm tra phần cài đặt.</div>}
+          {lastOutbox?.status === 'unknown' && <div className="ds-alert ds-alert-warning">Chưa rõ thẻ gần nhất đã lên Teams chưa. Hãy kiểm tra kênh Teams trước khi gửi lại.</div>}
+        </div></section>
+        <section className="ds-card" aria-label="Bộ lọc trend"><div className="ds-card-body flex flex-col gap-4"><DateRangeFilter value={range} onChange={setRange} /><div><div className="text-sm font-semibold text-stone-700 mb-2">Trạng thái</div><div className="flex flex-wrap gap-2" aria-label="Lọc theo trạng thái">{tabs.map(tab => <button key={tab.key} type="button" className={`ds-btn ds-btn-sm ${group === tab.key ? 'ds-btn-primary' : ''}`} aria-pressed={group === tab.key} onClick={() => setGroup(tab.key)}>{tab.label} <span>({tab.key === 'all' ? dated.length : dated.filter(i => trendGroup(i) === tab.key).length})</span></button>)}</div></div></div></section>
+        <section aria-label="Danh sách trend" className="flex flex-col gap-3">
+          {shown.length ? shown.map(it => <TrendCardView key={it.id} it={it} onCard={() => openCard(it)} />) : <div className="ds-card"><div className="ds-empty"><div className="ds-empty-icon"><Telescope className="w-8 h-8" aria-hidden="true" /></div><p className="ds-empty-title">{!items.length && !status.lastRefreshAt && !lastRun ? 'Claude chưa quét lần nào' : `Không có trend nào trong ${rangeDescription(range)}`}</p><p className="ds-empty-desc">{!items.length && !status.lastRefreshAt && !lastRun ? 'Hãy kiểm tra lịch Scheduled của Claude.' : 'Hãy thử chọn khoảng thời gian hoặc trạng thái khác.'}</p></div></div>}
+        </section>
+      </>}
 
-      {loading ? (
-        <div className="flex items-center justify-center py-16 text-stone-400 gap-2"><Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Đang tải...</div>
-      ) : (
-        <>
-          <section className="ds-card" aria-label="Tình trạng">
-            <div className="ds-card-body grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-              <div><div className="text-xs text-stone-500">Dò tự động</div><span className={`ds-badge ${s?.enabled ? "ds-badge-success" : ""}`}>{head || "Chưa rõ"}</span></div>
-              <div><div className="text-xs text-stone-500">Lần dò gần nhất</div><div className="font-medium">{fmt(lastRun?.createdAt)}</div></div>
-              <div><div className="text-xs text-stone-500">Lần dò tới</div><div className="font-medium">{s?.enabled ? "Theo lịch mỗi 2 giờ, từ 8 đến 22 giờ" : "Chưa bật nên chưa có lịch"}</div></div>
-              <div><div className="text-xs text-stone-500">Gửi Teams</div><div className="font-medium">{teamsText(s, lastOutbox)}</div></div>
-            </div>
-            {(problem || (lastOutbox && (lastOutbox.status === "failed" || lastOutbox.status === "unknown"))) && (
-              <div className="ds-card-footer flex flex-col gap-1.5">
-                {problem && <div role="alert" className="ds-alert ds-alert-danger"><AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" /><span>Lần dò gần nhất chưa thành công: {problem}</span></div>}
-                {lastOutbox?.status === "failed" && <div role="alert" className="ds-alert ds-alert-warning">Thẻ gần nhất chưa gửi được lên Teams{lastOutbox.lastError ? `: ${lastOutbox.lastError}` : "."}</div>}
-                {lastOutbox?.status === "unknown" && <div role="alert" className="ds-alert ds-alert-warning">Chưa rõ thẻ gần nhất đã lên Teams chưa. Hệ thống không tự gửi lại để tránh đăng trùng; hãy kiểm tra kênh Teams.</div>}
-              </div>
-            )}
-          </section>
-
-          {isAdmin && (status?.outbox.some((o) => o.status === "unknown") || resolveMsg) && <section className="ds-card" aria-label="Thẻ Teams cần kiểm tra"><div className="ds-card-body flex flex-col gap-3">
-            <h2 className="ds-card-title">Thẻ Teams cần kiểm tra</h2>
-            <p className="text-sm text-stone-600">Các thẻ dưới đây đã được gửi nhưng chưa rõ Teams có nhận không. Hệ thống không tự gửi lại để tránh trùng. Hãy kiểm tra kênh Teams trước khi xử lý.</p>
-            {resolveMsg && <div role="status" className="ds-alert ds-alert-warning">{resolveMsg}</div>}
-            {status?.outbox.filter((o) => o.status === "unknown").map((o) => <div key={o.id} className="border border-stone-200 rounded-lg p-3 flex flex-wrap items-center gap-2">
-              <span className="text-sm break-all flex-1">Mã lượt gửi: {o.id} · Đã thử {o.attempts} lần</span>
-              <button type="button" className="ds-btn ds-btn-sm" disabled={resolving} onClick={() => setResolve({ id: o.id, action: "resolved" })}>Đã kiểm, Teams đã nhận</button>
-              <button type="button" className="ds-btn ds-btn-sm" disabled={resolving} onClick={() => setResolve({ id: o.id, action: "resend" })}>Gửi lại</button>
-            </div>)}
-          </div></section>}
-          <section aria-label="Danh sách trend" className="flex flex-col gap-3">
-            <div className="flex items-center gap-2 flex-wrap">
-              <label htmlFor="tr-day" className="text-sm font-medium text-stone-700">Lọc theo ngày</label>
-              <select id="tr-day" className="ds-select" value={day} onChange={(e) => setDay(e.target.value)}>
-                <option value="">Tất cả</option>
-                {days.map((d) => <option key={d} value={d}>{new Date(d).toLocaleDateString("vi-VN")}</option>)}
-              </select>
-            </div>
-            {shown.length === 0 ? (
-              <div className="ds-card"><div className="ds-empty">
-                <div className="ds-empty-icon"><Telescope className="w-8 h-8" aria-hidden="true" /></div>
-                <p className="ds-empty-title">{items.length ? "Không có trend trong ngày này" : "Chưa dò lần nào"}</p>
-                <p className="ds-empty-desc">{items.length ? "Chọn ngày khác hoặc chọn Tất cả." : s?.enabled ? "Hệ thống sẽ dò ở lần tới, kết quả hiện ở đây." : "Tính năng đang tắt. Quản trị viên bật ở phần cài đặt bên dưới."}</p>
-              </div></div>
-            ) : shown.map((it) => <TrendCardView key={it.id} it={it} onCard={() => openCard(it)} />)}
-          </section>
-
-          <Settings isAdmin={isAdmin} onSaved={load} />
-        </>
-      )}
-
-      <ConfirmDialog isOpen={!!resolve} title={resolve?.action === "resend" ? "Gửi lại thẻ?" : "Xác nhận đã kiểm tra?"} message={resolve?.action === "resend" ? "Thẻ có thể đã được Teams nhận. Gửi lại có thể tạo thông báo trùng. Bạn đã kiểm tra và vẫn muốn gửi lại?" : "Bạn đã kiểm tra và xác nhận Teams đã nhận thẻ này?"} confirmText={resolve?.action === "resend" ? "Gửi lại" : "Đã kiểm tra"} onConfirm={resolveCard} onCancel={() => setResolve(null)} />
       {card && (
         <div className="ds-modal-overlay open" onClick={() => setCard(null)}>
           <div className="ds-modal" role="dialog" aria-modal="true" aria-labelledby="tr-card-title" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
@@ -207,54 +162,6 @@ export default function TrendRadar() {
         </div>
       )}
     </div>
-  );
-}
-
-function teamsText(s?: TrendSettings, o?: TrendStatus["outbox"][number]): string {
-  if (!s) return "Chưa rõ";
-  if (!s.teamsEnabled) return "Đang tắt";
-  if (!s.webhookConfigured) return "Chưa cấu hình URL Teams";
-  if (!o) return "Chưa gửi thẻ nào";
-  if (o.status === "accepted") return "Teams đã nhận (chưa xác nhận đã hiển thị)";
-  if (o.status === "failed") return "Gửi chưa được";
-  if (o.status === "unknown") return "Chưa rõ kết quả";
-  return "Đang gửi";
-}
-
-function TrendCardView({ it, onCard }: { it: TrendItem; onCard: () => void }) {
-  const b = it.brief; const lv = level(it); const st = step(it);
-  return (
-    <article className="ds-card"><div className="ds-card-body flex flex-col gap-2.5">
-      <div className="flex items-start justify-between gap-2 flex-wrap">
-        <div className="min-w-0">
-          <h2 className="text-base font-semibold text-stone-800 break-words">{b?.title || it.title}</h2>
-          <p className="text-xs text-stone-500 mt-0.5">{fmt(it.createdAt)}{b?.traffic ? ` · Lượng tìm kiếm: ${b.traffic}` : ""}</p>
-        </div>
-        <div className="flex gap-1.5 flex-wrap"><span className={`ds-badge ${lv.cls}`}>{lv.label}</span><span className={`ds-badge ${st.cls}`}>{st.label}</span></div>
-      </div>
-      {b?.provider === "claude_mcp" && <span className="ds-badge ds-badge-info">Nghiên cứu bởi Claude</span>}
-      {it.contentPath && <span className="ds-badge">{it.contentPath === "facebook_post" ? "Dựng từ bài Facebook" : "Dựng từ tóm tắt tin tức"}</span>}
-      {it.facebookSourceUrl && <a className="text-sm text-storm-600 underline" href={it.facebookSourceUrl} target="_blank" rel="noreferrer">Mở bài Facebook gốc</a>}
-      {it.facebookReason && <p className="text-xs text-stone-500">{it.facebookReason}</p>}
-      {lv.note && <p className="text-xs text-stone-500">Lý do: {lv.note}</p>}
-      {b?.summary && <div><div className="text-xs font-semibold text-stone-600">Chuyện gì đang xảy ra</div><p className="text-sm text-stone-700 mt-0.5 whitespace-pre-wrap">{b.summary}</p></div>}
-      {b && b.sources.length > 0 && (
-        <div><div className="text-xs font-semibold text-stone-600">Nguồn tin</div>
-          <ul className="mt-0.5 flex flex-col gap-0.5">{b.sources.map((x, i) => (
-            <li key={i}><a href={x.url} target="_blank" rel="noreferrer" className="text-xs text-storm-700 hover:underline inline-flex items-center gap-1 break-all">{x.title || x.url}<ExternalLink className="w-3 h-3 shrink-0" aria-hidden="true" /></a></li>
-          ))}</ul></div>
-      )}
-      {it.error && <div role="alert" className="ds-alert ds-alert-danger">Không xử lý được trend này: {it.error}</div>}
-      {it.drafts.length > 0 ? (
-        <div className="flex flex-col gap-2">{it.drafts.map((d) => (
-          <div key={d.remakeId} className="border border-stone-200 rounded-lg p-2.5 flex items-center justify-between gap-2 flex-wrap">
-            <div className="min-w-0"><div className="text-sm font-medium text-stone-800">{d.pageName}</div><div className="text-xs text-stone-500">Góc khai thác: {d.angle}</div>
-              <span className={`ds-badge mt-1 ${d.status === "ready" ? "ds-badge-warning" : d.status === "error" ? "ds-badge-danger" : "ds-badge-info"}`}>{d.status === "ready" ? "Bản nháp tự động, cần duyệt" : d.status === "error" ? "Lỗi khi viết" : "Đang viết"}</span></div>
-            <Link to={`/remakes?remakeId=${encodeURIComponent(d.remakeId)}`} className="ds-btn ds-btn-sm">Mở bản nháp</Link>
-          </div>))}</div>
-      ) : (b && it.status !== "excluded" && it.status !== "duplicate" && <p className="text-xs text-stone-500">Chỉ có tóm tắt: chưa chọn trang đích để soạn bản nháp.</p>)}
-      {b && it.status !== "excluded" && <div><button type="button" className="ds-btn ds-btn-sm" onClick={onCard}><Eye className="w-3.5 h-3.5" aria-hidden="true" /> Xem trước thẻ Teams</button></div>}
-    </div></article>
   );
 }
 
@@ -323,18 +230,16 @@ function Settings({ isAdmin, onSaved }: { isAdmin: boolean; onSaved: () => void 
   }
 
   return (
-    <section className="ds-card" aria-label="Cài đặt"><div className="ds-card-body flex flex-col gap-4">
-      <div>
-        <h2 className="ds-card-title flex items-center gap-1.5"><KeyRound className="w-4 h-4 text-storm-500" aria-hidden="true" /> Cài đặt Trend chủ động</h2>
-        {!isAdmin && <p className="text-xs text-stone-500 mt-1">Bạn chỉ xem được. Chỉ quản trị viên mới đổi được cài đặt.</p>}
-      </div>
-      {!cfg.keyConfigured && <div className="ds-alert ds-alert-warning">Máy chủ chưa có khoá để nghiên cứu tin tức, nên chưa dò được. Nhờ người quản lý hệ thống bổ sung.</div>}
+    <div className="flex flex-col gap-4">
+      <section className="ds-card"><div className="ds-card-body flex flex-col gap-3"><h2 className="ds-card-title">Trạng thái</h2>
+      {cfg.researchProvider === "gemini" && !cfg.keyConfigured && <div className="ds-alert ds-alert-warning">Máy chủ chưa có khoá để nghiên cứu tin tức, nên chưa dò được. Nhờ người quản lý hệ thống bổ sung.</div>}
       <div className="flex items-center gap-3">
         <input id="tr-enabled" type="checkbox" role="switch" className="relative h-6 w-11 shrink-0 cursor-pointer appearance-none rounded-full bg-stone-300 transition-colors checked:bg-storm-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-storm-600 disabled:cursor-not-allowed disabled:opacity-50 before:absolute before:left-1 before:top-1 before:h-4 before:w-4 before:rounded-full before:bg-white before:transition-transform checked:before:translate-x-5" checked={cfg.enabled} disabled={!isAdmin || saving} onChange={(e) => set("enabled", e.target.checked)} />
         <label htmlFor="tr-enabled" className="ds-label !mb-0">Bật Trend chủ động</label>
       </div>
+      </div></section>
+      <section className="ds-card"><div className="ds-card-body flex flex-col gap-3"><h2 className="ds-card-title">Trang nhận bản nháp</h2>
       <div>
-        <div className="ds-label">Trang nhận bản nháp</div>
         {!targets ? <p className="text-xs text-stone-500">Chưa tải được danh sách trang.</p> : targets.fanpages.length === 0 ? <p className="text-xs text-stone-500">Chưa có trang nào. Thêm trang ở mục Thương hiệu.</p> : (
           <div className="flex flex-col gap-1">{targets.fanpages.map((p) => (
             <div key={p.id} className="flex items-center gap-2 text-sm">
@@ -343,6 +248,8 @@ function Settings({ isAdmin, onSaved }: { isAdmin: boolean; onSaved: () => void 
         )}
         <p className="text-xs text-stone-500 mt-1">Chưa chọn trang thì chỉ tạo tóm tắt, không soạn bản nháp.</p>
       </div>
+      </div></section>
+      <section className="ds-card"><div className="ds-card-body flex flex-col gap-3"><h2 className="ds-card-title">Gửi lên Teams</h2>
       <div className="flex items-center gap-3">
         <input id="tr-teams" type="checkbox" role="switch" className="relative h-6 w-11 shrink-0 cursor-pointer appearance-none rounded-full bg-stone-300 transition-colors checked:bg-storm-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-storm-600 disabled:cursor-not-allowed disabled:opacity-50 before:absolute before:left-1 before:top-1 before:h-4 before:w-4 before:rounded-full before:bg-white before:transition-transform checked:before:translate-x-5" checked={cfg.teamsEnabled} disabled={!isAdmin || saving} onChange={(e) => set("teamsEnabled", e.target.checked)} />
         <label htmlFor="tr-teams" className="ds-label !mb-0">Gửi thẻ lên Teams</label>
@@ -363,6 +270,22 @@ function Settings({ isAdmin, onSaved }: { isAdmin: boolean; onSaved: () => void 
         <p className="text-xs text-stone-500 mt-1">Đường dẫn này ai có cũng đăng được vào kênh, đừng chia sẻ. Sau khi lưu sẽ không hiện lại được.</p>
       </div>}
 
+      {isAdmin &&           <div className="border-t border-stone-200 pt-3">
+            <label className="ds-label" htmlFor="tr-test">Gửi thử một thẻ lên Teams</label>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <select id="tr-test" className="ds-select flex-1 min-w-0" value={testItem} onChange={(e) => setTestItem(e.target.value)}>
+                <option value="">Chọn trend để gửi thử</option>{items.map((i) => <option key={i.id} value={i.id}>{i.brief?.title || i.title}{(i.decision || i.brief?.decision) !== "pursue" ? " (chưa được chọn đu)" : ""}</option>)}</select>
+              <button type="button" className="ds-btn" disabled={!testItem || testing || !cfg.webhookConfigured || !cfg.publicBaseUrl || !items.find((i) => i.id === testItem)?.drafts.some((d) => d.status === "ready") || (items.find((i) => i.id === testItem)?.decision || items.find((i) => i.id === testItem)?.brief?.decision) !== "pursue"} onClick={() => setConfirmTest(true)}>
+                {testing ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Send className="w-4 h-4" aria-hidden="true" />} Gửi thử lên Teams</button>
+            </div>
+            {!cfg.webhookConfigured && <p className="text-xs text-stone-500 mt-1">Cần lưu đường dẫn Teams trước.</p>}
+            {!cfg.publicBaseUrl && <p className="text-xs text-stone-500 mt-1">Hãy lưu cài đặt để tạo đường dẫn mở bản nháp.</p>}
+            {testItem && !items.find((i) => i.id === testItem)?.drafts.some((d) => d.status === "ready") && <p className="text-xs text-stone-500 mt-1">Trend chưa có bản nháp sẵn sàng. Hãy chọn trend khác hoặc chờ xử lý xong.</p>}
+            {testItem && (items.find((i) => i.id === testItem)?.decision || items.find((i) => i.id === testItem)?.brief?.decision) !== "pursue" && <p className="text-xs text-stone-500 mt-1">Claude chưa chọn đu trend này; chỉ gửi thử được trend đã được chọn đu.</p>}
+            {testMsg && <div role={testMsg.ok ? "status" : "alert"} className={`ds-alert mt-2 ${testMsg.ok ? "ds-alert-success" : "ds-alert-danger"}`}>{testMsg.text}</div>}
+          </div>}
+      </div></section>
+      <section className="ds-card"><div className="ds-card-body flex flex-col gap-3"><h2 className="ds-card-title">Lấy bài Facebook</h2>
       <div>
         <div className="flex items-center gap-3">
           <input id="tr-apify" type="checkbox" role="switch" className="relative h-6 w-11 shrink-0 cursor-pointer appearance-none rounded-full bg-stone-300 transition-colors checked:bg-storm-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-storm-600 disabled:cursor-not-allowed disabled:opacity-50 before:absolute before:left-1 before:top-1 before:h-4 before:w-4 before:rounded-full before:bg-white before:transition-transform checked:before:translate-x-5" checked={cfg.apifyEnabled} disabled={!isAdmin || saving} onChange={(e) => set("apifyEnabled", e.target.checked)} />
@@ -370,8 +293,10 @@ function Settings({ isAdmin, onSaved }: { isAdmin: boolean; onSaved: () => void 
         </div>
         <p className="text-xs text-stone-500 mt-1">Tốn phí Apify; chỉ lấy đúng bài Claude tìm được.</p>
       </div>
+      </div></section>
+      <section className="ds-card"><div className="ds-card-body flex flex-col gap-3"><h2 className="ds-card-title">Mức sử dụng</h2>
       <fieldset disabled={!isAdmin || saving}>
-        <legend className="ds-label">Mức sử dụng</legend>
+        <legend className="sr-only">Mức sử dụng</legend>
         {!usage && <p className="text-sm text-stone-600 mb-2">Đang chọn: Tuỳ chỉnh</p>}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           {(Object.keys(usagePresets) as UsageKey[]).map((key) => <label key={key} htmlFor={`tr-usage-${key}`} className={`cursor-pointer rounded-lg border p-3 text-sm ${usage === key ? "border-storm-600 bg-storm-50" : "border-stone-200"}`}>
@@ -395,28 +320,12 @@ function Settings({ isAdmin, onSaved }: { isAdmin: boolean; onSaved: () => void 
       </div>
 
       </details>
+      </div></section>
 
       {err && <div role="alert" className="ds-alert ds-alert-danger">{err}</div>}
       {ok && <div role="status" className="ds-alert ds-alert-success">Đã lưu cài đặt.</div>}
-      {isAdmin && (
-        <div className="flex flex-col gap-3">
-          <div className="border-t border-stone-200 pt-3">
-            <label className="ds-label" htmlFor="tr-test">Gửi thử một thẻ lên Teams</label>
-            <div className="flex flex-col sm:flex-row gap-2">
-              <select id="tr-test" className="ds-select flex-1 min-w-0" value={testItem} onChange={(e) => setTestItem(e.target.value)}>
-                <option value="">Chọn trend để gửi thử</option>{items.map((i) => <option key={i.id} value={i.id}>{i.brief?.title || i.title}</option>)}</select>
-              <button type="button" className="ds-btn" disabled={!testItem || testing || !cfg.webhookConfigured || !cfg.publicBaseUrl || !items.find((i) => i.id === testItem)?.drafts.some((d) => d.status === "ready")} onClick={() => setConfirmTest(true)}>
-                {testing ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Send className="w-4 h-4" aria-hidden="true" />} Gửi thử lên Teams</button>
-            </div>
-            {!cfg.webhookConfigured && <p className="text-xs text-stone-500 mt-1">Cần lưu đường dẫn Teams trước.</p>}
-            {!cfg.publicBaseUrl && <p className="text-xs text-stone-500 mt-1">Hãy lưu cài đặt để tạo đường dẫn mở bản nháp.</p>}
-            {testItem && !items.find((i) => i.id === testItem)?.drafts.some((d) => d.status === "ready") && <p className="text-xs text-stone-500 mt-1">Trend chưa có bản nháp sẵn sàng. Hãy chọn trend khác hoặc chờ xử lý xong.</p>}
-            {testMsg && <div role={testMsg.ok ? "status" : "alert"} className={`ds-alert mt-2 ${testMsg.ok ? "ds-alert-success" : "ds-alert-danger"}`}>{testMsg.text}</div>}
-          </div>
-          <div><button type="button" className="ds-btn ds-btn-primary" onClick={save} disabled={saving}>{saving && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />} Lưu cài đặt</button></div>
-        </div>
-      )}
+      {isAdmin && <div className="sticky bottom-0 z-10 px-4 py-3 bg-white/95 backdrop-blur border border-stone-200 flex justify-end rounded-xl shadow-sm"><button type="button" className="ds-btn ds-btn-primary w-full sm:w-auto" onClick={save} disabled={saving}>{saving && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />} Lưu cài đặt</button></div>}
       <ConfirmDialog isOpen={confirmTest} title="Gửi thử lên Teams?" message="Thẻ sẽ được đăng thật vào kênh Teams đã cấu hình và mọi người trong kênh đều thấy. Bạn chắc chắn muốn gửi?" confirmText="Gửi thử" onConfirm={send} onCancel={() => setConfirmTest(false)} />
-    </div></section>
+    </div>
   );
 }

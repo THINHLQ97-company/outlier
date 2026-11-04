@@ -15,13 +15,18 @@ export interface TrendBrief {
   provider: "gemini_search" | "claude_mcp" | "rss" | "safety";
   confidence: "sourced" | "unverified";
   claims: TrendClaim[];
-  sources: { title: string; url: string }[];
+  sources: { title: string; url: string; publisher?: string; publishedAt?: string }[];
   summary: string;
   sensitive: boolean;
   needsReview: boolean;
   label: string;
   reason?: string;
+  /** Claude editorial judgement; independent from evidence confidence. Missing = legacy → watch. */
+  decision?: TrendDecision;
+  decisionRationale?: string;
+  pageAngles?: { fanpageId?: string; pageName?: string; angle: string }[];
 }
+export type TrendDecision = "pursue" | "watch" | "skip";
 export const normalizeTrend = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/đ/g, "d").replace(/[^a-z0-9]+/g, " ").trim();
 
 /** Thà bỏ một trend mập mờ còn hơn truy tìm clip riêng tư rồi mới lọc. */

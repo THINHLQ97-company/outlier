@@ -14,6 +14,57 @@ import { TREND_DEFAULT_DIRECTION } from "./trend-structure";
 import { obtainTrendPost, facebookDeps, type FacebookCheckpoint } from "./trend-facebook";
 import { structureFetchedPost } from "./fetched-post-structure";
 import { readImage } from "./image-read";
+import { trendRefreshState, trendResearchQueue } from "./trend-claude";
+
+/** One ingress for scheduled RSS and explicit refresh; caller owns the fence. */
+async function insertTrendInput(tx: any, runId: string, input: GoogleTrendItem, awaiting = false) {
+  return tx.insert(trendWorkflowItems).values({ runId, inputKey: normalizeTrend(input.title), title: input.title, input: input as any,
+    ...(awaiting ? { status: "awaiting_research", checkpoint: "awaiting_research" } : {}) }).onConflictDoNothing().returning();
+}
+export async function refreshTrends(opts: { db?: any; config?: TrendSettings; now?: Date; owner?: string; source?: "Claude" | "chạy thử"; cooldownMs?: number; trends?: () => Promise<GoogleTrendItem[]>; dryRun?: boolean } = {}) {
+  const db = opts.db || getDb();
+  const config = opts.config || await readTrendSettings();
+  const now = opts.now || new Date();
+  const refreshKey = opts.dryRun ? "trend-rss-refresh-dry" : "trend-rss-refresh";
+  const result = async (note: string, fetched = 0, created = 0, skipped: { keyword: string; reason: string }[] = [], candidates: GoogleTrendItem[] = []) => {
+    const queue = await trendResearchQueue(db, config);
+    return { fetchedAt: queue.lastRefreshAt, fetched, created, skipped, items: queue.items, candidates, maxTrends: config.maxTrends, note };
+  };
+  if (!config.enabled) return result("Trend chủ động đang tắt; không lấy RSS.");
+  if (config.researchProvider !== "claude_mcp") return result("Nguồn nghiên cứu hiện không phải Claude; Outlier tự lấy trend theo lịch, tool này không lấy thêm.");
+  const token = randomUUID();
+  const generation = await acquireTrendLease(token, db);
+  if (!generation) return result("Đang có lượt khác chạy, thử lại sau.");
+  try {
+    const state = await trendRefreshState(db, Boolean(opts.dryRun));
+    const cooldown = opts.cooldownMs ?? Math.max(1, Number(process.env.TREND_REFRESH_COOLDOWN_MINUTES) || 30) * 60_000;
+    if (state.lastRefreshAt && now.getTime() - new Date(state.lastRefreshAt).getTime() < cooldown) return result("Đã lấy trend gần đây; dùng hàng chờ hiện có, chưa đọc RSS lại.");
+    const inputs = await (opts.trends || (() => fetchGoogleTrends("VN", 50)))();
+    const skipped: { keyword: string; reason: string }[] = [];
+    let created = 0;
+    await db.transaction(async (tx: any) => {
+      await assertTrendFence(tx, token, generation);
+      const [run] = await tx.insert(trendWorkflowRuns).values({ slot: `refresh:${randomUUID()}`, owner: opts.owner || "claude", status: "partial", maxModelCalls: config.maxModelCalls, dryRun: Boolean(opts.dryRun) }).returning();
+      const recent = await tx.select().from(trendWorkflowItems).where(gte(trendWorkflowItems.createdAt, new Date(now.getTime() - 48 * 3600_000)));
+      // Pending work remains deduped even if Claude has been absent for >48h.
+      const pending = await tx.select().from(trendWorkflowItems).where(inArray(trendWorkflowItems.status, ["awaiting_research", "researched", "pending", "error", "budget_exhausted"]));
+      const parents = await tx.select().from(trendWorkflowRuns);
+      const known = new Set([...recent, ...pending].filter((r: any) => Boolean(parents.find((p: any) => p.id === r.runId)?.dryRun) === Boolean(opts.dryRun)).map((r: any) => r.inputKey));
+      for (const input of inputs) {
+        const key = normalizeTrend(input.title);
+        if (known.has(key)) { skipped.push({ keyword: input.title, reason: "Đã có trong hàng chờ hoặc đã xử lý/bỏ qua trong 48 giờ." }); continue; }
+        // Full RSS stays visible in candidates; only maxTrends become queue items.
+        if (created >= config.maxTrends) { skipped.push({ keyword: input.title, reason: "Chưa đưa vào hàng chờ vì trần maxTrends; Claude có thể chọn và nộp qua trend_discover." }); continue; }
+        created += (await insertTrendInput(tx, run.id, input, true)).length;
+        known.add(key);
+      }
+      const marker = { token: opts.source || "Claude", expiresAt: now };
+      if (state.lastRefreshAt) await tx.update(trendWorkflowLease).set(marker).where(eq(trendWorkflowLease.key, refreshKey));
+      else await tx.insert(trendWorkflowLease).values({ key: refreshKey, ...marker });
+    });
+    return result("Chỉ là gợi ý từ RSS, không phải danh sách bắt buộc. Claude chọn sự kiện mới, có nguồn và góc phù hợp; traffic không chứng minh viral. Chưa gọi AI hoặc gửi Teams.", inputs.length, created, skipped, inputs);
+  } finally { await releaseTrendLease(token, db).catch(() => {}); }
+}
 
 const LEASE_MS = 20 * 60_000;
 export interface TrendWorkflowDeps {
@@ -42,7 +93,7 @@ export async function acquireTrendLease(token: string, db: any = getDb()) {
     .onConflictDoUpdate({ target: trendWorkflowLease.key, set: { token, generation: sql`${trendWorkflowLease.generation} + 1`, expiresAt: new Date(Date.now() + LEASE_MS) }, where: lt(trendWorkflowLease.expiresAt, new Date()) }).returning();
   return r[0]?.generation ?? null;
 }
-async function release(token: string, db: any = getDb()) { await db.update(trendWorkflowLease).set({ expiresAt: new Date(0) }).where(and(eq(trendWorkflowLease.key, "default"), eq(trendWorkflowLease.token, token))); }
+export async function releaseTrendLease(token: string, db: any = getDb()) { await db.update(trendWorkflowLease).set({ expiresAt: new Date(0) }).where(and(eq(trendWorkflowLease.key, "default"), eq(trendWorkflowLease.token, token))); }
 export async function assertTrendFence(tx: any, token: string, generation: number) {
   // Row lock serializes takeover with the critical write in this transaction.
   const rows = await tx.select().from(trendWorkflowLease).where(and(eq(trendWorkflowLease.key, "default"), eq(trendWorkflowLease.token, token), eq(trendWorkflowLease.generation, generation), gte(trendWorkflowLease.expiresAt, new Date()))).for("update");
@@ -89,10 +140,19 @@ export async function runTrendWorkflow(opts: { db?: any; config?: TrendSettings;
   const config = opts.config || await readTrendSettings();
   const db: ReturnType<typeof getDb> = opts.db || getDb();
   const now = opts.now || new Date();
-  const scheduledSlot = latestTrendSlot(now);
-  if (!opts.dryRun && (!config.enabled || !scheduledSlot)) return { ran: false, reason: config.enabled ? "Ngoài khung chạy 08:00-22:59." : "Trend chủ động đang tắt." };
+  const claude = config.researchProvider === "claude_mcp";
+  const scheduledSlot = claude ? `worker:${Math.floor(now.getTime() / (5 * 60_000))}` : latestTrendSlot(now);
   const queued = opts.queuedRunId ? (await db.select().from(trendWorkflowRuns).where(eq(trendWorkflowRuns.id, opts.queuedRunId)))[0] : null;
+  // Persisted dryRun cannot be promoted by a caller forgetting the flag.
+  opts.dryRun = Boolean(opts.dryRun || queued?.dryRun);
+  if (!opts.dryRun && (!config.enabled || !scheduledSlot)) return { ran: false, reason: config.enabled ? "Ngoài khung chạy 08:00-22:59." : "Trend chủ động đang tắt." };
   const slot = queued?.slot || (opts.dryRun ? `dry:${now.toISOString()}:${randomUUID()}` : scheduledSlot!);
+  if (claude && !opts.queuedRunId && !opts.dryRun) {
+    // Claude controls discovery: worker never reads RSS; skip empty ticks so runs are not spammed.
+    const work = await db.select().from(trendWorkflowItems).innerJoin(trendWorkflowRuns, eq(trendWorkflowItems.runId, trendWorkflowRuns.id)).where(and(inArray(trendWorkflowItems.status, ["error", "budget_exhausted", "pending", "researched", "awaiting_research"]), lt(trendWorkflowItems.attempts, 3), eq(trendWorkflowRuns.dryRun, false)));
+    const due = work.some(x => ["researched", "pending"].includes(x.trend_workflow_items.status) || ["error", "budget_exhausted"].includes(x.trend_workflow_items.status) && !(now.getTime() - new Date((x.trend_workflow_items as any).updatedAt).getTime() < 2 * 3600_000) || x.trend_workflow_items.status === "awaiting_research" && now.getTime() - new Date(x.trend_workflow_items.createdAt).getTime() >= 90 * 60_000);
+    if (!due) return { ran: false, reason: "Không có trend nào cần xử lý; Claude tự lấy trend qua trend_refresh." };
+  }
   const token = randomUUID();
   const generation = await acquireTrendLease(token, db);
   if (!generation) {
@@ -115,12 +175,12 @@ export async function runTrendWorkflow(opts: { db?: any; config?: TrendSettings;
     // A submitted item from an older slot must not wait for the next slot just
     // because this slot already finished.
     const pendingResearch = !opts.dryRun && (await db.select().from(trendWorkflowItems).innerJoin(trendWorkflowRuns, eq(trendWorkflowItems.runId, trendWorkflowRuns.id)).where(and(eq(trendWorkflowItems.status, "researched"), lt(trendWorkflowItems.attempts, 3), eq(trendWorkflowRuns.dryRun, false)))).length > 0;
-    if (run.status === "done" && !pendingResearch) return { ran: false, runId: run.id, reason: "Mốc này đã chạy." };
+    if (run.status === "done" && !pendingResearch && !claude) return { ran: false, runId: run.id, reason: "Mốc này đã chạy." };
     await db.transaction(async tx => { await fence(tx); await tx.update(trendWorkflowRuns).set({ status: "running", updatedAt: new Date() }).where(eq(trendWorkflowRuns.id, run.id)); });
     let items = await db.select().from(trendWorkflowItems).where(eq(trendWorkflowItems.runId, run.id));
-    if (!items.length) {
+    if (!items.length && (!claude || opts.dryRun)) {
       const inputs = (await deps.trends()).slice(0, config.maxTrends);
-      for (const input of inputs) await db.transaction(async tx => { await fence(tx); await tx.insert(trendWorkflowItems).values({ runId: run.id, inputKey: normalizeTrend(input.title), title: input.title, input: input as any }).onConflictDoNothing(); });
+      for (const input of inputs) await db.transaction(async tx => { await fence(tx); await insertTrendInput(tx, run.id, input); });
       items = await db.select().from(trendWorkflowItems).where(eq(trendWorkflowItems.runId, run.id));
     }
     const budget = createTrendModelBudget(config, () => db.transaction(async tx => { await fence(tx); return consumeModelCall(run.id, config, tx); }), () => fence(), deps.modelCall);
@@ -135,10 +195,12 @@ export async function runTrendWorkflow(opts: { db?: any; config?: TrendSettings;
       await fence();
       const [current] = await db.select().from(trendWorkflowItems).where(eq(trendWorkflowItems.id, item.id));
       if (current) Object.assign(item, current);
-      if (["done", "brief_only", "duplicate", "excluded"].includes(item.status)) continue;
+      if (["done", "brief_only", "duplicate", "excluded", "skipped", "watch"].includes(item.status)) continue;
       // Bị gián đoạn (crash/mất lease) thì làm tiếp; chỉ item đã lỗi mới đợi mốc sau.
       if (item.attempts >= 3 || item.lastAttemptSlot === slot && ["error", "budget_exhausted"].includes(item.status)) continue;
       if (item.status === "awaiting_research" && Date.now() - new Date(item.createdAt).getTime() < 90 * 60_000) continue;
+      // Claude mode ticks every 5 minutes; failed items keep the old ~2h retry spacing.
+      if (claude && !opts.queuedRunId && ["error", "budget_exhausted"].includes(item.status) && Date.now() - new Date((item as any).updatedAt).getTime() < 2 * 3600_000) continue;
       await db.transaction(async tx => { await fence(tx); await tx.update(trendWorkflowItems).set({ attempts: sql`${trendWorkflowItems.attempts} + 1`, lastAttemptSlot: slot }).where(eq(trendWorkflowItems.id, item.id)); });
       try { budget.assertActive(); await processItem(item, config, deps, Boolean(opts.dryRun), budget, fence, db, run.id); }
       catch (e: any) {
@@ -149,7 +211,7 @@ export async function runTrendWorkflow(opts: { db?: any; config?: TrendSettings;
     let status = "done";
     for (const runId of new Set([run.id, ...items.map(x => x.runId)])) {
       const remaining = await db.select().from(trendWorkflowItems).where(eq(trendWorkflowItems.runId, runId));
-      const state = remaining.some(x => !["done", "brief_only", "duplicate", "excluded"].includes(x.status)) ? "partial" : "done";
+      const state = remaining.some(x => !["done", "brief_only", "duplicate", "excluded", "skipped", "watch"].includes(x.status)) ? "partial" : "done";
       if (runId === run.id) status = state;
       await db.transaction(async tx => { await fence(tx); await tx.update(trendWorkflowRuns).set({ status: state, updatedAt: new Date() }).where(eq(trendWorkflowRuns.id, runId)); });
     }
@@ -159,12 +221,13 @@ export async function runTrendWorkflow(opts: { db?: any; config?: TrendSettings;
     console.error("[trend-workflow] Lượt chạy dừng:", e?.message || e);
     await db.transaction(async tx => { await assertTrendFence(tx, token, generation); await tx.update(trendWorkflowRuns).set({ status: "error", error: String(e?.message || e).slice(0, 500), updatedAt: new Date() }).where(eq(trendWorkflowRuns.slot, slot)); }).catch(() => {});
     return { ran: false, reason: e instanceof TrendLeaseLost || leaseError ? "Mất lease; lượt chạy dừng, owner mới có thể phục hồi checkpoint." : "Lượt chạy gặp lỗi; đã lưu để chạy lại an toàn." };
-  } finally { clearInterval(heartbeat); await release(token, db).catch(() => {}); }
+  } finally { clearInterval(heartbeat); await releaseTrendLease(token, db).catch(() => {}); }
 }
 async function processItem(item: typeof trendWorkflowItems.$inferSelect, config: TrendSettings, deps: TrendWorkflowDeps, dryRun: boolean, budget: ReturnType<typeof createTrendModelBudget>, fence: (tx?: any) => Promise<void>, db: ReturnType<typeof getDb>, activeRunId: string) {
   const write = async (fn: (tx: any) => Promise<any>) => db.transaction(async tx => { await fence(tx); return fn(tx); });
   // Ingress may have saved research since this worker loaded its item list.
   const [fresh] = await db.select().from(trendWorkflowItems).where(eq(trendWorkflowItems.id, item.id));
+  if (fresh?.status === "skipped") return; // Claude declined before fallback won the row lock.
   let brief = (fresh?.brief || item.brief) as TrendBrief | null;
   if (!brief) {
     if (config.researchProvider === "claude_mcp") {
@@ -179,12 +242,20 @@ async function processItem(item: typeof trendWorkflowItems.$inferSelect, config:
     brief = await write(async tx => {
       const [current] = await tx.select().from(trendWorkflowItems).where(eq(trendWorkflowItems.id, item.id)).for("update");
       // Claude may have won the race while RSS/model research was in flight.
+      if (current?.status === "skipped") return null;
       if (current?.brief) return current.brief as TrendBrief;
       await tx.update(trendWorkflowItems).set({ brief: brief as any, eventKey: eventFingerprint(brief!), checkpoint: "researched", status: "researched", updatedAt: new Date() }).where(eq(trendWorkflowItems.id, item.id));
       return brief!;
     });
   }
+  if (!brief) return;
   if (brief.sensitive || sensitiveTrend(item.title)) return write(tx => tx.update(trendWorkflowItems).set({ contentPath: "brief_only", facebookReason: "Trend nhạy cảm: không lấy bài, ảnh hoặc đọc chữ trong ảnh.", status: "excluded", checkpoint: "excluded", updatedAt: new Date() }).where(eq(trendWorkflowItems.id, item.id)));
+  // Claude is the editor: evidence (sourced) is not a decision. Only explicit pursue spends Apify/model/Teams.
+  { // Every provider, fallback, retry and dry-run requires the same editorial gate.
+    const decision = brief.decision || "watch";
+    if (decision !== "pursue") return write(tx => tx.update(trendWorkflowItems).set({ status: decision === "skip" ? "skipped" : "watch", checkpoint: decision === "skip" ? "skipped" : "watch",
+      error: decision === "skip" ? `Claude bỏ qua: ${brief!.decisionRationale || "không nêu lý do"}` : null, updatedAt: new Date() }).where(eq(trendWorkflowItems.id, item.id)));
+  }
   // Dry-run không báo Teams nên cũng không được chặn lượt thật sau đó vì trùng.
   const recent = await db.select().from(trendWorkflowItems).innerJoin(trendWorkflowRuns, eq(trendWorkflowItems.runId, trendWorkflowRuns.id))
     .where(and(gte(trendWorkflowItems.createdAt, new Date(Date.now() - 48 * 3600_000)), inArray(trendWorkflowItems.status, ["done", "brief_only"]), eq(trendWorkflowRuns.dryRun, false))).orderBy(desc(trendWorkflowItems.createdAt)).limit(100);
@@ -258,6 +329,7 @@ async function processItem(item: typeof trendWorkflowItems.$inferSelect, config:
 /** Persist before dispatch so status survives request/proxy lifetime. */
 export async function queueTrendDryRun(owner: string) {
   const config = await readTrendSettings();
+  if (config.researchProvider === "claude_mcp") return { ...await refreshTrends({ config, owner, source: "chạy thử", dryRun: true }), runId: null, status: "refreshed" };
   const [run] = await getDb().insert(trendWorkflowRuns).values({ slot: `dry:${randomUUID()}`, dryRun: true, owner, status: "pending", maxModelCalls: config.maxModelCalls }).returning();
   setImmediate(() => void runTrendWorkflow({ reason: "admin chạy thử", dryRun: true, owner, queuedRunId: run.id }).catch(e => console.error("[trend-workflow] dry-run:", e?.message)));
   return { runId: run.id, status: "pending" };
@@ -271,7 +343,7 @@ let timer: NodeJS.Timeout | null = null;
 async function tick(reason: string) {
   try {
     const config = await readTrendSettings();
-    if (config.enabled && latestTrendSlot(new Date())) await runTrendWorkflow({ reason });
+    if (config.enabled && (config.researchProvider === "claude_mcp" || latestTrendSlot(new Date()))) await runTrendWorkflow({ reason });
     await drainTrendOutbox();
   } catch (e: any) { console.warn("[trend-workflow] Bỏ qua lượt kiểm tra:", e?.message || e); }
   finally { timer = setTimeout(() => void tick("theo lịch 2 giờ"), 5 * 60_000); timer.unref?.(); }

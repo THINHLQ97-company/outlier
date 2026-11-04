@@ -79,10 +79,40 @@ const CORE_CHARACTER_NAMES = new Set(CHARACTERS.map((c) => c.name));
 
 const READONLY_TOOLS = new Set(["trend_queue", "trend_status", "access_check", "character_image_get", "styles_list", "style_brand_material", "daily_brief", "signals_list", "signals_get", "rubric_get", "characters_list", "brands_list", "brand_profile_get", "brand_brief", "radar_jobs_list", "radar_results", "deconstruct_get", "remake_get", "channels_list", "channel_items", "video_frames", "video_projects_list", "video_get"]);
 
+const TREND_SOURCE_SCHEMA = { type: "array", maxItems: 30, items: { type: "object", properties: {
+  url: { type: "string" }, title: { type: "string", maxLength: 300 }, publisher: { type: "string", maxLength: 120 }, publishedAt: { type: "string", maxLength: 40 },
+}, required: ["url"], additionalProperties: false } };
+const TREND_RESEARCH_PROPERTIES = {
+  summary: { type: "string", maxLength: 6000 }, confidence: { type: "string", enum: ["sourced", "unverified"] }, suggestedAngle: { type: "string", maxLength: 1500 },
+  claims: { type: "array", maxItems: 12, items: { type: "object", properties: { text: { type: "string" }, urls: { type: "array", maxItems: 6, items: { type: "string" } } }, required: ["text", "urls"], additionalProperties: false } },
+  facebookCandidates: { type: "array", maxItems: 5, items: { type: "object", properties: { url: { type: "string" }, reason: { type: "string" } }, required: ["url", "reason"], additionalProperties: false } },
+  sources: TREND_SOURCE_SCHEMA,
+  decision: { type: "string", enum: ["pursue", "watch", "skip"], description: "Quyết định biên tập của Claude, KHÔNG suy từ confidence. pursue = đáng làm, Outlier dựng nháp; watch = theo dõi, không nháp (mặc định nếu bỏ trống); skip = bỏ." },
+  rationale: { type: "string", maxLength: 1500, description: "Bắt buộc với pursue/skip: tính mới, bằng chứng cộng đồng hưởng ứng, vì sao hợp/không hợp trang." },
+  pageAngles: { type: "array", maxItems: 8, items: { type: "object", properties: { fanpageId: { type: "string" }, pageName: { type: "string", maxLength: 120 }, angle: { type: "string", maxLength: 500 } }, required: ["angle"], additionalProperties: false }, description: "Góc nội dung cho từng trang; pursue cần pageAngles hoặc suggestedAngle." },
+};
 const TOOLS = [
   {
+    name: "trend_refresh",
+    description: "Claude điều khiển: lấy Google Trends RSS VN mới (không gọi AI) về hàng chờ, dedupe 48h, cooldown 30 phút. Trả cả candidates RSS để tham khảo, không phải danh sách bắt buộc. Traffic không chứng minh viral; hãy săn thêm sự kiện từ web/news/Facebook công khai, dùng trend_discover cho nguồn ngoài Trends. Không có góc phù hợp thì trend_skip, không ép đủ quota.",
+    annotations: { title: "Lấy gợi ý trend mới", readOnlyHint: false },
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "trend_discover",
+    description: "Nộp sự kiện Claude tự phát hiện ngoài hàng chờ/Google Trends: title, summary, claims URL thật, decision (pursue|watch|skip) + rationale + pageAngles/suggestedAngle và link bài Facebook cụ thể nếu có. Chỉ chọn sự kiện mới, có bằng chứng cộng đồng hưởng ứng và góc hợp từng page; không tuyên bố viral từ traffic, không ép đủ quota. sources bổ sung tiêu đề bài thật/publisher/ngày YYYY-MM-DD hoặc ISO nếu biết, không bịa; url phải khớp claims. Dedupe sự kiện 48h, trần maxTrends discovery mỗi 30 phút. Nhạy cảm/private identity: bỏ qua, không tìm clip. Không dùng Apify search.",
+    annotations: { title: "Nộp trend Claude tự tìm", readOnlyHint: false },
+    inputSchema: { type: "object", properties: { title: { type: "string", maxLength: 300 }, keyword: { type: "string", maxLength: 200 }, ...TREND_RESEARCH_PROPERTIES }, required: ["title", "summary", "claims"], additionalProperties: false },
+  },
+  {
+    name: "trend_skip",
+    description: "Bỏ qua item đang chờ nghiên cứu kèm reason: không mới, thiếu bằng chứng cộng đồng hoặc không có góc phù hợp từng page. Không tạo bản nháp/Teams. Chỉ dedupe có hạn 48 giờ, không blacklist chủ đề vĩnh viễn.",
+    annotations: { title: "Bỏ qua trend không phù hợp", readOnlyHint: false },
+    inputSchema: { type: "object", properties: { item_id: { type: "string" }, reason: { type: "string", maxLength: 500 } }, required: ["item_id", "reason"], additionalProperties: false },
+  },
+  {
     name: "trend_queue",
-    description: "Đọc các trend đang chờ Claude nghiên cứu do lịch Outlier tạo. Tự tìm web/tin tức thật rồi gọi trend_submit_research. Không dùng Apify tìm bài. Trend nhạy cảm: không tìm footage, không nêu danh tính, chỉ góc trung tính.",
+    description: "Đọc các trend đang chờ Claude nghiên cứu. Nếu chưa lấy lần nào hãy gọi trend_refresh; hàng đợi chỉ là gợi ý, không bắt buộc xử lý tất cả. Tự tìm web/tin tức thật rồi gọi trend_submit_research. Không dùng Apify tìm bài. Trend nhạy cảm: không tìm footage, không nêu danh tính, chỉ góc trung tính.",
     annotations: { title: "Trend chờ Claude nghiên cứu", readOnlyHint: true },
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
@@ -94,14 +124,11 @@ const TOOLS = [
   },
   {
     name: "trend_submit_research",
-    description: "Claude nộp nghiên cứu có nguồn cho một item đang chờ. Server kiểm URL công khai/bài Facebook lẻ; không bảo đảm sự thật chỉ vì có URL. Thiếu nguồn: chưa xác minh. Tối đa 5 ứng viên Facebook, ưu tiên ứng viên có trong claims. Nhạy cảm: bỏ toàn bộ link Facebook. Outlier trả ngay rồi tự lấy tối đa 1 bài qua Apify (nếu được bật và đủ ngân sách), bóc cấu trúc/remake, xếp thẻ Teams vào outbox.",
+    description: "Claude nộp nghiên cứu có nguồn cho một item đang chờ. Server kiểm URL công khai/bài Facebook lẻ; không bảo đảm sự thật chỉ vì có URL. Thiếu nguồn: chưa xác minh. sources là metadata cho exact URL trong claims: title/publisher/ngày bài thật nếu biết, không bịa. Phải nêu decision: chỉ pursue (kèm rationale + góc) mới dựng nháp/Teams; có nguồn (sourced) không có nghĩa đáng làm; thiếu decision = watch. Không có góc hợp trang thì decision=skip hoặc trend_skip thay vì ép tạo nháp. Tối đa 5 ứng viên Facebook, ưu tiên ứng viên có trong claims. Nhạy cảm: bỏ toàn bộ link Facebook. Outlier trả ngay rồi tự lấy tối đa 1 bài qua Apify (nếu được bật và đủ ngân sách), bóc cấu trúc/remake, xếp thẻ Teams vào outbox.",
     annotations: { title: "Nộp nghiên cứu trend", readOnlyHint: false },
     inputSchema: {
       type: "object", properties: {
-        item_id: { type: "string" }, summary: { type: "string", maxLength: 6000 },
-        confidence: { type: "string", enum: ["sourced", "unverified"] }, suggestedAngle: { type: "string", maxLength: 1500 },
-        claims: { type: "array", maxItems: 12, items: { type: "object", properties: { text: { type: "string" }, urls: { type: "array", maxItems: 6, items: { type: "string" } } }, required: ["text", "urls"], additionalProperties: false } },
-        facebookCandidates: { type: "array", maxItems: 5, items: { type: "object", properties: { url: { type: "string" }, reason: { type: "string" } }, required: ["url", "reason"], additionalProperties: false } },
+        item_id: { type: "string" }, ...TREND_RESEARCH_PROPERTIES,
       }, required: ["item_id", "summary", "claims"], additionalProperties: false,
     },
   },
@@ -908,6 +935,9 @@ async function callTool(name: string, args: any, principal: McpPrincipal, base =
 
   const db = getDb();
 
+  if (name === "trend_refresh") return (await import("../services/trend-workflow")).refreshTrends({ owner: principal.username });
+  if (name === "trend_discover") return (await import("../services/trend-claude")).discoverTrend(args, principal.username);
+  if (name === "trend_skip") return (await import("../services/trend-claude")).skipTrend(String(args.item_id || ""), String(args.reason || ""), principal.username);
   if (name === "trend_queue") return (await import("../services/trend-claude")).trendResearchQueue();
   if (name === "trend_status") return (await import("../services/trend-claude")).trendResearchStatus(String(args.item_id || ""));
   if (name === "trend_submit_research") return (await import("../services/trend-claude")).submitTrendResearch(String(args.item_id || ""), args, principal.username);

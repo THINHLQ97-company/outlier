@@ -63,6 +63,10 @@ describe("MCP — nhóm quyền phải khớp readOnlyHint đã khai", () => {
 
   test("trend Claude: hàng chờ/trạng thái chỉ đọc, nộp nghiên cứu đòi quyền ghi", () => {
     assert.ok(readonlySet.has("trend_queue")); assert.ok(readonlySet.has("trend_status"));
+    for (const name of ["trend_refresh", "trend_discover", "trend_skip"]) {
+      assert.equal(readonlySet.has(name), false);
+      assert.equal(declared.find((t) => t.name === name)?.readOnly, false);
+    }
     assert.equal(readonlySet.has("trend_submit_research"), false);
     assert.equal(declared.find((t) => t.name === "trend_submit_research")?.readOnly, false);
   });
