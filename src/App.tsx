@@ -8,6 +8,7 @@ import Studio from "./pages/Studio";
 import Library from "./pages/Library";
 import Brands from "./pages/Brands";
 import Radar from "./pages/Radar";
+import TrendRadar from "./pages/TrendRadar";
 import Channels from "./pages/Channels";
 import AdOrders from "./pages/AdOrders";
 import Deconstruct from "./pages/Deconstruct";
@@ -38,6 +39,7 @@ function Gate() {
         <Route path="/library" element={<Library />} />
         <Route path="/brands" element={<Brands />} />
         <Route path="/radar" element={<Radar />} />
+        <Route path="/trend-radar" element={<TrendRadar />} />
         <Route path="/channels" element={<Channels />} />
         <Route path="/ad-orders" element={<AdOrders />} />
         <Route path="/deconstruct" element={<Deconstruct />} />

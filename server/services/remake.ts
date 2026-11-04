@@ -120,14 +120,12 @@ export async function writeRemake(
   structure: DeconstructedStructure,
   format: RemakeFormat,
   opts: { sourceText?: string | null; note?: string; audienceText?: string; direction?: string } = {},
+  // Cho job đặt trần từng lời gọi và cho test dùng mock, không gọi model thật.
+  generate: (prompt: string) => Promise<string> = (prompt) => generateTextGemini(prompt, { asPlainText: true }),
 ): Promise<RemakeOutcome> {
   let draft: string;
   try {
-    draft = (
-      await generateTextGemini(buildPrompt(brand, structure, format, opts.note, opts.audienceText, opts.direction), {
-        asPlainText: true,
-      })
-    ).trim();
+    draft = (await generate(buildPrompt(brand, structure, format, opts.note, opts.audienceText, opts.direction))).trim();
   } catch (e: any) {
     return {
       draft: "",

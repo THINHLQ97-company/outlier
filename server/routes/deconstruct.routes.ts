@@ -118,60 +118,12 @@ export async function runDeconstructInBackground(id: string, url: string, _allow
       }
       const post = out.post;
 
-      // Bài chữ thì phân tích phần chữ; video thì vẫn đi đường phân tích video.
-      let structure: any = null;
-      let dropped: string[] = [];
-      let warn = out.warning;
-
-      // Đọc ảnh TRƯỚC khi bóc cấu trúc: với nhiều bài, chữ nằm trong ảnh mới là
-      // nội dung chính còn caption chỉ là một dòng dẫn. Bóc mà bỏ qua ảnh là bỏ
-      // sót đúng phần hay nhất. Miễn phí (Gemini), nên luôn làm khi có ảnh.
-      let imageReading = null;
-      if (post.thumbnailUrl) {
-        const { readImage } = await import("../services/image-read");
-        imageReading = await readImage(post.thumbnailUrl);
-      }
-
-      // Gộp caption với chữ trong ảnh rồi mới bóc — nhờ vậy bài caption một dòng
-      // mà ảnh đầy chữ vẫn ra được cách triển khai.
-      const { imageReadingToText } = await import("../services/image-read");
-      const combined = [post.text || "", imageReading ? imageReadingToText(imageReading) : ""]
-        .filter((x) => x.trim())
-        .join("\n\n");
-
-      if (combined.trim().length > 40) {
-        const viaText = await deconstructFromTranscript(combined, {
-          title: post.title, durationSec: post.durationSec,
-        });
-        structure = viaText.structure;
-        dropped = viaText.dropped;
-        warn = [warn, viaText.warning].filter(Boolean).join(" · ") || undefined;
-      }
-      const hasContent = !!(structure && (structure.hook3s || structure.formula || (structure.retentionBeats || []).length));
-
+      const { structureFetchedPost } = await import("../services/fetched-post-structure");
+      const result = await structureFetchedPost(post);
       await getDb().update(deconstructions).set({
-        status: hasContent || post.text || imageReading ? "ready" : "error",
+        ...result.fields, platform, status: result.structure || post.text || result.imageReading ? "ready" : "error",
         needsPaid: false,
-        title:
-          post.text?.trim()
-            ? post.text.slice(0, 120)
-            : imageReading?.textInImage
-            ? imageReading.textInImage.slice(0, 120)
-            : null,
-        platform: platform,
-        contentKind: post.kind,
-        thumbnailUrl: post.thumbnailUrl ?? null,
-        imageReading,
-        bodyText: post.text ?? null,
-        views: post.views ?? null, likes: post.likes ?? null,
-        comments: post.comments ?? null, shares: post.shares ?? null,
-        followerCount: post.followerCount ?? null,
-        channelName: post.channelName ?? null,
-        durationSec: post.durationSec ?? null,
-        structure: hasContent ? structure : null,
-        analysisMode: "transcript",
-        analyzedBy: "apify+gemini",
-        errorMessage: [warn, ...dropped].filter(Boolean).join(" · ").slice(0, 500) || null,
+        errorMessage: [out.warning, result.warning, ...result.dropped].filter(Boolean).join(" · ").slice(0, 500) || null,
         updatedAt: new Date(),
       } as any).where(eq(deconstructions.id, id));
       return;

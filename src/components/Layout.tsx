@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   Fingerprint,
   Telescope,
+  Zap,
   Scissors,
   PenLine,
   Eye,
@@ -53,6 +54,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/channels", label: "Kênh theo dõi", icon: Eye },
       { to: "/radar", label: "Bài hay đã quét", icon: Telescope },
       { to: "/signals", label: "Xu hướng", icon: Radar },
+      { to: "/trend-radar", label: "Trend chủ động", icon: Zap },
     ],
   },
   {

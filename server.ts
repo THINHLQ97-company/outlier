@@ -6,6 +6,7 @@ import { runMigrations } from "./server/db/migrate";
 import { startMetaTokenJob } from "./server/services/meta-token-job";
 import { startChannelDailyScanJob } from "./server/services/channel-daily-scan";
 import { startFanpageAdsJob } from "./server/services/fanpage-ads-job";
+import { startTrendWorkflowJob } from "./server/services/trend-workflow";
 import { seedAll } from "./server/db/seed";
 import { isDbConfigured } from "./server/db/client";
 import { registerAuthRoutes } from "./server/routes/auth.routes";
@@ -30,6 +31,7 @@ import { registerRagRoutes } from "./server/routes/rag.routes";
 import { registerMcpOAuthRoutes } from "./server/routes/mcp-oauth.routes";
 import { registerMcpSignalsRoutes } from "./server/routes/mcp-signals.routes";
 import { registerTransferRoutes } from "./server/routes/transfer.routes";
+import { registerTrendWorkflowRoutes } from "./server/routes/trend-workflow.routes";
 
 dotenv.config();
 
@@ -138,6 +140,8 @@ async function startServer() {
 
   // Viết lại cho brand + guardrail (docs/PRD.md §4 J4)
   registerRemakeRoutes(app);
+  // Trend chủ động: brief có nguồn, bản nháp từng page và outbox Teams riêng.
+  registerTrendWorkflowRoutes(app);
 
   // Kênh theo dõi — xem đối thủ vừa đăng gì (docs/PRD.md §4 J2)
   registerChannelRoutes(app);
@@ -181,6 +185,8 @@ async function startServer() {
     startChannelDailyScanJob();
     // Mỗi giờ: bài trang nhà + bài nào đang chạy quảng cáo + đơn đặt quảng cáo.
     startFanpageAdsJob();
+    // Mỗi 2 giờ trong khung 08-22 giờ VN; thiếu cấu hình chỉ cảnh báo.
+    startTrendWorkflowJob();
   });
 }
 

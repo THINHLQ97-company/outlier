@@ -77,9 +77,34 @@ Còn một luồng cũ vẫn dùng được: signals_score chấm tin theo rubri
 // được THÊM vai mới, không được sửa những vai này.
 const CORE_CHARACTER_NAMES = new Set(CHARACTERS.map((c) => c.name));
 
-const READONLY_TOOLS = new Set(["access_check", "character_image_get", "styles_list", "style_brand_material", "daily_brief", "signals_list", "signals_get", "rubric_get", "characters_list", "brands_list", "brand_profile_get", "brand_brief", "radar_jobs_list", "radar_results", "deconstruct_get", "remake_get", "channels_list", "channel_items", "video_frames", "video_projects_list", "video_get"]);
+const READONLY_TOOLS = new Set(["trend_queue", "trend_status", "access_check", "character_image_get", "styles_list", "style_brand_material", "daily_brief", "signals_list", "signals_get", "rubric_get", "characters_list", "brands_list", "brand_profile_get", "brand_brief", "radar_jobs_list", "radar_results", "deconstruct_get", "remake_get", "channels_list", "channel_items", "video_frames", "video_projects_list", "video_get"]);
 
 const TOOLS = [
+  {
+    name: "trend_queue",
+    description: "Đọc các trend đang chờ Claude nghiên cứu do lịch Outlier tạo. Tự tìm web/tin tức thật rồi gọi trend_submit_research. Không dùng Apify tìm bài. Trend nhạy cảm: không tìm footage, không nêu danh tính, chỉ góc trung tính.",
+    annotations: { title: "Trend chờ Claude nghiên cứu", readOnlyHint: true },
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "trend_status",
+    description: "Xem trạng thái nghiên cứu, đường dựng nội dung, link bài gốc và bản nháp của một trend.",
+    annotations: { title: "Kết quả trend", readOnlyHint: true },
+    inputSchema: { type: "object", properties: { item_id: { type: "string" } }, required: ["item_id"], additionalProperties: false },
+  },
+  {
+    name: "trend_submit_research",
+    description: "Claude nộp nghiên cứu có nguồn cho một item đang chờ. Server kiểm URL công khai/bài Facebook lẻ; không bảo đảm sự thật chỉ vì có URL. Thiếu nguồn: chưa xác minh. Tối đa 5 ứng viên Facebook, ưu tiên ứng viên có trong claims. Nhạy cảm: bỏ toàn bộ link Facebook. Outlier trả ngay rồi tự lấy tối đa 1 bài qua Apify (nếu được bật và đủ ngân sách), bóc cấu trúc/remake, xếp thẻ Teams vào outbox.",
+    annotations: { title: "Nộp nghiên cứu trend", readOnlyHint: false },
+    inputSchema: {
+      type: "object", properties: {
+        item_id: { type: "string" }, summary: { type: "string", maxLength: 6000 },
+        confidence: { type: "string", enum: ["sourced", "unverified"] }, suggestedAngle: { type: "string", maxLength: 1500 },
+        claims: { type: "array", maxItems: 12, items: { type: "object", properties: { text: { type: "string" }, urls: { type: "array", maxItems: 6, items: { type: "string" } } }, required: ["text", "urls"], additionalProperties: false } },
+        facebookCandidates: { type: "array", maxItems: 5, items: { type: "object", properties: { url: { type: "string" }, reason: { type: "string" } }, required: ["url", "reason"], additionalProperties: false } },
+      }, required: ["item_id", "summary", "claims"], additionalProperties: false,
+    },
+  },
   {
     name: "access_check",
     description: "Kiểm tài khoản đang kết nối là ai và được làm gì: có quyền ghi không, tool nào chạy được, tool nào bị chặn. Gọi tool này khi một tool báo không có quyền, hoặc khi không rõ vì sao gọi tool mà không ra kết quả.",
@@ -882,6 +907,10 @@ async function callTool(name: string, args: any, principal: McpPrincipal, base =
   };
 
   const db = getDb();
+
+  if (name === "trend_queue") return (await import("../services/trend-claude")).trendResearchQueue();
+  if (name === "trend_status") return (await import("../services/trend-claude")).trendResearchStatus(String(args.item_id || ""));
+  if (name === "trend_submit_research") return (await import("../services/trend-claude")).submitTrendResearch(String(args.item_id || ""), args, principal.username);
 
   if (name === "daily_brief") {
     const { buildDailyBrief } = await import("../services/daily-brief");

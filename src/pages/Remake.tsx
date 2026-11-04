@@ -228,6 +228,11 @@ export default function Remake() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
+  useEffect(() => {
+    const id = searchParams.get("remakeId");
+    if (id) setSelectedId(id);
+  }, [searchParams]);
+
   // Điền sẵn form từ ?deconstructionId= rồi xoá tham số khỏi URL — không tự
   // gửi (khác Deconstruct với radarItemId): người dùng còn phải chọn thương
   // hiệu + dạng trước khi bấm viết.
@@ -798,6 +803,7 @@ function RemakeDetailPanel({
 
   return (
     <div className="flex flex-col gap-4">
+      {row.owner === "trend-workflow" && <div className="ds-alert ds-alert-warning">Bản nháp tự động, cần duyệt trước khi sử dụng hoặc đăng bài.</div>}
       <div className="ds-card">
       <div className="ds-card-body">
         <div className="flex items-start justify-between gap-3 flex-wrap">

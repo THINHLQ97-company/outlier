@@ -1094,3 +1094,77 @@ export const adOrders = pgTable("ad_orders", {
 }));
 
 export type AdOrderRow = typeof adOrders.$inferSelect;
+
+// Trend chủ động: checkpoint riêng để restart không tạo lại bản nháp/gửi lại thẻ.
+export const trendWorkflowRuns = pgTable("trend_workflow_runs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  slot: text("slot").notNull().unique(),
+  dryRun: boolean("dry_run").notNull().default(false),
+  owner: text("owner").notNull(),
+  status: text("status").notNull().default("pending"),
+  apifyPosts: integer("apify_posts").notNull().default(0),
+  modelCalls: integer("model_calls").notNull().default(0),
+  maxModelCalls: integer("max_model_calls").notNull(),
+  error: text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const trendWorkflowItems = pgTable("trend_workflow_items", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  runId: uuid("run_id").notNull().references(() => trendWorkflowRuns.id),
+  attempts: integer("attempts").notNull().default(0),
+  lastAttemptSlot: text("last_attempt_slot"),
+  inputKey: text("input_key").notNull(),
+  title: text("title").notNull(),
+  input: jsonb("input").$type<Record<string, any>>().notNull(),
+  eventKey: text("event_key"),
+  duplicateOf: uuid("duplicate_of"),
+  status: text("status").notNull().default("pending"),
+  checkpoint: text("checkpoint").notNull().default("pending"),
+  brief: jsonb("brief").$type<Record<string, any>>(),
+  facebook: jsonb("facebook").$type<Record<string, any>>(),
+  contentPath: text("content_path"),
+  facebookReason: text("facebook_reason"),
+  facebookSourceUrl: text("facebook_source_url"),
+  deconstructionId: uuid("deconstruction_id"),
+  error: text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({ inputUnique: uniqueIndex("trend_workflow_input_unique").on(t.runId, t.inputKey) }));
+
+export const trendWorkflowDrafts = pgTable("trend_workflow_drafts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  itemId: uuid("item_id").notNull().references(() => trendWorkflowItems.id),
+  brandId: uuid("brand_id").notNull(),
+  fanpageId: uuid("fanpage_id").notNull(),
+  remakeId: uuid("remake_id").notNull(),
+  pageName: text("page_name").notNull(),
+  angle: text("angle").notNull(),
+  status: text("status").notNull().default("pending"),
+  error: text("error"),
+}, (t) => ({ targetUnique: uniqueIndex("trend_workflow_draft_unique").on(t.itemId, t.fanpageId) }));
+
+export const trendWorkflowLease = pgTable("trend_workflow_lease", {
+  key: text("key").primaryKey(),
+  generation: integer("generation").notNull().default(1),
+  token: text("token").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});
+
+export const trendTeamsOutbox = pgTable("trend_teams_outbox", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sendingAt: timestamp("sending_at", { withTimezone: true }),
+  resolvedBy: text("resolved_by"),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  idempotencyKey: text("idempotency_key").notNull().unique(),
+  itemId: uuid("item_id").references(() => trendWorkflowItems.id),
+  destination: text("destination").notNull().default("outlier_teams"),
+  payload: jsonb("payload").$type<Record<string, any>>().notNull(),
+  status: text("status").notNull().default("pending"),
+  attempts: integer("attempts").notNull().default(0),
+  nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+  lastError: text("last_error"),
+  acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

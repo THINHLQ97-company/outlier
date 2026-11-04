@@ -83,6 +83,23 @@ export function parseTrendsRss(xml: string): GoogleTrendItem[] {
   return items;
 }
 
+export async function readLimitedRss(res: Response, maxBytes = 1024 * 1024): Promise<string> {
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("Google Trends trả body rỗng");
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    if (Number(res.headers.get("content-length")) > maxBytes) throw new Error("RSS vượt giới hạn kích thước");
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > maxBytes) throw new Error("RSS vượt giới hạn kích thước");
+      chunks.push(value);
+    }
+    return Buffer.concat(chunks).toString("utf8");
+  } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+}
 async function fetchRss(url: string, geo: string): Promise<string> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
@@ -93,7 +110,7 @@ async function fetchRss(url: string, geo: string): Promise<string> {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; Outlier/1.0)" },
     });
     if (!res.ok) throw new Error(`Google Trends trả ${res.status}`);
-    return await res.text();
+    return await readLimitedRss(res);
   } finally {
     clearTimeout(timer);
   }

@@ -85,17 +85,17 @@ export async function readImageData(img: { mimeType: string; data: string }): Pr
   return analyzeAndParse(img);
 }
 
-export async function readImage(imageUrl: string): Promise<ImageReading | null> {
+export async function readImage(imageUrl: string, analyze: typeof analyzeImageGemini = analyzeImageGemini): Promise<ImageReading | null> {
   const img = await fetchImageAsBase64(imageUrl);
   if (!img) return null;
-  return analyzeAndParse(img);
+  return analyzeAndParse(img, analyze);
 }
 
-async function analyzeAndParse(img: { mimeType: string; data: string }): Promise<ImageReading | null> {
+async function analyzeAndParse(img: { mimeType: string; data: string }, analyze: typeof analyzeImageGemini = analyzeImageGemini): Promise<ImageReading | null> {
 
   let raw: string;
   try {
-    raw = await analyzeImageGemini(PROMPT, img);
+    raw = await analyze(PROMPT, img);
   } catch {
     // Đọc ảnh hỏng không được làm hỏng cả lượt bóc cấu trúc — phần chữ vẫn dùng được.
     return null;

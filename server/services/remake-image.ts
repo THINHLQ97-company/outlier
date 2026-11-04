@@ -7,7 +7,7 @@
 // Vì sao phần "không bao giờ xuất hiện" đáng giá nhất: model vẽ rất sẵn lòng
 // thêm mặt người, logo lạ, chữ tiếng Anh vào ảnh. Một trang faceless mà ảnh có
 // mặt người là hỏng cả bài, dù nội dung đúng.
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "../db/client";
 import { brandFanpages, brands, characters, remakes, type BrandVisualIdentity, type CharacterRow, type RemakeImage } from "../db/schema";
 import { generateImageGemini } from "./gemini-direct";
@@ -24,12 +24,12 @@ function visualOf(brand: any): BrandVisualIdentity | null {
  * Ưu tiên trang chính: một thương hiệu có thể có nhiều trang với nhân vật khác
  * nhau, và vẽ lẫn nhân vật của trang khác vào còn tệ hơn không có nhân vật nào.
  */
-export async function charactersForBrand(brandId: string): Promise<CharacterRow[]> {
+export async function charactersForBrand(brandId: string, fanpageId?: string): Promise<CharacterRow[]> {
   const db = getDb();
   const pages = await db.select().from(brandFanpages).where(eq(brandFanpages.brandId, brandId));
   const primary = pages.find((p) => p.isPrimary && (p.characterIds || []).length > 0);
   const anyPage = pages.find((p) => (p.characterIds || []).length > 0);
-  const ids = ((primary || anyPage)?.characterIds || []) as string[];
+  const ids = ((fanpageId ? pages.find(p => p.id === fanpageId) : primary || anyPage)?.characterIds || []) as string[];
   if (ids.length === 0) return [];
   return db.select().from(characters).where(inArray(characters.id, ids));
 }
@@ -63,14 +63,14 @@ export interface GenerateRemakeImageResult {
  * Nguyên liệu chung cho việc đề xuất phương án và vẽ: thương hiệu, nhân vật
  * (kèm ảnh mẫu đã đánh số), và bài gốc.
  */
-async function loadImageContext(remakeId: string) {
+async function loadImageContext(remakeId: string, fanpageId?: string) {
   const db = getDb();
   const [row] = await db.select().from(remakes).where(eq(remakes.id, remakeId));
   if (!row) throw new Error("Không tìm thấy bản viết.");
   if (!row.draft?.trim()) throw new Error("Bản viết chưa có nội dung — viết xong rồi mới vẽ được.");
 
   const [brand] = await db.select().from(brands).where(eq(brands.id, row.brandId));
-  const chars = await charactersForBrand(row.brandId);
+  const chars = await charactersForBrand(row.brandId, fanpageId);
 
   // Đọc BÀI GỐC: hình thức của nó quyết định hình thức ảnh mình vẽ.
   const { deconstructions } = await import("../db/schema");
@@ -118,15 +118,15 @@ async function loadImageContext(remakeId: string) {
  * Tách khỏi việc vẽ: đề xuất là việc chữ (rẻ), vẽ mới tốn tiền. Có sẵn ba
  * phương án thì đổi sang phương án khác chỉ là một cú bấm, không chờ đề xuất lại.
  */
-export async function proposeConceptsForRemake(remakeId: string, count = 3) {
-  const ctx = await loadImageContext(remakeId);
+export async function proposeConceptsForRemake(remakeId: string, count = 3, options: { fanpageId?: string; generate?: (prompt: string) => Promise<string>; beforeSave?: (tx: any) => Promise<void> } = {}) {
+  const ctx = await loadImageContext(remakeId, options.fanpageId);
   const { proposeImageConcepts } = await import("./image-concepts");
   // Trang hay đăng thể loại gì: khuôn ảnh quen + định dạng trang tự khai. Thể
   // loại hợp trang được xếp đầu — trang sống bằng ảnh chat thì chat lên trước.
   const pageFormatHints: string[] = [];
   const v = visualOf(ctx.brand);
   if (v?.template) pageFormatHints.push(`Khuôn ảnh quen của trang: ${v.template}`);
-  const pages = await ctx.db.select().from(brandFanpages).where(eq(brandFanpages.brandId, ctx.row.brandId));
+  const pages = await ctx.db.select().from(brandFanpages).where(and(eq(brandFanpages.brandId, ctx.row.brandId), options.fanpageId ? eq(brandFanpages.id, options.fanpageId) : undefined));
   const declared = [...new Set(pages.flatMap((pg) => (pg.formats as string[]) || []))];
   if (declared.length) pageFormatHints.push(`Định dạng trang hay dùng: ${declared.join(", ")}`);
 
@@ -145,11 +145,15 @@ export async function proposeConceptsForRemake(remakeId: string, count = 3) {
       source: ctx.source,
     },
     count,
+    options.generate,
   );
-  await ctx.db
+  await ctx.db.transaction(async tx => {
+  await options.beforeSave?.(tx);
+  await tx
     .update(remakes)
     .set({ imageConceptsJson: concepts as any, updatedAt: new Date() })
     .where(eq(remakes.id, remakeId));
+  });
   return concepts;
 }
 

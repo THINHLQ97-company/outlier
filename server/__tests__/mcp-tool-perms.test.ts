@@ -60,4 +60,10 @@ describe("MCP — nhóm quyền phải khớp readOnlyHint đã khai", () => {
     assert.doesNotMatch(src, /rpcError\(id, -32000, "Cần quyền/);
     assert.match(src, /missing_permission: "signals-edit"/);
   });
+
+  test("trend Claude: hàng chờ/trạng thái chỉ đọc, nộp nghiên cứu đòi quyền ghi", () => {
+    assert.ok(readonlySet.has("trend_queue")); assert.ok(readonlySet.has("trend_status"));
+    assert.equal(readonlySet.has("trend_submit_research"), false);
+    assert.equal(declared.find((t) => t.name === "trend_submit_research")?.readOnly, false);
+  });
 });

@@ -224,6 +224,7 @@ export interface DeconstructOutcome {
 export async function deconstructFromTranscript(
   transcript: string,
   info: MediaInfo,
+  generate: (prompt: string) => Promise<string> = generateTextGemini,
 ): Promise<DeconstructOutcome> {
   const prompt =
     PROMPT_HEADER +
@@ -232,7 +233,7 @@ export async function deconstructFromTranscript(
 
   let out: string;
   try {
-    out = await generateTextGemini(prompt);
+    out = await generate(prompt);
   } catch (e: any) {
     return { structure: {}, analysisMode: "transcript", dropped: [], warning: `Không phân tích được: ${e?.message || e}` };
   }
