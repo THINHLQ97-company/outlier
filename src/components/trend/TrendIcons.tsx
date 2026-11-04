@@ -1,0 +1,18 @@
+import type { ReactNode } from 'react';
+type Props = { size?: number; className?: string };
+const icon = (drawing: ReactNode) => function TrendIcon({ size = 14, className }: Props) { return <svg viewBox="0 0 24 24" width={size} height={size} className={className} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">{drawing}</svg>; };
+export const Flame = icon(<path d="M12 2c1 4-2 5-3 8-1-1-1-2-1-3-3 2-4 5-4 8a8 8 0 0 0 16 0c0-4-3-7-5-9 0 3-1 4-2 5 0-4 0-6-1-9Z" />);
+export const Hourglass = icon(<><path d="M6 3h12M6 21h12M8 3v4c0 2 2 3 4 5-2 2-4 3-4 5v4M16 3v4c0 2-2 3-4 5 2 2 4 3 4 5v4" /></>);
+export const Eye = icon(<><path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></>);
+export const Ban = icon(<><circle cx="12" cy="12" r="9"/><path d="m6 6 12 12"/></>);
+export const List = icon(<path d="M4 6h1M9 6h11M4 12h1m4 0h11M4 18h1m4 0h11"/>);
+export const Trash = icon(<path d="M4 6h16M9 6V4h6v2M6 6l1 14h10l1-14M10 10v6m4-6v6"/>);
+export const CalendarDay = icon(<><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 9h18m-9 4v4"/></>);
+export const CalendarRange = icon(<><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 9h18m4 4h3m3 0h3m-9 4h3"/></>);
+export const CalendarAll = icon(<><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 9h18M7 15c1.5-3 3.5 3 5 0s3.5 3 5 0"/></>);
+export const Sliders = icon(<path d="M4 6h9m4 0h3M4 12h3m4 0h9M4 18h9m4 0h3M13 4v4M7 10v4m6 2v4"/>);
+export const TrendUp = icon(<path d="m3 17 6-6 4 3 7-8m-5 0h5v5"/>);
+export const Sparkle = icon(<path d="M12 2c1 6 2 7 7 8-5 1-6 2-7 8-1-6-2-7-7-8 5-1 6-2 7-8Zm7 14c.4 2 1 2.6 3 3-2 .4-2.6 1-3 3-.4-2-1-2.6-3-3 2-.4 2.6-1 3-3Z"/>);
+export const CheckBadge = icon(<><path d="m12 2 2.4 1.5 2.8-.2 1.1 2.6 2.4 1.5-.5 2.8 1.3 2.5-1.8 2.2-.3 2.8-2.7.8-1.9 2.1-2.8-.6-2.8.6-1.9-2.1-2.7-.8-.3-2.8-1.8-2.2 1.3-2.5-.5-2.8 2.4-1.5 1.1-2.6 2.8.2Z"/><path d="m8 12 2.5 2.5L16 9"/></>);
+export const QuestionCircle = icon(<><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 1.7-2.5 2-2.5 4m0 3h.01"/></>);
+export const ShieldAlert = icon(<><path d="M12 2 4 5v6c0 5 3 8 8 11 5-3 8-6 8-11V5l-8-3Z"/><path d="M12 7v6m0 3h.01"/></>);

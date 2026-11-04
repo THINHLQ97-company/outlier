@@ -89,7 +89,8 @@ const TREND_RESEARCH_PROPERTIES = {
   sources: TREND_SOURCE_SCHEMA,
   decision: { type: "string", enum: ["pursue", "watch", "skip"], description: "Quyết định biên tập của Claude, KHÔNG suy từ confidence. pursue = đáng làm, Outlier dựng nháp; watch = theo dõi, không nháp (mặc định nếu bỏ trống); skip = bỏ." },
   rationale: { type: "string", maxLength: 1500, description: "Bắt buộc với pursue/skip: tính mới, bằng chứng cộng đồng hưởng ứng, vì sao hợp/không hợp trang." },
-  pageAngles: { type: "array", maxItems: 8, items: { type: "object", properties: { fanpageId: { type: "string" }, pageName: { type: "string", maxLength: 120 }, angle: { type: "string", maxLength: 500 } }, required: ["angle"], additionalProperties: false }, description: "Góc nội dung cho từng trang; pursue cần pageAngles hoặc suggestedAngle." },
+  pageAngles: { type: "array", maxItems: 8, items: { type: "object", properties: { fanpageId: { type: "string" }, pageName: { type: "string", maxLength: 120 }, angle: { type: "string", maxLength: 500 } }, required: ["angle"], additionalProperties: false }, description: "Góc nội dung cho từng trang: mỗi trang một phần tử, angle ngắn gọn, các ý cách nhau bằng dấu chấm phẩy; pursue cần pageAngles hoặc suggestedAngle (ưu tiên pageAngles, đừng gộp mọi trang vào một chuỗi suggestedAngle)." },
+  avoid: { type: "array", maxItems: 6, items: { type: "string", maxLength: 300 }, description: "Những điều cần tránh (tối đa 6 ý, mỗi ý một câu ngắn) — tách riêng, không nhét vào angle." },
 };
 const TOOLS = [
   {

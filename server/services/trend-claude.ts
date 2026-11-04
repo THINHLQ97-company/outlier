@@ -22,6 +22,7 @@ export interface ClaudeResearchInput {
   /** Editorial call: sourced evidence alone never means worth pursuing. */
   decision?: "pursue" | "watch" | "skip"; rationale?: string;
   pageAngles?: { fanpageId?: string; pageName?: string; angle: string }[];
+  avoid?: string[];
 }
 const DECISIONS = ["pursue", "watch", "skip"] as const;
 /** Validates the explicit decision; legacy submissions without it become watch (no draft/Teams). */
@@ -38,7 +39,8 @@ export function editorialDecision(input: ClaudeResearchInput) {
     return [{ angle, ...(fanpageId ? { fanpageId } : {}), ...(pageName ? { pageName } : {}) }];
   });
   if (decision === "pursue" && !pageAngles.length && !text(input.suggestedAngle, 1500)) throw new Error("decision=pursue cần ít nhất một góc nội dung (pageAngles hoặc suggestedAngle).");
-  return { decision, decisionRationale: rationale, pageAngles };
+  const avoid = (Array.isArray(input.avoid) ? input.avoid : []).flatMap(x => { const t = text(x, 300); return t ? [t] : []; }).slice(0, 6);
+  return { decision, decisionRationale: rationale, pageAngles, ...(avoid.length ? { avoid } : {}) };
 }
 const text = (v: unknown, max: number) => typeof v === "string" && v.trim() ? v.trim().slice(0, max) : undefined;
 function sourceDate(v: unknown) {

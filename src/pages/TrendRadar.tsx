@@ -6,6 +6,7 @@ import DateRangeFilter, { inDateRange, rangeDescription } from "../components/tr
 import type { DateRange } from "../components/trend/DateRangeFilter";
 import TrendCardView, { isTargetError, trendGroup } from "../components/trend/TrendCardView";
 import type { TrendGroup } from "../components/trend/TrendCardView";
+import * as I from "../components/trend/TrendIcons";
 import * as api from "../services/trend-workflow";
 import type { TrendItem, TrendSettings, TrendStatus, TrendTargets, TrendCard } from "../services/trend-workflow";
 
@@ -39,6 +40,8 @@ export default function TrendRadar({ settingsPage = false }: { settingsPage?: bo
   const [resolving, setResolving] = useState(false);
   const [resolveMsg, setResolveMsg] = useState<string | null>(null);
 
+  const [targetList, setTargetList] = useState<TrendTargets | null>(null);
+  useEffect(() => { api.getTargets().then(setTargetList).catch(() => {}); }, []);
   async function load() {
     try {
       const [s, t] = await Promise.all([api.getStatus(), api.getTrends()]);
@@ -75,7 +78,8 @@ export default function TrendRadar({ settingsPage = false }: { settingsPage?: bo
     if (loading || settingsPage || !linkedId) return;
     document.getElementById(`trend-${linkedId}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [loading, items, linkedId, settingsPage]);
-  const tabs: { key: TrendGroup | "all"; label: string }[] = [{ key: "worth", label: "Đáng làm" }, { key: "processing", label: "Đang xử lý" }, { key: "watch", label: "Chờ đánh giá / Theo dõi" }, { key: "skipped", label: "Đã bỏ qua" }, { key: "all", label: "Tất cả" }];
+  const tabs: { key: TrendGroup | "all"; label: string; icon: React.ReactNode }[] = [{ key: "worth", label: "Đáng làm", icon: <I.Flame /> }, { key: "processing", label: "Đang xử lý", icon: <I.Hourglass /> }, { key: "watch", label: "Chờ đánh giá / Theo dõi", icon: <I.Eye /> }, { key: "skipped", label: "Đã bỏ qua", icon: <I.Ban /> }, { key: "all", label: "Tất cả", icon: <I.List /> }];
+  const pages = useMemo(() => (targetList?.fanpages || []).map(p => ({ id: p.id, pageName: p.pageName })), [targetList]);
   const hasTargets = status?.settings?.hasTargets ?? status?.hasTargets;
   const missingTarget = hasTargets === false || (hasTargets == null && items.some(i => isTargetError(i.error) || isTargetError(i.facebookReason)));
   const lastRun = status?.runs.find((r) => !r.dryRun) || status?.runs[0];
@@ -166,7 +170,7 @@ export default function TrendRadar({ settingsPage = false }: { settingsPage?: bo
           {lastOutbox?.status === 'failed' && <div className="ds-alert ds-alert-warning">Thẻ gần nhất chưa gửi được lên Teams. Hãy kiểm tra phần cài đặt.</div>}
           {lastOutbox?.status === 'unknown' && <div className="ds-alert ds-alert-warning">Chưa rõ thẻ gần nhất đã lên Teams chưa. Hãy kiểm tra kênh Teams trước khi gửi lại.</div>}
         </div></section>
-        <section className="ds-card" aria-label="Bộ lọc trend"><div className="ds-card-body flex flex-col gap-4"><DateRangeFilter value={range} onChange={setRange} /><div><div className="text-sm font-semibold text-stone-700 mb-2">Trạng thái</div><div className="flex flex-wrap gap-2" aria-label="Lọc theo trạng thái">{tabs.map(tab => <button key={tab.key} type="button" className={`ds-btn ds-btn-sm ${!trash && group === tab.key ? 'ds-btn-primary' : ''}`} aria-pressed={!trash && group === tab.key} onClick={() => { setTrash(false); setGroup(tab.key); }}>{tab.label} <span>({tab.key === 'all' ? dated.length : dated.filter(i => trendGroup(i) === tab.key).length})</span></button>)}{status.canConfigure && <button type="button" className={`ds-btn ds-btn-sm ${trash ? "ds-btn-primary" : ""}`} aria-pressed={trash} onClick={() => setTrash(true)}>Thùng rác ({trashCount})</button>}</div></div></div></section>
+        <section className="ds-card" aria-label="Bộ lọc trend"><div className="ds-card-body flex flex-col gap-4"><DateRangeFilter value={range} onChange={setRange} /><div><div className="text-sm font-semibold text-stone-700 mb-2">Trạng thái</div><div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible" aria-label="Lọc theo trạng thái">{tabs.map(tab => <button key={tab.key} type="button" className={`ds-btn ds-btn-sm shrink-0 whitespace-nowrap ${!trash && group === tab.key ? 'ds-btn-primary' : ''}`} aria-pressed={!trash && group === tab.key} onClick={() => { setTrash(false); setGroup(tab.key); }}>{tab.icon}{tab.label} <span>({tab.key === 'all' ? dated.length : dated.filter(i => trendGroup(i) === tab.key).length})</span></button>)}{status.canConfigure && <button type="button" className={`ds-btn ds-btn-sm shrink-0 whitespace-nowrap ${trash ? "ds-btn-primary" : ""}`} aria-pressed={trash} onClick={() => setTrash(true)}><I.Trash />Thùng rác ({trashCount})</button>}</div></div></div></section>
         {notice && <div role="status" className="ds-alert ds-alert-success">{notice}{undo.length > 0 && <> · <button type="button" className="underline font-semibold" disabled={busy} onClick={() => void changeTrash(undo, true)}>Hoàn tác</button></>}</div>}
         {status.canConfigure && trash && <p className="ds-alert ds-alert-info">Trend trong thùng rác không hiện ở danh sách. Bản nháp đã tạo không bị xoá.</p>}
         {status.canConfigure && <div className="flex flex-wrap items-center gap-2">
@@ -175,7 +179,7 @@ export default function TrendRadar({ settingsPage = false }: { settingsPage?: bo
         </div>}
         <ConfirmDialog isOpen={!!confirmTrash} title="Chuyển vào Thùng rác?" message={`Chuyển ${confirmTrash?.length || 0} trend đã bỏ qua trong danh sách này vào Thùng rác? Bạn có thể khôi phục. Bản nháp đã tạo không bị xoá.`} confirmText="Chuyển vào Thùng rác" onConfirm={() => confirmTrash && void changeTrash(confirmTrash)} onCancel={() => setConfirmTrash(null)} />
         <section aria-label="Danh sách trend" className="flex flex-col gap-3">
-          {shown.length ? shown.map(it => <div key={it.id} id={`trend-${it.id}`} tabIndex={-1} className={it.id === linkedId ? "scroll-mt-6 rounded-xl ring-2 ring-storm-500" : ""}><TrendCardView it={it} expanded={it.id === linkedId} onCard={() => openCard(it)} canConfigure={status.canConfigure} selected={selected.has(it.id)} onSelect={() => toggle(it.id)} onTrash={() => void changeTrash([it.id], trash)} busy={busy} skippedRetentionDays={status.settings.skippedRetentionDays || 7} /></div>) : <div className="ds-card"><div className="ds-empty"><div className="ds-empty-icon"><Telescope className="w-8 h-8" aria-hidden="true" /></div><p className="ds-empty-title">{!items.length && !status.lastRefreshAt && !lastRun ? 'Claude chưa quét lần nào' : `Không có trend nào trong ${rangeDescription(range)}`}</p><p className="ds-empty-desc">{!items.length && !status.lastRefreshAt && !lastRun ? 'Hãy kiểm tra lịch Scheduled của Claude.' : 'Hãy thử chọn khoảng thời gian hoặc trạng thái khác.'}</p></div></div>}
+          {shown.length ? shown.map(it => <div key={it.id} id={`trend-${it.id}`} tabIndex={-1} className={it.id === linkedId ? "scroll-mt-6 rounded-xl ring-2 ring-storm-500" : ""}><TrendCardView it={it} expanded={it.id === linkedId} onCard={() => openCard(it)} canConfigure={status.canConfigure} selected={selected.has(it.id)} onSelect={() => toggle(it.id)} onTrash={() => void changeTrash([it.id], trash)} busy={busy} skippedRetentionDays={status.settings.skippedRetentionDays || 7} pages={pages} /></div>) : <div className="ds-card"><div className="ds-empty"><div className="ds-empty-icon"><Telescope className="w-8 h-8" aria-hidden="true" /></div><p className="ds-empty-title">{!items.length && !status.lastRefreshAt && !lastRun ? 'Claude chưa quét lần nào' : `Không có trend nào trong ${rangeDescription(range)}`}</p><p className="ds-empty-desc">{!items.length && !status.lastRefreshAt && !lastRun ? 'Hãy kiểm tra lịch Scheduled của Claude.' : 'Hãy thử chọn khoảng thời gian hoặc trạng thái khác.'}</p></div></div>}
         </section>
       </>}
 

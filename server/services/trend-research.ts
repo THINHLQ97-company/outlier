@@ -25,6 +25,8 @@ export interface TrendBrief {
   decision?: TrendDecision;
   decisionRationale?: string;
   pageAngles?: { fanpageId?: string; pageName?: string; angle: string }[];
+  /** Các điều cần tránh (tối đa 6 ý) — hiển thị ở khối "Cần tránh". */
+  avoid?: string[];
 }
 export type TrendDecision = "pursue" | "watch" | "skip";
 export const normalizeTrend = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/đ/g, "d").replace(/[^a-z0-9]+/g, " ").trim();

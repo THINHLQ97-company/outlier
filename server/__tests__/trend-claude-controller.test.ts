@@ -255,3 +255,9 @@ test("send-test: item không pursue → DECISION_REQUIRED; item chạy thử →
   const send = src.slice(src.indexOf('"/api/trend-workflow/trends/:id/send-test"'));
   assert.ok(send.indexOf("trendSendDecisionGuard") > 0 && send.indexOf("trendSendDecisionGuard") < send.indexOf("trendTeamsOutbox).values"));
 });
+import { editorialDecision as editorialDecisionAvoid } from "../services/trend-claude";
+test("avoid được cắt gọn: bỏ rỗng, tối đa 6 ý, mỗi ý ≤300 ký tự", () => {
+  const r: any = editorialDecisionAvoid({ summary: "s", claims: [], avoid: ["a", " ", "b", ...Array(8).fill("x".repeat(400))] } as any);
+  assert.equal(r.avoid.length, 6); assert.ok(r.avoid.every((x: string) => x.length <= 300));
+  assert.equal((editorialDecisionAvoid({ summary: "s", claims: [] } as any) as any).avoid, undefined);
+});

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import * as I from "./TrendIcons";
 
 export type DatePreset = "today" | "7" | "30" | "all" | "custom";
 export interface DateRange { preset: DatePreset; from: string; to: string }
@@ -29,9 +30,9 @@ export default function DateRangeFilter({ value, onChange }: { value: DateRange;
   const invalid = !!from && !!to && from > to;
   return <div className="flex flex-col gap-2">
     <div className="text-sm font-semibold text-stone-700">Thời gian</div>
-    <div className="flex flex-wrap gap-2" aria-label="Lọc theo thời gian">
-      {([['today', 'Hôm nay'], ['7', '7 ngày'], ['30', '30 ngày'], ['all', 'Tất cả']] as const).map(([key, label]) => <button key={key} type="button" className={`ds-btn ds-btn-sm ${value.preset === key ? 'ds-btn-primary' : ''}`} aria-pressed={value.preset === key} onClick={() => { onChange({ ...value, preset: key }); setOpen(false); }}>{label}</button>)}
-      <button type="button" className={`ds-btn ds-btn-sm ${value.preset === 'custom' ? 'ds-btn-primary' : ''}`} aria-expanded={open} aria-controls="trend-date-custom" onClick={() => setOpen(!open)}>Tuỳ chọn{value.preset === 'custom' && (value.from || value.to) ? `: ${displayDay(value.from) || '…'} – ${displayDay(value.to) || '…'}` : ''}</button>
+    <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible" aria-label="Lọc theo thời gian">
+      {([['today', 'Hôm nay', <I.CalendarDay />], ['7', '7 ngày', <I.CalendarRange />], ['30', '30 ngày', <I.CalendarRange />], ['all', 'Tất cả', <I.CalendarAll />]] as const).map(([key, label, icon]) => <button key={key} type="button" className={`ds-btn ds-btn-sm shrink-0 whitespace-nowrap ${value.preset === key ? 'ds-btn-primary' : ''}`} aria-pressed={value.preset === key} onClick={() => { onChange({ ...value, preset: key }); setOpen(false); }}>{icon}{label}</button>)}
+      <button type="button" className={`ds-btn ds-btn-sm shrink-0 whitespace-nowrap ${value.preset === 'custom' ? 'ds-btn-primary' : ''}`} aria-expanded={open} aria-controls="trend-date-custom" onClick={() => setOpen(!open)}><I.Sliders />Tuỳ chọn{value.preset === 'custom' && (value.from || value.to) ? `: ${displayDay(value.from) || '…'} – ${displayDay(value.to) || '…'}` : ''}</button>
     </div>
     {open && <div id="trend-date-custom" className="rounded-lg border border-stone-200 bg-white p-3 flex flex-col sm:flex-row sm:items-end gap-3">
       <div><label htmlFor="trend-date-from" className="ds-label">Từ ngày {from && `(${displayDay(from)})`}</label><input id="trend-date-from" className="ds-input w-full" type="date" value={from} onChange={e => setFrom(e.target.value)} aria-invalid={invalid} /></div>
