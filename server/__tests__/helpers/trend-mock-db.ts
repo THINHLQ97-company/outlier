@@ -13,6 +13,7 @@ export function mockDb(initial: Record<string, any[]> = {}) {
     if (!predicate) return true;
     const q = dialect.sqlToQuery(predicate);
     for (const m of q.sql.matchAll(/"[^"]+"\."([^"]+)" < "[^"]+"\."([^"]+)"/g)) if (!(row[camel(m[1])] < row[camel(m[2])])) return false;
+    for (const m of q.sql.matchAll(/"[^"]+"\."([^"]+)" is not null/g)) if (row[camel(m[1])] == null) return false;
     const rx = /"([^"]+)"\."([^"]+)"\s*(=|>=|<=|<|>)\s*\$(\d+)|"([^"]+)"\."([^"]+)" in \(([^)]+)\)|"([^"]+)"\."([^"]+)" is null/g;
     for (const m of q.sql.matchAll(rx)) {
       const v = row[camel(m[2] || m[6] || m[9])];
@@ -27,7 +28,7 @@ export function mockDb(initial: Record<string, any[]> = {}) {
     select: () => ({ from(table: any) {
       let predicate: any; let joined = false;
       const query: any = {
-        where(p: any) { predicate = p; return query; }, orderBy() { return query; }, limit() { return query; },
+        where(p: any) { predicate = p; return query; }, orderBy() { return query; }, limit() { return query; }, offset() { return query; },
         innerJoin() { joined = true; return query; },
         for() { return query; },
         then(resolve: any, reject: any) { return Promise.resolve().then(() => {

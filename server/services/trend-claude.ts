@@ -1,5 +1,5 @@
 import { randomUUID, createHash } from "node:crypto";
-import { and, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm";
 import { getDb } from "../db/client";
 import { trendWorkflowDrafts, trendWorkflowItems, trendWorkflowRuns, trendWorkflowLease } from "../db/schema";
 import { readTrendSettings, type TrendSettings } from "./trend-workflow-settings";
@@ -86,8 +86,8 @@ export function briefFromClaude(title: string, input: ClaudeResearchInput, sensi
 export async function trendResearchQueue(db: any = getDb(), config?: TrendSettings) {
   config ||= await readTrendSettings();
   const { lastRefreshAt } = await trendRefreshState(db);
-  const rows = await db.select().from(trendWorkflowItems).where(eq(trendWorkflowItems.status, "awaiting_research")).orderBy(desc(trendWorkflowItems.createdAt)).limit(30);
-  const processing = rows.length ? 0 : (await db.select().from(trendWorkflowItems).where(inArray(trendWorkflowItems.status, ["researched", "pending"]))).length;
+  const rows = await db.select().from(trendWorkflowItems).where(and(eq(trendWorkflowItems.status, "awaiting_research"), isNull(trendWorkflowItems.deletedAt))).orderBy(desc(trendWorkflowItems.createdAt)).limit(30);
+  const processing = rows.length ? 0 : (await db.select().from(trendWorkflowItems).where(and(inArray(trendWorkflowItems.status, ["researched", "pending"]), isNull(trendWorkflowItems.deletedAt)))).length;
   // Sự kiện đã biết được gộp trong workflow. Với từ khoá chưa nghiên cứu chỉ gộp
   // inputKey, không giả vờ biết hai từ khoá khác nhau là cùng một sự kiện.
   const seen = new Set<string>();
@@ -148,7 +148,7 @@ export async function skipTrend(itemId: string, reason: string, owner: string, d
   const why = text(reason, 500);
   if (!why) throw new Error("Cần lý do bỏ qua.");
   const rows = await db.update(trendWorkflowItems).set({ status: "skipped", checkpoint: "skipped", error: `Claude bỏ qua: ${why}`, facebookReason: null, updatedAt: new Date() })
-    .where(and(eq(trendWorkflowItems.id, itemId), eq(trendWorkflowItems.status, "awaiting_research"))).returning();
+    .where(and(eq(trendWorkflowItems.id, itemId), eq(trendWorkflowItems.status, "awaiting_research"), isNull(trendWorkflowItems.deletedAt))).returning();
   if (!rows.length) throw new Error("Item không còn chờ nghiên cứu; không bỏ qua được.");
   return { itemId, status: "skipped", skippedBy: owner, reason: why, message: `Đã bỏ qua. trend_refresh không đưa lại từ khoá này vào hàng chờ trong 48 giờ kể từ lúc lấy (không chặn vĩnh viễn); sự kiện mới vẫn nộp được qua trend_discover.` };
 }
@@ -159,7 +159,7 @@ export async function submitTrendResearch(itemId: string, input: ClaudeResearchI
   // Row lock serializes duplicate submissions and the worker's RSS fallback.
   const run = await db.transaction(async (tx: any) => {
     const [item] = await tx.select().from(trendWorkflowItems).where(eq(trendWorkflowItems.id, itemId)).for("update");
-    if (!item) throw new Error("Không tìm thấy item.");
+    if (!item || item.deletedAt) throw new Error("Không tìm thấy item.");
     const evidence = briefFromClaude(item.title, input, sensitiveTrend([item.title, ...(item.input?.news || []).map((n: any) => n.title)].join(" ")));
     const editorial = editorialDecision(input);
     // Sensitive stays on the safety path (worker excludes it); otherwise status follows Claude's call.
@@ -189,7 +189,7 @@ function dispatchResearchRun(run: { id: string; dryRun: boolean }) {
 }
 export async function trendResearchStatus(itemId: string, db: any = getDb()) {
   const [item] = await db.select().from(trendWorkflowItems).where(eq(trendWorkflowItems.id, itemId));
-  if (!item) throw new Error("Không tìm thấy item.");
+  if (!item || item.deletedAt) throw new Error("Không tìm thấy item.");
   const drafts = await db.select().from(trendWorkflowDrafts).where(eq(trendWorkflowDrafts.itemId, itemId));
   const { facebook, input, ...publicItem } = item;
   const skipped = item.status === "skipped";

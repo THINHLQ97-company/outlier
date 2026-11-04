@@ -16,7 +16,7 @@ const user = (o: any) => ({ username: "u", role: "admin", isActive: true, email:
 function setup(rows: any[]) {
   const db: any = { select: () => ({ from: () => {
     let list: any[] = [];
-    const q: any = { where(p: any) { const name = dialect.sqlToQuery(p).params[0]; list = rows.filter(r => r.username === name); return q; }, orderBy: () => q, limit: () => q, then: (r: any, j: any) => Promise.resolve(list).then(r, j) };
+    const q: any = { where(p: any) { const name = dialect.sqlToQuery(p).params[0]; list = rows.filter(r => r.username === name); return q; }, orderBy: () => q, limit: () => q, offset: () => q, then: (r: any, j: any) => Promise.resolve(list).then(r, j) };
     return q;
   } }) };
   const app = express();
@@ -25,11 +25,11 @@ function setup(rows: any[]) {
   return app;
 }
 // Chạy toàn bộ chuỗi middleware; "reached" = tới handler cuối (kết quả sau đó không quan trọng).
-async function call(app: any, method: string, path: string, username: string, body: any = {}) {
+async function call(app: any, method: string, path: string, username: string, body: any = {}, query: any = {}) {
   const layer = app._router.stack.find((r: any) => r.route?.path === path && r.route.methods[method]);
   const result: any = {}; let reached = false;
   const res: any = { status(n: number) { result.status = n; return res; }, json(x: any) { result.body = x; return res; } };
-  const req: any = { body, params: { id: "x" }, headers: { authorization: `Bearer ${token(username)}` }, query: {} };
+  const req: any = { body, params: { id: "x" }, headers: { authorization: `Bearer ${token(username)}` }, query };
   const stack = layer.route.stack;
   for (let i = 0; i < stack.length; i++) {
     let advanced = false;
@@ -39,7 +39,7 @@ async function call(app: any, method: string, path: string, username: string, bo
   }
   return { ...result, reached };
 }
-const guarded: [string, string][] = [["put", "/api/trend-workflow/settings"], ["get", "/api/trend-workflow/settings"], ["post", "/api/trend-workflow/run"], ["post", "/api/trend-workflow/trends/:id/send-test"], ["post", "/api/trend-workflow/outbox/:id/resolve"]];
+const guarded: [string, string][] = [["post", "/api/trend-workflow/trends/delete"], ["post", "/api/trend-workflow/trends/restore"], ["put", "/api/trend-workflow/settings"], ["get", "/api/trend-workflow/settings"], ["post", "/api/trend-workflow/run"], ["post", "/api/trend-workflow/trends/:id/send-test"], ["post", "/api/trend-workflow/outbox/:id/resolve"]];
 const withEnv = async (v: string | undefined, fn: () => Promise<void>) => {
   const old = process.env.TREND_WORKFLOW_ADMIN_EMAILS;
   if (v === undefined) delete process.env.TREND_WORKFLOW_ADMIN_EMAILS; else process.env.TREND_WORKFLOW_ADMIN_EMAILS = v;
@@ -78,5 +78,7 @@ test("username trùng chuỗi email nhưng email khác, hoặc không có email 
 test("người thường vẫn xem được danh sách trend (không qua kiểm quyền)", () => withEnv(undefined, async () => {
   const app = setup([user({ role: "member", email: "m@x.com" })]);
   const r = await call(app, "get", "/api/trend-workflow/trends", "u");
-  assert.equal(r.status, undefined); assert.deepEqual(r.body, { items: [] });
+  assert.equal(r.status, undefined); assert.deepEqual(r.body, { total: 0, trashTotal: 0, items: [] });
+  const trash = await call(app, "get", "/api/trend-workflow/trends", "u", {}, { trash: "1" });
+  assert.equal(trash.status, 403);
 }));

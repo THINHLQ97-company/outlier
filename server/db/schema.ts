@@ -1111,6 +1111,9 @@ export const trendWorkflowRuns = pgTable("trend_workflow_runs", {
 });
 
 export const trendWorkflowItems = pgTable("trend_workflow_items", {
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  deletedBy: text("deleted_by"),
+  deleteReason: text("delete_reason").$type<"manual" | "auto_skipped" | "auto_stale">(),
   id: uuid("id").primaryKey().defaultRandom(),
   runId: uuid("run_id").notNull().references(() => trendWorkflowRuns.id),
   attempts: integer("attempts").notNull().default(0),

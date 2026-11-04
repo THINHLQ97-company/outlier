@@ -1,6 +1,6 @@
 # Hợp đồng API Trend chủ động
 
-Mọi endpoint cần đăng nhập. `PUT settings`, `POST run`, `POST send-test`, `POST outbox/:id/resolve` chỉ admin; quyền admin kiểm lại trong DB. Lỗi có `{ code, error }`. Mặc định workflow và gửi Teams tắt. Webhook riêng Outlier, không dùng ReportApp.
+Mọi endpoint cần đăng nhập. `PUT settings`, `POST run`, `POST send-test`, `POST outbox/:id/resolve`, xoá/khôi phục và đọc Thùng rác chỉ người quản trị tính năng; quyền admin kiểm lại trong DB. Lỗi có `{ code, error }`. Mặc định workflow và gửi Teams tắt. Webhook riêng Outlier, không dùng ReportApp.
 
 ## Cài đặt và trạng thái
 - `GET /api/trend-workflow/settings`: `{ enabled, teamsEnabled, targets:[{brandId,fanpageId}], provider:"gemini_search"|"rss", model, maxTrends, maxModelCalls, maxModelCallsDaily, maxOutputTokens, modelTimeoutMs, publicBaseUrl, webhookConfigured, keyConfigured, apifyEnabled:false, schedule }`. Không trả URL webhook.
@@ -10,7 +10,7 @@ Mọi endpoint cần đăng nhập. `PUT settings`, `POST run`, `POST send-test`
 - `GET /api/trend-workflow/targets`: `{ brands:[{id,name}], fanpages:[{id,brandId,pageName,platform,pageUrl}] }`.
 
 ## Trend và bản nháp
-- `GET /api/trend-workflow/trends?limit=30`: `{items:[]}`; item gồm `id,title,status,checkpoint,eventKey,duplicateOf,brief,error,deconstructionId,attempts,lastAttemptSlot,drafts[]`.
+- `GET /api/trend-workflow/trends?limit=30`: `{items:[],total,trashTotal}` (mặc định bỏ item đã xoá); item gồm `id,title,status,checkpoint,eventKey,duplicateOf,brief,error,deconstructionId,attempts,lastAttemptSlot,drafts[]`.
 - `brief`: `{ title, traffic, provider, confidence:"sourced"|"unverified", claims:[{text,urls}], sources:[{url,title,publisher?,publishedAt?}], summary, sensitive, needsReview, label, reason, decision?, decisionRationale?, pageAngles? }`.
 - `drafts[]`: `{ remakeId, brandId, fanpageId, pageName, angle, status, href:"/remakes?remakeId=<id>" }`. Frontend đọc `remakeId`, gọi `GET /api/remakes/:id` và mở đúng bản viết.
 - Item: `awaiting_research`, `pending`, `researched`, `watch`, `skipped`, `brief_only`, `done`, `duplicate`, `excluded`, `error`, `budget_exhausted`.
@@ -55,7 +55,7 @@ Envelope không đổi: `{ type:"message", attachments:[{ contentType:"applicati
 - Gửi thử Teams cũng cần `brief.decision = "pursue"`; thiếu thì `409 DECISION_REQUIRED` (cần Claude đánh giá lại). Item thuộc run thử bị chặn `409 DRY_RUN_ONLY`, kể cả owner.
 - Lỗi: `CONFIRM_REQUIRED`, `BASE_URL_REQUIRED` (409), `RATE_LIMITED` (429), `DRAFT_REQUIRED` (409), `WEBHOOK_NOT_CONFIGURED`, `SENSITIVE_TREND`, `BRIEF_NOT_FOUND`, `INVALID_ID`.
 - Tối đa **3 yêu cầu gửi thử/gửi lại mỗi phút mỗi người**, DB-backed, dùng chung nhiều replica và giữ qua restart. Yêu cầu hợp lệ về confirm có thể tiêu quota dù bị từ chối ở bước kiểm tra item/webhook sau đó. Idempotency key dùng lại không gửi lại một outbox đã claim/accepted/unknown.
-- Outbox: `pending`, `sending`, `retry`, `accepted`, `failed`, `unknown`, `resolved`. Claim bằng CAS nên hai worker không cùng gửi một outbox. HTTP 429/5xx retry tối đa 5 attempts, exponential backoff 30 giây đến 1 giờ; lỗi mạng/timeout là `unknown`, không tự retry. `accepted` chỉ nghĩa Teams đã nhận, không xác nhận đã hiển thị.
+- Outbox: `pending`, `sending`, `retry`, `accepted`, `failed`, `unknown`, `resolved`, `cancelled`. Claim bằng CAS nên hai worker không cùng gửi một outbox. HTTP 429/5xx retry tối đa 5 attempts, exponential backoff 30 giây đến 1 giờ; lỗi mạng/timeout là `unknown`, không tự retry. `accepted` chỉ nghĩa Teams đã nhận, không xác nhận đã hiển thị.
 - `sending` quá **2 phút** hoặc bản ghi cũ không có `sendingAt` được chuyển `unknown` khi drain/status. Admin phải kiểm tra Teams.
 - `POST /api/trend-workflow/outbox/:id/resolve`: `{ "action":"resolved", "confirm":true }` để xác nhận đã kiểm tra/xử lý; hoặc `{ "action":"resend", "confirm":true, "acknowledgeDuplicateRisk":true }` để gửi lại có chủ đích. Chỉ nhận outbox `unknown`; nếu không: `409 OUTBOX_NOT_UNKNOWN`. Lưu `resolvedBy/resolvedAt`. Gửi lại có thể trùng, cần quota và URL Outlier; không tự xử lý `unknown`.
 
@@ -132,3 +132,23 @@ Sau khi nộp, Outlier chọn tối đa 1 link và chỉ gọi `fetchPostViaApif
 Trang xem `/trend-radar` dành cho người đã đăng nhập; nút Cài đặt dẫn tới `/trend-radar/settings` chỉ xuất hiện khi `canConfigure` trong status là true. Vào trực tiếp trang cài đặt khi không có quyền sẽ thấy thông báo từ chối.
 
 Các endpoint `GET /settings`, `PUT /settings`, `POST /run`, `POST /trends/:id/send-test`, `POST /outbox/:id/resolve` chỉ cho phép user đang hoạt động, có role admin và email trong bảng users thuộc danh sách `TREND_WORKFLOW_ADMIN_EMAILS` (phân tách bằng dấu phẩy, không phân biệt hoa thường, bỏ khoảng trắng). Khi biến trống, mặc định chỉ có `lamquangthinh3006@gmail.com`. Tài khoản không có email trong bảng users, kể cả tài khoản mật khẩu, không có quyền; username không thay thế email. Status chỉ trả trạng thái bật, lần dò và cờ quyền, không trả cấu hình đầy đủ. Webhook luôn chỉ ghi, không trả URL. Quyền MCP không thay đổi.
+
+## Thùng rác và tự dọn (xoá mềm, từ 2026-11-04)
+
+Chỉ có **xoá mềm**: không endpoint, job hay nút nào xoá vĩnh viễn trend item, bản nháp, remake hay deconstruction. Mọi thao tác "xoá" chỉ chuyển item vào Thùng rác và khôi phục được.
+
+- Migration **0044_grey_hulk** (chỉ thêm cột, không đổi dữ liệu cũ) trên `trend_workflow_items`: `deleted_at timestamptz` (null = chưa xoá), `deleted_by text` (username hoặc `system`), `delete_reason text` (`manual` | `auto_skipped` | `auto_stale`). Rollback: deploy lại code trước bản này; cột có thể giữ nguyên (code cũ bỏ qua). Nếu cần bỏ cột thì xoá mềm mất hiệu lực và item trong Thùng rác hiện lại.
+- `POST /api/trend-workflow/trends/delete` body `{ ids: string[] }` (1–200 UUID, trùng được gộp) → `{ count }` số item vừa chuyển. Item đã ở Thùng rác không tính lại. Outbox Teams `pending`/`retry`/`sending` chưa gửi của item chuyển `cancelled` (không xoá dòng).
+- `POST /api/trend-workflow/trends/restore` body `{ ids }` → `{ count }`. Khôi phục **không** bật lại outbox đã huỷ.
+- Hai endpoint trên và `GET /api/trend-workflow/trends?trash=1` chỉ cho người quản trị tính năng (cùng điều kiện các endpoint cài đặt); user thường `403`. Lỗi `400 INVALID_IDS`.
+- `GET /api/trend-workflow/trends` thêm `total`, `trashTotal` (0 với user thường) và mặc định bỏ item đã xoá; `?trash=1` trả item đã xoá, sắp theo `deletedAt` mới nhất. Hỗ trợ `limit` (1–100) và `offset` (mặc định 0); UI đọc các trang để không bỏ sót trend cũ khi chọn nhiều. Item kèm `deletedAt`, `deletedBy`, `deleteReason`. `GET /trends/:id/card` của item đã xoá trả 404. `GET /status` thêm `settings.skippedRetentionDays` để giao diện ghi lý do.
+- MCP: `trend_queue`, `trend_status`, `trend_skip`, `trend_submit_research` bỏ qua item đã xoá. **Dedupe 48 giờ của `trend_refresh`/`trend_discover` vẫn tính item đã xoá**, nên trend vừa xoá không bị kéo lại ngay.
+- Worker: không chọn item đã xoá (không Apify, model, nháp, outbox). Item bị xoá giữa chừng: mỗi bước ghi của item (fence trong transaction) khoá dòng item và kiểm `deleted_at`; đã xoá thì dừng item đó, không ghi deconstruction/remake/draft/outbox, không đánh lỗi. Model call đã chạy dở vẫn có thể tốn phí nhưng kết quả không được lưu. Drain outbox khoá dòng item trước khi gửi; item đã xoá thì outbox thành `cancelled`.
+- Bản nháp remake đã tạo giữ nguyên, vẫn mở được qua `/remakes?remakeId=`.
+
+### Tự dọn vào Thùng rác
+Chạy trong tick nền 5 phút nhưng có cổng theo giờ (`trend_workflow_lease` key `trend-cleanup`), nên tối đa **1 lượt/giờ** dù nhiều replica; tối đa **200 item/lượt**; lỗi tự dọn không chặn workflow. Chạy cả khi Trend chủ động tắt (chỉ phụ thuộc `autoCleanup`).
+- `auto_skipped`: `status` ∈ `skipped`/`excluded`/`duplicate` (decision=skip luôn được lưu thành `skipped`) và `updatedAt` cũ hơn `skippedRetentionDays`.
+- `auto_stale`: không có bản nháp, `createdAt` cũ hơn `staleRetentionDays`, và không đang xử lý: `watch`/`skipped`/`excluded`/`duplicate`/`done`/`brief_only`, hoặc `awaiting_research`/`error`/`budget_exhausted` đã hết lượt thử (`attempts ≥ 3`). `pending`/`researched` không bao giờ tự dọn.
+- Item có bất kỳ dòng `trend_workflow_drafts` nào **không** tự dọn.
+- Cài đặt (`GET/PUT /settings`): `autoCleanup` (mặc định `true`), `skippedRetentionDays` (mặc định 7, nguyên 1–90), `staleRetentionDays` (mặc định 30, nguyên 7–365). Ngoài khoảng/không phải số nguyên → `400 INVALID_RETENTION`.

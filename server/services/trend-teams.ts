@@ -1,6 +1,6 @@
 import { and, eq, inArray, lte, sql, isNull } from "drizzle-orm";
 import { getDb } from "../db/client";
-import { trendTeamsOutbox } from "../db/schema";
+import { trendTeamsOutbox, trendWorkflowItems } from "../db/schema";
 import { teamsWebhook, validateTeamsWebhook, readTrendSettings } from "./trend-workflow-settings";
 import type { TrendBrief } from "./trend-research";
 
@@ -130,14 +130,27 @@ export async function drainTrendOutbox(post: typeof fetch = fetch, onlyId?: stri
     onlyId ? eq(trendTeamsOutbox.id, onlyId) : undefined,
   )).limit(10);
   for (const row of candidates) {
+    // Claim commits separately: a crash during delivery must leave sending/unknown,
+    // never a rolled-back pending row that would automatically be sent twice.
     const [claimed] = await db.update(trendTeamsOutbox).set({ status: "sending", sendingAt: new Date(), attempts: sql`${trendTeamsOutbox.attempts} + 1` })
       .where(and(eq(trendTeamsOutbox.id, row.id), eq(trendTeamsOutbox.status, row.status))).returning();
     if (!claimed) continue;
-    const out = await deliverTrendCard(webhook, claimed.payload, post);
-    const status = out.status === "retry" && claimed.attempts >= 5 ? "failed" : out.status;
-    await db.update(trendTeamsOutbox).set({ status, lastError: out.error,
-      nextAttemptAt: new Date(Date.now() + retryDelay(claimed.attempts)), acceptedAt: status === "accepted" ? new Date() : null,
-    }).where(and(eq(trendTeamsOutbox.id, row.id), eq(trendTeamsOutbox.status, "sending")));
+    await db.transaction(async (tx: any) => {
+      // Lock item before outbox (same order as trash). Delete either commits first
+      // (cancel), or only commits after POST. Transaction bounds <= webhook timeout.
+      const [item] = row.itemId ? await tx.select().from(trendWorkflowItems).where(eq(trendWorkflowItems.id, row.itemId)).for("update") : [];
+      if (row.itemId && (!item || item.deletedAt)) {
+        await tx.update(trendTeamsOutbox).set({ status: "cancelled", lastError: "Trend đã chuyển vào Thùng rác; không gửi Teams." }).where(and(eq(trendTeamsOutbox.id, row.id), eq(trendTeamsOutbox.status, "sending")));
+        return;
+      }
+      const [current] = await tx.select().from(trendTeamsOutbox).where(eq(trendTeamsOutbox.id, row.id));
+      if (current?.status !== "sending") return; // trash followed by restore must not resurrect a claimed delivery
+      const out = await deliverTrendCard(webhook, claimed.payload, post);
+      const status = out.status === "retry" && claimed.attempts >= 5 ? "failed" : out.status;
+      await tx.update(trendTeamsOutbox).set({ status, lastError: out.error,
+        nextAttemptAt: new Date(Date.now() + retryDelay(claimed.attempts)), acceptedAt: status === "accepted" ? new Date() : null,
+      }).where(and(eq(trendTeamsOutbox.id, row.id), eq(trendTeamsOutbox.status, "sending")));
+    });
   }
 }
 

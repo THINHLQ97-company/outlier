@@ -4,6 +4,7 @@ import { sourceUrl } from "./trend-research";
 
 export interface TrendTarget { brandId: string; fanpageId: string }
 export interface TrendSettings {
+  autoCleanup: boolean; skippedRetentionDays: number; staleRetentionDays: number;
   researchProvider: "claude_mcp" | "gemini" | "off";
   apifyEnabled: boolean; maxFacebookPostsPerTrend: number; maxApifyPosts: number; maxApifyPostsDaily: number;
   enabled: boolean; teamsEnabled: boolean; targets: TrendTarget[];
@@ -23,7 +24,7 @@ export function publicBaseUrl(raw: unknown): string {
   } catch { return ""; }
 }
 export function normalizeSettings(raw: any = {}): TrendSettings {
-  return { researchProvider: raw.researchProvider === "gemini" ? "gemini" : raw.researchProvider === "off" ? "off" : "claude_mcp",
+  return { autoCleanup: raw.autoCleanup !== false, skippedRetentionDays: retention(raw.skippedRetentionDays, 7, 1, 90), staleRetentionDays: retention(raw.staleRetentionDays, 30, 7, 365), researchProvider: raw.researchProvider === "gemini" ? "gemini" : raw.researchProvider === "off" ? "off" : "claude_mcp",
     apifyEnabled: raw.apifyEnabled === true, maxFacebookPostsPerTrend: int(raw.maxFacebookPostsPerTrend, 1, 1),
     maxApifyPosts: int(raw.maxApifyPosts, 3, 10), maxApifyPostsDaily: int(raw.maxApifyPostsDaily, 10, 50),
     enabled: raw.enabled === true, teamsEnabled: raw.teamsEnabled === true,
@@ -49,7 +50,9 @@ export async function readTrendSettings(): Promise<TrendSettings> {
   const all = await allSettings();
   let raw = {};
   try { raw = JSON.parse(all[CONFIG_KEY] || "{}"); } catch { /* cấu hình hỏng: dùng mặc định an toàn */ }
-  const config = normalizeSettings(raw);
+  // Stored config is trusted less than PUT input: a bad retention value falls back to defaults instead of breaking the feature.
+  let config: TrendSettings;
+  try { config = normalizeSettings(raw); } catch { config = normalizeSettings({ ...raw, skippedRetentionDays: undefined, staleRetentionDays: undefined }); }
   if (/^(off|false|0)$/i.test(process.env.TREND_WORKFLOW_ENABLED || "")) config.enabled = false;
   return config;
 }
@@ -71,4 +74,10 @@ export async function saveTrendSettings(config: TrendSettings, owner: string, we
 }
 export async function publicTrendSettings() {
   return { ...await readTrendSettings(), webhookConfigured: Boolean(await teamsWebhook()), keyConfigured: Boolean(process.env.GEMINI_API_KEY), schedule: "08,10,12,14,16,18,20,22 Asia/Ho_Chi_Minh" };
+}
+
+function retention(value: unknown, fallback: number, min: number, max: number) {
+  if (value === undefined) return fallback;
+  if (!Number.isInteger(value) || Number(value) < min || Number(value) > max) throw new Error("Số ngày lưu trend không hợp lệ.");
+  return Number(value);
 }

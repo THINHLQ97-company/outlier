@@ -16,6 +16,15 @@ export default function TrendRadar({ settingsPage = false }: { settingsPage?: bo
   const [searchParams] = useSearchParams();
   const linkedId = searchParams.get("item");
   const [items, setItems] = useState<TrendItem[]>([]);
+  const [trashItems, setTrashItems] = useState<TrendItem[]>([]);
+  const [trashCount, setTrashCount] = useState(0);
+  const [trash, setTrash] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [confirmTrash, setConfirmTrash] = useState<string[] | null>(null);
+  const [undo, setUndo] = useState<string[]>([]);
+  const [notice, setNotice] = useState("");
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [status, setStatus] = useState<TrendStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -33,15 +42,35 @@ export default function TrendRadar({ settingsPage = false }: { settingsPage?: bo
   async function load() {
     try {
       const [s, t] = await Promise.all([api.getStatus(), api.getTrends()]);
-      setStatus(s); setItems(t.items); setError(null);
+      setStatus(s); setItems(t.items); setTrashCount(t.trashTotal || 0); setError(null);
+      if (s.canConfigure) { const removed = await api.getTrash(); setTrashItems(removed.items); setTrashCount(removed.total); }
       return s;
     } catch (e) { setError(msg(e, "Không tải được dữ liệu.")); }
     finally { setLoading(false); }
   }
-  useEffect(() => { mounted.current = true; load(); return () => { mounted.current = false; if (timer.current) clearTimeout(timer.current); }; }, []);
+  useEffect(() => { mounted.current = true; load(); return () => { mounted.current = false; if (timer.current) clearTimeout(timer.current); if (undoTimer.current) clearTimeout(undoTimer.current); }; }, []);
 
+  useEffect(() => { setSelected(new Set()); }, [trash, group, range]);
+  const toggle = (id: string) => setSelected(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  async function changeTrash(ids: string[], restore = false) {
+    if (busy || !ids.length) return;
+    setBusy(true); setError(null); setConfirmTrash(null);
+    try {
+      const count = restore ? await api.restoreTrends(ids) : await api.trashTrends(ids);
+      setSelected(new Set());
+      if (undoTimer.current) clearTimeout(undoTimer.current);
+      setUndo(restore ? [] : ids);
+      setNotice(restore ? `Đã khôi phục ${count} trend.` : "Đã chuyển vào Thùng rác");
+      undoTimer.current = setTimeout(() => { setUndo([]); setNotice(""); }, 8000);
+      // Hide changed cards before reloading (the request itself is not optimistic).
+      if (restore) setTrashItems(prev => prev.filter(i => !ids.includes(i.id)));
+      else setItems(prev => prev.filter(i => !ids.includes(i.id)));
+      await load();
+    } catch (e) { setError(msg(e, "Chưa thực hiện được. Hãy tải lại danh sách rồi thử lại.")); await load(); }
+    finally { setBusy(false); }
+  }
   const dated = useMemo(() => items.filter(i => i.id === linkedId || inDateRange(i.createdAt, range)), [items, range, linkedId]);
-  const shown = group === "all" ? dated : dated.filter(i => i.id === linkedId || trendGroup(i) === group);
+  const shown = trash ? trashItems : group === "all" ? dated : dated.filter(i => i.id === linkedId || trendGroup(i) === group);
   useEffect(() => {
     if (loading || settingsPage || !linkedId) return;
     document.getElementById(`trend-${linkedId}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -137,9 +166,16 @@ export default function TrendRadar({ settingsPage = false }: { settingsPage?: bo
           {lastOutbox?.status === 'failed' && <div className="ds-alert ds-alert-warning">Thẻ gần nhất chưa gửi được lên Teams. Hãy kiểm tra phần cài đặt.</div>}
           {lastOutbox?.status === 'unknown' && <div className="ds-alert ds-alert-warning">Chưa rõ thẻ gần nhất đã lên Teams chưa. Hãy kiểm tra kênh Teams trước khi gửi lại.</div>}
         </div></section>
-        <section className="ds-card" aria-label="Bộ lọc trend"><div className="ds-card-body flex flex-col gap-4"><DateRangeFilter value={range} onChange={setRange} /><div><div className="text-sm font-semibold text-stone-700 mb-2">Trạng thái</div><div className="flex flex-wrap gap-2" aria-label="Lọc theo trạng thái">{tabs.map(tab => <button key={tab.key} type="button" className={`ds-btn ds-btn-sm ${group === tab.key ? 'ds-btn-primary' : ''}`} aria-pressed={group === tab.key} onClick={() => setGroup(tab.key)}>{tab.label} <span>({tab.key === 'all' ? dated.length : dated.filter(i => trendGroup(i) === tab.key).length})</span></button>)}</div></div></div></section>
+        <section className="ds-card" aria-label="Bộ lọc trend"><div className="ds-card-body flex flex-col gap-4"><DateRangeFilter value={range} onChange={setRange} /><div><div className="text-sm font-semibold text-stone-700 mb-2">Trạng thái</div><div className="flex flex-wrap gap-2" aria-label="Lọc theo trạng thái">{tabs.map(tab => <button key={tab.key} type="button" className={`ds-btn ds-btn-sm ${!trash && group === tab.key ? 'ds-btn-primary' : ''}`} aria-pressed={!trash && group === tab.key} onClick={() => { setTrash(false); setGroup(tab.key); }}>{tab.label} <span>({tab.key === 'all' ? dated.length : dated.filter(i => trendGroup(i) === tab.key).length})</span></button>)}{status.canConfigure && <button type="button" className={`ds-btn ds-btn-sm ${trash ? "ds-btn-primary" : ""}`} aria-pressed={trash} onClick={() => setTrash(true)}>Thùng rác ({trashCount})</button>}</div></div></div></section>
+        {notice && <div role="status" className="ds-alert ds-alert-success">{notice}{undo.length > 0 && <> · <button type="button" className="underline font-semibold" disabled={busy} onClick={() => void changeTrash(undo, true)}>Hoàn tác</button></>}</div>}
+        {status.canConfigure && trash && <p className="ds-alert ds-alert-info">Trend trong thùng rác không hiện ở danh sách. Bản nháp đã tạo không bị xoá.</p>}
+        {status.canConfigure && <div className="flex flex-wrap items-center gap-2">
+          {selected.size > 0 && <><span className="text-sm">Đã chọn {selected.size}</span><button type="button" className="ds-btn ds-btn-sm" disabled={busy} onClick={() => void changeTrash([...selected], trash)}>{trash ? "Khôi phục" : "Chuyển vào thùng rác"}</button><button type="button" className="ds-btn ds-btn-sm" onClick={() => setSelected(new Set())}>Bỏ chọn</button></>}
+          {!trash && group === "skipped" && shown.length > 0 && <button type="button" className="ds-btn ds-btn-sm" disabled={busy} onClick={() => setConfirmTrash(shown.map(i => i.id))}>Chuyển tất cả vào thùng rác</button>}
+        </div>}
+        <ConfirmDialog isOpen={!!confirmTrash} title="Chuyển vào Thùng rác?" message={`Chuyển ${confirmTrash?.length || 0} trend đã bỏ qua trong danh sách này vào Thùng rác? Bạn có thể khôi phục. Bản nháp đã tạo không bị xoá.`} confirmText="Chuyển vào Thùng rác" onConfirm={() => confirmTrash && void changeTrash(confirmTrash)} onCancel={() => setConfirmTrash(null)} />
         <section aria-label="Danh sách trend" className="flex flex-col gap-3">
-          {shown.length ? shown.map(it => <div key={it.id} id={`trend-${it.id}`} tabIndex={-1} className={it.id === linkedId ? "scroll-mt-6 rounded-xl ring-2 ring-storm-500" : ""}><TrendCardView it={it} expanded={it.id === linkedId} onCard={() => openCard(it)} /></div>) : <div className="ds-card"><div className="ds-empty"><div className="ds-empty-icon"><Telescope className="w-8 h-8" aria-hidden="true" /></div><p className="ds-empty-title">{!items.length && !status.lastRefreshAt && !lastRun ? 'Claude chưa quét lần nào' : `Không có trend nào trong ${rangeDescription(range)}`}</p><p className="ds-empty-desc">{!items.length && !status.lastRefreshAt && !lastRun ? 'Hãy kiểm tra lịch Scheduled của Claude.' : 'Hãy thử chọn khoảng thời gian hoặc trạng thái khác.'}</p></div></div>}
+          {shown.length ? shown.map(it => <div key={it.id} id={`trend-${it.id}`} tabIndex={-1} className={it.id === linkedId ? "scroll-mt-6 rounded-xl ring-2 ring-storm-500" : ""}><TrendCardView it={it} expanded={it.id === linkedId} onCard={() => openCard(it)} canConfigure={status.canConfigure} selected={selected.has(it.id)} onSelect={() => toggle(it.id)} onTrash={() => void changeTrash([it.id], trash)} busy={busy} skippedRetentionDays={status.settings.skippedRetentionDays || 7} /></div>) : <div className="ds-card"><div className="ds-empty"><div className="ds-empty-icon"><Telescope className="w-8 h-8" aria-hidden="true" /></div><p className="ds-empty-title">{!items.length && !status.lastRefreshAt && !lastRun ? 'Claude chưa quét lần nào' : `Không có trend nào trong ${rangeDescription(range)}`}</p><p className="ds-empty-desc">{!items.length && !status.lastRefreshAt && !lastRun ? 'Hãy kiểm tra lịch Scheduled của Claude.' : 'Hãy thử chọn khoảng thời gian hoặc trạng thái khác.'}</p></div></div>}
         </section>
       </>}
 
@@ -202,7 +238,7 @@ function Settings({ isAdmin, onSaved }: { isAdmin: boolean; onSaved: () => void 
   if (!cfg) return err ? <div role="alert" className="ds-alert ds-alert-danger">{err}</div> : null;
 
   const set = <K extends keyof TrendSettings>(k: K, v: TrendSettings[K]) => setCfg({ ...cfg, [k]: v });
-  const num = (id: string, label: string, k: "maxFacebookPostsPerTrend" | "maxApifyPosts" | "maxApifyPostsDaily" | "maxTrends" | "maxModelCalls" | "maxModelCallsDaily" | "maxOutputTokens" | "modelTimeoutMs", hint: string, min: number, max: number) => (
+  const num = (id: string, label: string, k: "skippedRetentionDays" | "staleRetentionDays" | "maxFacebookPostsPerTrend" | "maxApifyPosts" | "maxApifyPostsDaily" | "maxTrends" | "maxModelCalls" | "maxModelCallsDaily" | "maxOutputTokens" | "modelTimeoutMs", hint: string, min: number, max: number) => (
     <div><label className="ds-label" htmlFor={id}>{label}</label>
       <input id={id} type="number" min={min} max={max} step={1} className="ds-input w-full" value={cfg[k]} disabled={!isAdmin || saving} onChange={(e) => set(k, Number(e.target.value))} />
       <p className="text-[11px] text-stone-500 mt-0.5">{hint}</p></div>
@@ -212,12 +248,12 @@ function Settings({ isAdmin, onSaved }: { isAdmin: boolean; onSaved: () => void 
 
   async function save() {
     if (!cfg) return;
-    const limits = [[cfg.maxFacebookPostsPerTrend, 0, 1], [cfg.maxApifyPosts, 0, 10], [cfg.maxApifyPostsDaily, 0, 50], [cfg.maxTrends, 0, 10], [cfg.maxModelCalls, 0, 50], [cfg.maxModelCallsDaily, 0, 200], [cfg.maxOutputTokens, 0, 4096], [cfg.modelTimeoutMs, 1000, 90000]];
+    const limits = [[cfg.skippedRetentionDays, 1, 90], [cfg.staleRetentionDays, 7, 365], [cfg.maxFacebookPostsPerTrend, 0, 1], [cfg.maxApifyPosts, 0, 10], [cfg.maxApifyPostsDaily, 0, 50], [cfg.maxTrends, 0, 10], [cfg.maxModelCalls, 0, 50], [cfg.maxModelCallsDaily, 0, 200], [cfg.maxOutputTokens, 0, 4096], [cfg.modelTimeoutMs, 1000, 90000]];
     if (limits.some(([v, min, max]) => !Number.isInteger(v) || v < min || v > max)) { setErr("Hãy nhập số nguyên trong giới hạn ghi bên dưới mỗi ô."); return; }
     setSaving(true); setErr(null); setOk(false);
     try {
       const body: Partial<TrendSettings> & { teamsWebhookUrl?: string } = {
-        researchProvider: cfg.researchProvider, apifyEnabled: cfg.apifyEnabled, maxFacebookPostsPerTrend: cfg.maxFacebookPostsPerTrend, maxApifyPosts: cfg.maxApifyPosts, maxApifyPostsDaily: cfg.maxApifyPostsDaily,
+        autoCleanup: cfg.autoCleanup, skippedRetentionDays: cfg.skippedRetentionDays, staleRetentionDays: cfg.staleRetentionDays, researchProvider: cfg.researchProvider, apifyEnabled: cfg.apifyEnabled, maxFacebookPostsPerTrend: cfg.maxFacebookPostsPerTrend, maxApifyPosts: cfg.maxApifyPosts, maxApifyPostsDaily: cfg.maxApifyPostsDaily,
         enabled: cfg.enabled, teamsEnabled: cfg.teamsEnabled, targets: cfg.targets, publicBaseUrl: cfg.publicBaseUrl || window.location.origin,
         maxTrends: cfg.maxTrends, maxModelCalls: cfg.maxModelCalls, maxModelCallsDaily: cfg.maxModelCallsDaily, maxOutputTokens: cfg.maxOutputTokens, modelTimeoutMs: cfg.modelTimeoutMs,
       };
@@ -243,6 +279,14 @@ function Settings({ isAdmin, onSaved }: { isAdmin: boolean; onSaved: () => void 
         <input id="tr-enabled" type="checkbox" role="switch" className="relative h-6 w-11 shrink-0 cursor-pointer appearance-none rounded-full bg-stone-300 transition-colors checked:bg-storm-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-storm-600 disabled:cursor-not-allowed disabled:opacity-50 before:absolute before:left-1 before:top-1 before:h-4 before:w-4 before:rounded-full before:bg-white before:transition-transform checked:before:translate-x-5" checked={cfg.enabled} disabled={!isAdmin || saving} onChange={(e) => set("enabled", e.target.checked)} />
         <label htmlFor="tr-enabled" className="ds-label !mb-0">Bật Trend chủ động</label>
       </div>
+      </div></section>
+      <section className="ds-card"><div className="ds-card-body flex flex-col gap-3"><h2 className="ds-card-title">Tự dọn trend cũ</h2>
+        <div className="flex gap-3 items-center"><input id="tr-auto-cleanup" type="checkbox" role="switch" className="relative h-6 w-11 shrink-0 cursor-pointer appearance-none rounded-full bg-stone-300 transition-colors checked:bg-storm-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-storm-600 disabled:cursor-not-allowed disabled:opacity-50 before:absolute before:left-1 before:top-1 before:h-4 before:w-4 before:rounded-full before:bg-white before:transition-transform checked:before:translate-x-5" checked={cfg.autoCleanup} disabled={!isAdmin || saving} onChange={e => set("autoCleanup", e.target.checked)} /><label htmlFor="tr-auto-cleanup" className="ds-label !mb-0">Tự chuyển trend cũ vào Thùng rác</label></div>
+        <p className="text-sm text-stone-600">Mỗi giờ, hệ thống chuyển trend đã bỏ qua quá số ngày bên dưới vào Thùng rác. Trend cũ không có bản nháp cũng được dọn khi không còn xử lý. Không xoá vĩnh viễn; bạn luôn có thể khôi phục. Trend có bản nháp không bị tự dọn.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {num("tr-skipped-days", "Dọn trend đã bỏ qua sau (ngày)", "skippedRetentionDays", "Từ 1 đến 90 ngày, mặc định 7 ngày.", 1, 90)}
+          {num("tr-stale-days", "Dọn trend cũ chưa có bản nháp sau (ngày)", "staleRetentionDays", "Từ 7 đến 365 ngày, mặc định 30 ngày.", 7, 365)}
+        </div>
       </div></section>
       <section className="ds-card"><div className="ds-card-body flex flex-col gap-3"><h2 className="ds-card-title">Trang nhận bản nháp</h2>
       <div>

@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, isNotNull } from "drizzle-orm";
 import { requireAuth as defaultAuth, requireAdmin as defaultAdmin, getAuthUser } from "../auth-mw";
 import { getDb as getDefaultDb, isDbConfigured as isDefaultDbConfigured } from "../db/client";
 import { brands, brandFanpages, trendWorkflowRuns, trendWorkflowItems, trendWorkflowDrafts, trendTeamsOutbox, users } from "../db/schema";
@@ -7,6 +7,7 @@ import { normalizeSettings, publicTrendSettings, readTrendSettings, saveTrendSet
 import { queueTrendDryRun as defaultQueue, lastTrendSlot } from "../services/trend-workflow";
 import { trendRefreshState } from "../services/trend-claude";
 import { buildTrendCard, drainTrendOutbox, recoverStaleTrendOutbox, reserveTrendSendTest, resolveTrendOutbox } from "../services/trend-teams";
+import { trashTrends, restoreTrends } from "../services/trend-trash";
 import type { TrendBrief } from "../services/trend-research";
 /** Safe derived fields; never expose raw input. Skip reason is stored in error without a new migration. */
 export function trendItemPublicFields(r: { status: string; error: string | null; input: unknown; brief?: unknown }) {
@@ -59,11 +60,13 @@ export function registerTrendWorkflowRoutes(app: Express, overrides: Partial<{ d
     const outbox = await getDb().select({ id: trendTeamsOutbox.id, status: trendTeamsOutbox.status, attempts: trendTeamsOutbox.attempts, lastError: trendTeamsOutbox.lastError, acceptedAt: trendTeamsOutbox.acceptedAt, nextAttemptAt: trendTeamsOutbox.nextAttemptAt }).from(trendTeamsOutbox).orderBy(desc(trendTeamsOutbox.createdAt)).limit(30);
     const settings = await publicTrendSettings();
     const refresh = await trendRefreshState(getDb());
-    res.json({ canConfigure: allowed, settings: { enabled: settings.enabled, researchProvider: settings.researchProvider, hasTargets: settings.targets.length > 0 }, lastRefreshAt: refresh.lastRefreshAt, refreshedBy: refresh.refreshedBy, lastSlot: await lastTrendSlot(), runs: runs.map(r => ({ id: r.id, status: r.status, error: r.error, createdAt: r.createdAt, dryRun: r.dryRun })), outbox: allowed ? outbox : [] });
+    res.json({ canConfigure: allowed, settings: { skippedRetentionDays: settings.skippedRetentionDays, enabled: settings.enabled, researchProvider: settings.researchProvider, hasTargets: settings.targets.length > 0 }, lastRefreshAt: refresh.lastRefreshAt, refreshedBy: refresh.refreshedBy, lastSlot: await lastTrendSlot(), runs: runs.map(r => ({ id: r.id, status: r.status, error: r.error, createdAt: r.createdAt, dryRun: r.dryRun })), outbox: allowed ? outbox : [] });
   }));
   app.get("/api/trend-workflow/settings", requireAuth, requireTrendOwner, route(async (_req, res) => res.json(await publicTrendSettings())));
   app.put("/api/trend-workflow/settings", requireAuth, requireTrendOwner, route(async (req, res) => {
-    const config = withPublicBaseFallback(normalizeSettings({ ...await readTrendSettings(), ...req.body }), req);
+    let config;
+    try { config = withPublicBaseFallback(normalizeSettings({ ...await readTrendSettings(), ...req.body }), req); }
+    catch { return res.status(400).json({ code: "INVALID_RETENTION", error: "Ngày lưu trend phải là số nguyên: đã bỏ qua 1–90 ngày, trend cũ 7–365 ngày." }); }
     const pages = await getDb().select({ id: brandFanpages.id, brandId: brandFanpages.brandId }).from(brandFanpages);
     if (config.targets.some(t => !UUID.test(t.brandId) || !UUID.test(t.fanpageId) || !pages.some(p => p.id === t.fanpageId && p.brandId === t.brandId)) || new Set(config.targets.map(t => t.fanpageId)).size !== config.targets.length) {
       return res.status(400).json({ code: "INVALID_TARGET", error: "Trang đích không hợp lệ hoặc không thuộc thương hiệu đã chọn." });
@@ -82,9 +85,21 @@ export function registerTrendWorkflowRoutes(app: Express, overrides: Partial<{ d
   }));
   app.get("/api/trend-workflow/trends", requireAuth, route(async (req, res) => {
     const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 30));
-    const rows = await getDb().select().from(trendWorkflowItems).orderBy(desc(trendWorkflowItems.createdAt)).limit(limit);
+    const offset = Math.max(0, Math.floor(Number(req.query.offset) || 0));
+    const trash = req.query.trash === "1";
+    if (trash && !await canConfigure(req)) return res.status(403).json({ error: "Chỉ người quản trị tính năng được mở Thùng rác." });
+    const rows = await getDb().select().from(trendWorkflowItems).where(trash ? isNotNull(trendWorkflowItems.deletedAt) : isNull(trendWorkflowItems.deletedAt)).orderBy(desc(trash ? trendWorkflowItems.deletedAt : trendWorkflowItems.createdAt)).limit(limit).offset(offset);
+    const total = (await getDb().select({ id: trendWorkflowItems.id }).from(trendWorkflowItems).where(trash ? isNotNull(trendWorkflowItems.deletedAt) : isNull(trendWorkflowItems.deletedAt))).length;
+    const trashTotal = trash ? total : await canConfigure(req) ? (await getDb().select({ id: trendWorkflowItems.id }).from(trendWorkflowItems).where(isNotNull(trendWorkflowItems.deletedAt))).length : 0;
     const drafts = rows.length ? await getDb().select().from(trendWorkflowDrafts).where(inArray(trendWorkflowDrafts.itemId, rows.map(r => r.id))) : [];
-    res.json({ items: rows.map(r => ({ ...r, ...trendItemPublicFields(r), facebook: undefined, input: undefined, title: (r.brief as any)?.title || r.title, drafts: drafts.filter(d => d.itemId === r.id).map(d => ({ ...d, href: `/remakes?remakeId=${d.remakeId}` })) })) });
+    res.json({ total, trashTotal, items: rows.map(r => ({ ...r, ...trendItemPublicFields(r), facebook: undefined, input: undefined, title: (r.brief as any)?.title || r.title, drafts: drafts.filter(d => d.itemId === r.id).map(d => ({ ...d, href: `/remakes?remakeId=${d.remakeId}` })) })) });
+  }));
+  for (const action of ["delete", "restore"] as const) app.post(`/api/trend-workflow/trends/${action}`, requireAuth, requireTrendOwner, route(async (req, res) => {
+    const ids = req.body?.ids;
+    if (!Array.isArray(ids) || !ids.length || ids.length > 200 || ids.some(id => typeof id !== "string" || !UUID.test(id))) return res.status(400).json({ code: "INVALID_IDS", error: "Chọn từ 1 đến 200 trend hợp lệ." });
+    const unique = [...new Set<string>(ids)];
+    const count = action === "delete" ? await trashTrends(unique, getAuthUser(req)!, getDb()) : await restoreTrends(unique, getDb());
+    res.json({ count });
   }));
   app.post("/api/trend-workflow/run", requireAuth, requireTrendOwner, route(async (req, res) => {
     if (req.body?.dryRun !== true) return res.status(400).json({ code: "DRY_RUN_REQUIRED", error: "Chạy thử bắt buộc dryRun=true; không gửi Teams." });
@@ -113,7 +128,7 @@ export function registerTrendWorkflowRoutes(app: Express, overrides: Partial<{ d
   }));
   app.get("/api/trend-workflow/trends/:id/card", requireAuth, route(async (req, res) => {
     if (!UUID.test(req.params.id)) return res.status(400).json({ code: "INVALID_ID", error: "Mã xu hướng không hợp lệ." });
-    const [row] = await getDb().select().from(trendWorkflowItems).where(eq(trendWorkflowItems.id, req.params.id));
+    const [row] = await getDb().select().from(trendWorkflowItems).where(and(eq(trendWorkflowItems.id, req.params.id), isNull(trendWorkflowItems.deletedAt)));
     if (!row?.brief) return res.status(404).json({ code: "BRIEF_NOT_FOUND", error: "Chưa có bản tóm tắt cho xu hướng này." });
     const drafts = await getDb().select().from(trendWorkflowDrafts).where(eq(trendWorkflowDrafts.itemId, row.id));
     res.json({ payload: buildTrendCard(row.brief as TrendBrief, drafts, (await readTrendSettings()).publicBaseUrl, row.id), sent: false });
@@ -126,7 +141,7 @@ export function registerTrendWorkflowRoutes(app: Express, overrides: Partial<{ d
     const config = await readTrendSettings();
     if (!await teamsWebhook()) return res.status(409).json({ code: "WEBHOOK_NOT_CONFIGURED", error: "Chưa cấu hình Workflow riêng cho Outlier." });
     if (!UUID.test(req.params.id)) return res.status(400).json({ code: "INVALID_ID", error: "Mã xu hướng không hợp lệ." });
-    const [item] = await getDb().select().from(trendWorkflowItems).where(eq(trendWorkflowItems.id, req.params.id));
+    const [item] = await getDb().select().from(trendWorkflowItems).where(and(eq(trendWorkflowItems.id, req.params.id), isNull(trendWorkflowItems.deletedAt)));
     if (!item?.brief) return res.status(404).json({ code: "BRIEF_NOT_FOUND", error: "Chưa có bản tóm tắt." });
     if (item.status === "excluded") return res.status(409).json({ code: "SENSITIVE_TREND", error: "Xu hướng nhạy cảm đã bị loại; không gửi Teams." });
     const [parentRun] = await getDb().select().from(trendWorkflowRuns).where(eq(trendWorkflowRuns.id, item.runId));
