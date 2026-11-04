@@ -21,7 +21,7 @@ import { signedFileUrl } from "../services/file-link";
 const PROTOCOL_VERSION = "2024-11-05";
 // Tên này là thứ người dùng thấy trong danh sách connector của Claude. Giữ
 // `name` cũ để client nào đã lưu cấu hình không phải nối lại.
-const SERVER_INFO = { name: "fanpage-signals", title: "Outlier — tìm viral, remake cho brand", version: "2.0.0" };
+const SERVER_IDENTITY = { name: "fanpage-signals", title: "Outlier — tìm viral, remake cho brand" };
 const RETENTION_DAYS = 14;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -135,7 +135,7 @@ const TOOLS = [
   },
   {
     name: "access_check",
-    description: "Kiểm tài khoản đang kết nối là ai và được làm gì: có quyền ghi không, tool nào chạy được, tool nào bị chặn. Gọi tool này khi một tool báo không có quyền, hoặc khi không rõ vì sao gọi tool mà không ra kết quả.",
+    description: "Kiểm tài khoản đang kết nối là ai và được làm gì: có quyền ghi không, tool nào chạy được, tool nào bị chặn. Kèm mcp_schema: phiên bản + danh sách trường input của các tool trend mà server ĐANG phục vụ. Gọi tool này khi một tool báo không có quyền, khi không rõ vì sao gọi tool mà không ra kết quả, hoặc khi schema tool bạn thấy có vẻ thiếu trường.",
     annotations: { title: "Kiểm quyền của tôi", readOnlyHint: true },
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
@@ -869,6 +869,48 @@ const TOOLS = [
   },
 ];
 
+// ── Phiên bản schema MCP ──
+// serverInfo.version trước đây ghim cứng "2.0.0" suốt nhiều lần đổi bộ tool, nên
+// khi Claude Chat hiện schema cũ thì không có gì để đối chiếu xem server đang
+// phục vụ bản nào. Giờ version = số schema (tăng tay khi đổi tool theo hướng
+// client nên nạp lại) + dấu vân tay của chính mảng TOOLS mà tools/list trả về.
+// Dấu vân tay tự đổi mỗi khi bất kỳ tool/trường nào đổi — không phụ thuộc .git
+// trong container (Vibe Host/Coolify không chắc có).
+export const MCP_SCHEMA_VERSION = "2.1.0";
+export const TOOLS_FINGERPRINT = crypto.createHash("sha256").update(JSON.stringify(TOOLS)).digest("hex").slice(0, 12);
+export const SERVER_INFO = { ...SERVER_IDENTITY, version: `${MCP_SCHEMA_VERSION}+${TOOLS_FINGERPRINT}` };
+
+// Mã bản build nếu nền tảng deploy có tiêm (Coolify: SOURCE_COMMIT). Không có thì
+// null — chỉ nhận chuỗi dạng mã commit/tag để không lỡ phản chiếu giá trị lạ.
+function buildId(): string | null {
+  for (const key of ["OUTLIER_BUILD_ID", "SOURCE_COMMIT"]) {
+    const v = String(process.env[key] || "").trim();
+    if (/^[A-Za-z0-9._-]{4,64}$/.test(v)) return v;
+  }
+  return null;
+}
+
+// Tóm tắt schema đang phục vụ, để Claude tự so với schema nó đang cầm. Chỉ tên
+// tool + tên trường input + trường bắt buộc — không có dữ liệu hay cấu hình.
+export function mcpSchemaDiagnostics() {
+  const inputs = (name: string) => {
+    const t: any = TOOLS.find((x) => x.name === name);
+    return t ? { properties: Object.keys(t.inputSchema?.properties || {}), required: t.inputSchema?.required || [] } : null;
+  };
+  const trendTools = TOOLS.map((t) => t.name).filter((n) => n.startsWith("trend_"));
+  return {
+    server_version: SERVER_INFO.version,
+    schema_version: MCP_SCHEMA_VERSION,
+    tools_fingerprint: TOOLS_FINGERPRINT,
+    build_id: buildId(),
+    tool_count: TOOLS.length,
+    trend_tool_inputs: Object.fromEntries(trendTools.map((n) => [n, inputs(n)])),
+    how_to_compare:
+      "Đây là schema server ĐANG phục vụ. Nếu schema tool bạn đang thấy thiếu trường có trong danh sách này " +
+      "(vd trend_submit_research không có decision/pageAngles) thì phía Claude đang giữ schema cũ: " +
+      "mở cuộc trò chuyện mới; vẫn lệch thì ngắt kết nối connector Outlier rồi kết nối lại.",
+  };
+}
 const rpcResult = (id: any, result: any) => ({ jsonrpc: "2.0", id, result });
 const rpcError = (id: any, code: number, message: string) => ({ jsonrpc: "2.0", id, error: { code, message } });
 const textContent = (obj: any) => ({ content: [{ type: "text", text: typeof obj === "string" ? obj : JSON.stringify(obj, null, 2) }] });
@@ -962,6 +1004,7 @@ async function callTool(name: string, args: any, principal: McpPrincipal, base =
       note: write
         ? "Đủ quyền ghi: tạo/sửa được hồ sơ thương hiệu, phong cách, bản bóc, bản viết, và nối trang."
         : "CHỈ ĐỌC. Mọi tool tạo/sửa sẽ bị chặn — nhờ quản trị viên cấp quyền 'signals-edit' ở menu Người dùng rồi kết nối lại MCP (quyền ghim vào token lúc đăng nhập).",
+      mcp_schema: mcpSchemaDiagnostics(),
     };
   }
 
