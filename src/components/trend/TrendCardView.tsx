@@ -33,8 +33,9 @@ function SourceList({ sources }: { sources: NonNullable<TrendItem['brief']>['sou
     return <li key={source.url} className="text-sm"><a href={url.href} target="_blank" rel="noopener noreferrer" className="text-storm-700 font-medium hover:underline break-words inline-flex items-center gap-1">{title}<ExternalLink className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /><span className="sr-only"> (mở tab mới)</span></a><div className="text-xs text-stone-500">{source.publisher || host}{sourceDate(source.publishedAt) && ` · ${sourceDate(source.publishedAt)}`}</div></li>;
   })}</ul>{unique.length > 4 && <button type="button" className="ds-btn ds-btn-ghost ds-btn-sm mt-1" onClick={() => setExpanded(!expanded)} aria-expanded={expanded}>{expanded ? 'Thu gọn nguồn' : `Xem thêm ${unique.length - 4} nguồn`}</button>}</section>;
 }
-function Summary({ text }: { text: string }) {
-  const [expanded, setExpanded] = useState(false);
+function Summary({ text, initiallyExpanded = false }: { text: string; initiallyExpanded?: boolean }) {
+  const [expanded, setExpanded] = useState(initiallyExpanded);
+  useEffect(() => { if (initiallyExpanded) setExpanded(true); }, [initiallyExpanded]);
   const [overflow, setOverflow] = useState(false);
   const ref = useRef<HTMLParagraphElement>(null);
   useEffect(() => {
@@ -52,7 +53,7 @@ function Summary({ text }: { text: string }) {
     {(overflow || expanded) && <button type="button" className="ds-btn ds-btn-ghost ds-btn-sm mt-1" onClick={() => setExpanded(!expanded)} aria-expanded={expanded}>{expanded ? "Thu gọn" : "Xem thêm"}</button>}
   </>;
 }
-export default function TrendCardView({ it, onCard }: { it: TrendItem; onCard: () => void }) {
+export default function TrendCardView({ it, onCard, expanded = false }: { it: TrendItem; onCard: () => void; expanded?: boolean }) {
   const b = it.brief;
   const group = trendGroup(it);
   const label = group === "skipped" ? "Đã bỏ qua" : b?.sensitive ? "Nhạy cảm — cần duyệt kỹ" : group === "worth" ? "Đáng làm" : group === "watch" ? (decisionOf(it) === "watch" || it.status === "watch" ? "Đang theo dõi" : "Chờ đánh giá") : "Đang xử lý";
@@ -61,7 +62,7 @@ export default function TrendCardView({ it, onCard }: { it: TrendItem; onCard: (
   const fb = it.facebookSourceUrl && safeUrl(it.facebookSourceUrl);
   return <article className="ds-card"><div className="ds-card-body flex flex-col gap-4">
     <div className="flex items-start justify-between gap-3 flex-wrap"><div className="min-w-0"><h2 className="text-base font-semibold text-stone-800 break-words">{b?.title || it.title}</h2><p className="text-xs text-stone-500 mt-1">{new Date(it.createdAt).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour12: false })}{b?.traffic ? ` · Lượng tìm kiếm: ${b.traffic}` : ''}</p></div><div className="flex gap-1.5 flex-wrap">{it.discoverySource && <span className="ds-badge">{it.discoverySource === 'claude' ? 'Claude tự tìm' : 'Google Trends'}</span>}{evidence && <span className={`ds-badge ${b?.confidence === 'sourced' ? 'ds-badge-primary' : ''}`}>{evidence}</span>}<span className={`ds-badge ${group === 'skipped' ? '' : b?.sensitive ? 'ds-badge-warning' : group === 'worth' ? 'ds-badge-success' : 'ds-badge-info'}`}>{label}</span></div></div>
-    {b?.summary && <section><h3 className="text-sm font-semibold text-stone-700">Chuyện gì đang xảy ra</h3><Summary text={b.summary} /></section>}
+    {b?.summary && <section><h3 className="text-sm font-semibold text-stone-700">Chuyện gì đang xảy ra</h3><Summary text={b.summary} initiallyExpanded={expanded} /></section>}
     {reason && !isTargetError(reason) && <section><h3 className="text-sm font-semibold text-stone-700">{group === 'skipped' ? 'Vì sao bỏ qua' : 'Vì sao đáng làm'}</h3><p className="text-sm text-stone-600 mt-1">{reason}</p></section>}
     {b?.pageAngles?.length ? <section><h3 className="text-sm font-semibold text-stone-700">Góc khai thác theo trang</h3><ul className="mt-1 text-sm text-stone-600 list-disc pl-5">{b.pageAngles.map((a, i) => <li key={i}>{a.pageName ? <strong>{a.pageName}: </strong> : null}{a.angle}</li>)}</ul></section> : b?.suggestedAngle && <p className="text-sm text-stone-600"><strong>Góc gợi ý:</strong> {b.suggestedAngle}</p>}
     {b && <SourceList sources={b.sources} />}

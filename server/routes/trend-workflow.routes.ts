@@ -116,7 +116,7 @@ export function registerTrendWorkflowRoutes(app: Express, overrides: Partial<{ d
     const [row] = await getDb().select().from(trendWorkflowItems).where(eq(trendWorkflowItems.id, req.params.id));
     if (!row?.brief) return res.status(404).json({ code: "BRIEF_NOT_FOUND", error: "Chưa có bản tóm tắt cho xu hướng này." });
     const drafts = await getDb().select().from(trendWorkflowDrafts).where(eq(trendWorkflowDrafts.itemId, row.id));
-    res.json({ payload: buildTrendCard(row.brief as TrendBrief, drafts, (await readTrendSettings()).publicBaseUrl, row.id, row), sent: false });
+    res.json({ payload: buildTrendCard(row.brief as TrendBrief, drafts, (await readTrendSettings()).publicBaseUrl, row.id), sent: false });
   }));
   app.post("/api/trend-workflow/trends/:id/send-test", requireAuth, requireTrendOwner, route(async (req, res) => {
     const key = String(req.body?.idempotencyKey || "");
@@ -135,7 +135,7 @@ export function registerTrendWorkflowRoutes(app: Express, overrides: Partial<{ d
     const drafts = await getDb().select().from(trendWorkflowDrafts).where(eq(trendWorkflowDrafts.itemId, item.id));
     if (!drafts.some(d => d.status === "ready")) return res.status(409).json({ code: "DRAFT_REQUIRED", error: "Cần có ít nhất một bản nháp sẵn sàng để thẻ mở được bản nháp." });
     const idempotencyKey = `test:${item.id}:${key}`;
-    await getDb().insert(trendTeamsOutbox).values({ idempotencyKey, itemId: item.id, payload: buildTrendCard(item.brief as TrendBrief, drafts, config.publicBaseUrl, item.id, item) }).onConflictDoNothing();
+    await getDb().insert(trendTeamsOutbox).values({ idempotencyKey, itemId: item.id, payload: buildTrendCard(item.brief as TrendBrief, drafts, config.publicBaseUrl, item.id) }).onConflictDoNothing();
     const [out] = await getDb().select().from(trendTeamsOutbox).where(eq(trendTeamsOutbox.idempotencyKey, idempotencyKey));
     await drainTrendOutbox(undefined, out.id);
     const [after] = await getDb().select().from(trendTeamsOutbox).where(eq(trendTeamsOutbox.id, out.id));

@@ -4,21 +4,98 @@ import { trendTeamsOutbox } from "../db/schema";
 import { teamsWebhook, validateTeamsWebhook, readTrendSettings } from "./trend-workflow-settings";
 import type { TrendBrief } from "./trend-research";
 
-export interface CardDraft { remakeId: string; pageName: string; angle: string; status: string }
-const text = (s: string) => ({ type: "TextBlock", text: s.slice(0, 3500), wrap: true });
-export function buildTrendCard(brief: TrendBrief, drafts: CardDraft[], baseUrl: string, _itemId?: string, route?: { contentPath?: string | null; facebookSourceUrl?: string | null; facebookReason?: string | null }) {
-  return { type: "message", attachments: [{ contentType: "application/vnd.microsoft.card.adaptive", content: {
-    type: "AdaptiveCard", version: "1.2", $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
-    body: [text(`Trend chủ động: ${brief.title}`), text(`Lượng tìm kiếm: ${brief.traffic || "Chưa rõ"} | ${brief.label}`),
-      text(route?.contentPath === "facebook_post" ? "Dựng từ bài Facebook" : "Dựng từ tóm tắt tin tức"),
-      ...(route?.facebookSourceUrl ? [text(`Bài Facebook gốc: ${route.facebookSourceUrl}`)] : []),
-      ...(route?.facebookReason ? [text(route.facebookReason)] : []),
-      text(brief.summary), text(brief.sensitive ? "Nhạy cảm — cần người duyệt kỹ" : "Bản nháp chưa được duyệt. Chưa vẽ ảnh, chưa đăng bài."),
-      ...brief.sources.slice(0, 6).map(s => text(`${s.title}\n${s.url}`)),
-      ...drafts.map(d => text(`${d.pageName}: ${d.angle} (${d.status === "ready" ? "Đã chuẩn bị bản nháp" : "Chưa chuẩn bị xong"})`)),
-      ...(drafts.length ? [] : [text("Chỉ có brief: chưa cấu hình trang đích hoặc chưa đủ điều kiện viết bản nháp.")])],
-    actions: baseUrl ? drafts.filter(d => d.status === "ready").slice(0, 8).map(d => ({ type: "Action.OpenUrl", title: `Mở bản nháp ${d.pageName}`.slice(0, 80), url: `${baseUrl}/remakes?remakeId=${encodeURIComponent(d.remakeId)}` })) : [],
-  } }] };
+export interface CardDraft { remakeId: string; pageName: string; angle: string; status: string; fanpageId?: string }
+
+/** Ngân sách chữ của thẻ: đủ đọc lướt trong Teams, chi tiết xem trên Outlier. */
+export const CARD_TEXT_BUDGET = 700;
+const squash = (s: unknown) => typeof s === "string" ? s.replace(/\s+/g, " ").trim() : "";
+/** Cắt theo ranh giới câu; không có câu nào vừa thì cắt theo từ và thêm "…". Không bao giờ cắt giữa từ. */
+export function clipText(raw: unknown, max: number): string {
+  if (max <= 0) return "";
+  const s = squash(raw);
+  if (s.length <= max) return s;
+  let out = "";
+  for (const sentence of s.split(/(?<=[.!?…])\s+/)) {
+    const next = out ? `${out} ${sentence}` : sentence;
+    if (next.length > max) break;
+    out = next;
+  }
+  if (out) return out;
+  const cut = s.slice(0, max - 1);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > 0 ? cut.slice(0, space) : cut).replace(/[\s,;:.\-–—]+$/, "")}…`;
+}
+/** Tên đơn vị đăng; thiếu thì hostname bỏ www. Không bao giờ trả URL. Gộp trùng, tối đa 3. */
+export function cardSourceNames(sources: TrendBrief["sources"] | undefined, max = 3): string[] {
+  const seen = new Map<string, string>();
+  for (const src of sources || []) {
+    let name = squash(src?.publisher).slice(0, 40);
+    if (!name) {
+      try { const u = new URL(src.url); if (!["http:", "https:"].includes(u.protocol)) continue; name = u.hostname.replace(/^www\./i, "").slice(0, 40); } catch { continue; }
+    }
+    const key = name.toLowerCase();
+    if (name && !seen.has(key)) seen.set(key, name);
+    if (seen.size >= max) break;
+  }
+  return [...seen.values()];
+}
+type Block = { type: "TextBlock"; text: string; wrap: true; size?: string; weight?: string; color?: string; isSubtle?: boolean; spacing?: string };
+const block = (text: string, extra: Partial<Block> = {}): Block => ({ type: "TextBlock", text, wrap: true, ...extra });
+// Teams TextBlock hiểu một phần markdown và không có escape chắc chắn: bỏ dấu đậm/code và cú pháp link khỏi chữ người dùng.
+// URL trần trong tóm tắt cũng bị bỏ: thẻ không in link nguồn, chi tiết xem trên Outlier.
+const md = (s: string) => s.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/\(?\bhttps?:\/\/\S+/gi, "").replace(/[*`]/g, "").replace(/\s{2,}/g, " ").trim();
+/** Tính cả dấu markdown và nhãn nút để ngân sách chữ luôn có dư. */
+export function cardTextLength(card: ReturnType<typeof buildTrendCard>): number {
+  const c = card.attachments[0].content;
+  return [...c.body.map(b => b.text), ...c.actions.map(a => a.title)].join("").length;
+}
+
+/**
+ * Thẻ ngắn như đồng nghiệp nhắn: chào, 1–2 câu chuyện gì, vì sao, gợi ý theo trang, nguồn (tên, không URL),
+ * cảnh báo khi cần, nút xem chi tiết/mở bản nháp. Không còn dòng kỹ thuật (lượng tìm kiếm, nhãn nghiên cứu, đường dựng…).
+ */
+export function buildTrendCard(brief: TrendBrief, drafts: CardDraft[], baseUrl: string, itemId?: string) {
+  baseUrl = baseUrl.replace(/\/+$/, "");
+  const name = clipText(brief.title, 80) || "mới";
+  const heading = brief.decision === "pursue" ? `Hi team, có trend “${name}” đang lên 🔥` : `Hi team, có trend “${name}” đáng để ý`;
+  const pageName = (a: { fanpageId?: string; pageName?: string }) => squash(a.pageName) || drafts.find(d => a.fanpageId && d.fanpageId === a.fanpageId)?.pageName || "";
+  // Ưu tiên góc Claude chọn cho từng trang; dữ liệu cũ thì lấy theo trang đích đã có bản nháp.
+  const angles = (brief.pageAngles?.length
+    ? brief.pageAngles.map(a => ({ page: pageName(a), angle: squash(a.angle) }))
+    : drafts.map(d => ({ page: squash(d.pageName), angle: squash(d.angle) || squash(brief.suggestedAngle) })))
+    .filter(a => a.page && a.angle)
+    .filter((a, i, all) => all.findIndex(b => b.page.toLowerCase() === a.page.toLowerCase()) === i);
+  const names = cardSourceNames(brief.sources);
+  // needsReview luôn true với mọi brief Claude nên không dùng; chỉ cảnh báo khi nhạy cảm hoặc chưa xác minh nguồn.
+  const warn = brief.sensitive || brief.confidence === "unverified";
+  const ready = drafts.filter(d => d.status === "ready" && d.remakeId);
+  const actions = !baseUrl ? [] : [
+    { type: "Action.OpenUrl", title: "Xem chi tiết trên Outlier", url: `${baseUrl}/trend-radar${itemId ? `?item=${encodeURIComponent(itemId)}` : ""}` },
+    ...ready.slice(0, 2).map(d => ({ type: "Action.OpenUrl", title: (ready.length > 1 ? `Mở bản nháp ${squash(d.pageName)}` : "Mở bản nháp").slice(0, 60), url: `${baseUrl}/remakes?remakeId=${encodeURIComponent(d.remakeId)}` })),
+  ];
+  const build = (summaryMax: number, whyMax: number, angleMax: number, pageNameMax: number) => {
+    const summary = clipText(squash(brief.summary).split(/(?<=[.!?])\s+/).slice(0, 2).join(" "), summaryMax);
+    const why = clipText(brief.decisionRationale, whyMax);
+    const body: Block[] = [
+      block(md(heading), { size: "Large", weight: "Bolder" }),
+      ...(summary ? [block(md(summary))] : []),
+      ...(why ? [block(`**${brief.decision === "pursue" ? "Vì sao đáng làm" : "Lý do"}:** ${md(why)}`, { spacing: "Small" })] : []),
+      ...(angles.length ? [block("**Gợi ý theo trang**", { spacing: "Medium" }), ...angles.map(a => block(`• **${md(clipText(a.page, pageNameMax))}:** ${md(clipText(a.angle, angleMax))}`, { spacing: "None" }))] : []),
+      ...(names.length ? [block(md(`Nguồn: ${names.join(", ")}`), { size: "Small", isSubtle: true, spacing: "Medium" })] : []),
+      ...(warn ? [block("Cần duyệt kỹ trước khi đăng", { size: "Small", color: "Attention", weight: "Bolder", spacing: "Small" })] : []),
+    ];
+    return { type: "message", attachments: [{ contentType: "application/vnd.microsoft.card.adaptive", content: {
+      type: "AdaptiveCard", version: "1.2", $schema: "http://adaptivecards.io/schemas/adaptive-card.json", body, actions,
+    } }] };
+  };
+  // Thu gọn dần, giữ mỗi trang có góc (hợp đồng nghiên cứu tối đa 8 trang).
+  const steps: [number, number, number, number][] = [[220, 160, 120, 40], [220, 100, 70, 30], [160, 60, 40, 24], [100, 0, 25, 18], [60, 0, 12, 12]];
+  let card = build(...steps[0]);
+  for (const step of steps.slice(1)) {
+    if (cardTextLength(card) < CARD_TEXT_BUDGET) break;
+    card = build(...step);
+  }
+  return card;
 }
 export function retryDelay(attempts: number): number { return Math.min(3600_000, 30_000 * 2 ** Math.max(0, attempts - 1)); }
 export function deliveryStatus(httpStatus: number): "accepted" | "retry" | "failed" {

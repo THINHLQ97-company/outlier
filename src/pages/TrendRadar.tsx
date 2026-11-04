@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Loader2, Telescope, Play, Send, X, Settings as SettingsIcon } from "lucide-react";
 import ConfirmDialog from "../components/ConfirmDialog";
 import DateRangeFilter, { inDateRange, rangeDescription } from "../components/trend/DateRangeFilter";
@@ -13,6 +13,8 @@ const fmt = (iso?: string | null) => (iso ? new Date(iso).toLocaleString("vi-VN"
 const msg = (e: unknown, f: string) => (e instanceof Error && e.message ? e.message : f);
 
 export default function TrendRadar({ settingsPage = false }: { settingsPage?: boolean }) {
+  const [searchParams] = useSearchParams();
+  const linkedId = searchParams.get("item");
   const [items, setItems] = useState<TrendItem[]>([]);
   const [status, setStatus] = useState<TrendStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -38,8 +40,12 @@ export default function TrendRadar({ settingsPage = false }: { settingsPage?: bo
   }
   useEffect(() => { mounted.current = true; load(); return () => { mounted.current = false; if (timer.current) clearTimeout(timer.current); }; }, []);
 
-  const dated = useMemo(() => items.filter(i => inDateRange(i.createdAt, range)), [items, range]);
-  const shown = group === "all" ? dated : dated.filter(i => trendGroup(i) === group);
+  const dated = useMemo(() => items.filter(i => i.id === linkedId || inDateRange(i.createdAt, range)), [items, range, linkedId]);
+  const shown = group === "all" ? dated : dated.filter(i => i.id === linkedId || trendGroup(i) === group);
+  useEffect(() => {
+    if (loading || settingsPage || !linkedId) return;
+    document.getElementById(`trend-${linkedId}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [loading, items, linkedId, settingsPage]);
   const tabs: { key: TrendGroup | "all"; label: string }[] = [{ key: "worth", label: "Đáng làm" }, { key: "processing", label: "Đang xử lý" }, { key: "watch", label: "Chờ đánh giá / Theo dõi" }, { key: "skipped", label: "Đã bỏ qua" }, { key: "all", label: "Tất cả" }];
   const hasTargets = status?.settings?.hasTargets ?? status?.hasTargets;
   const missingTarget = hasTargets === false || (hasTargets == null && items.some(i => isTargetError(i.error) || isTargetError(i.facebookReason)));
@@ -133,7 +139,7 @@ export default function TrendRadar({ settingsPage = false }: { settingsPage?: bo
         </div></section>
         <section className="ds-card" aria-label="Bộ lọc trend"><div className="ds-card-body flex flex-col gap-4"><DateRangeFilter value={range} onChange={setRange} /><div><div className="text-sm font-semibold text-stone-700 mb-2">Trạng thái</div><div className="flex flex-wrap gap-2" aria-label="Lọc theo trạng thái">{tabs.map(tab => <button key={tab.key} type="button" className={`ds-btn ds-btn-sm ${group === tab.key ? 'ds-btn-primary' : ''}`} aria-pressed={group === tab.key} onClick={() => setGroup(tab.key)}>{tab.label} <span>({tab.key === 'all' ? dated.length : dated.filter(i => trendGroup(i) === tab.key).length})</span></button>)}</div></div></div></section>
         <section aria-label="Danh sách trend" className="flex flex-col gap-3">
-          {shown.length ? shown.map(it => <TrendCardView key={it.id} it={it} onCard={() => openCard(it)} />) : <div className="ds-card"><div className="ds-empty"><div className="ds-empty-icon"><Telescope className="w-8 h-8" aria-hidden="true" /></div><p className="ds-empty-title">{!items.length && !status.lastRefreshAt && !lastRun ? 'Claude chưa quét lần nào' : `Không có trend nào trong ${rangeDescription(range)}`}</p><p className="ds-empty-desc">{!items.length && !status.lastRefreshAt && !lastRun ? 'Hãy kiểm tra lịch Scheduled của Claude.' : 'Hãy thử chọn khoảng thời gian hoặc trạng thái khác.'}</p></div></div>}
+          {shown.length ? shown.map(it => <div key={it.id} id={`trend-${it.id}`} tabIndex={-1} className={it.id === linkedId ? "scroll-mt-6 rounded-xl ring-2 ring-storm-500" : ""}><TrendCardView it={it} expanded={it.id === linkedId} onCard={() => openCard(it)} /></div>) : <div className="ds-card"><div className="ds-empty"><div className="ds-empty-icon"><Telescope className="w-8 h-8" aria-hidden="true" /></div><p className="ds-empty-title">{!items.length && !status.lastRefreshAt && !lastRun ? 'Claude chưa quét lần nào' : `Không có trend nào trong ${rangeDescription(range)}`}</p><p className="ds-empty-desc">{!items.length && !status.lastRefreshAt && !lastRun ? 'Hãy kiểm tra lịch Scheduled của Claude.' : 'Hãy thử chọn khoảng thời gian hoặc trạng thái khác.'}</p></div></div>}
         </section>
       </>}
 
@@ -151,8 +157,8 @@ export default function TrendRadar({ settingsPage = false }: { settingsPage?: bo
                 const c = card.data.payload.attachments?.[0]?.content;
                 return (
                   <div className="border border-stone-200 rounded-lg p-3 bg-white flex flex-col gap-2 text-sm">
-                    {(c?.body || []).map((b, i) => <p key={i} className={`whitespace-pre-wrap break-words ${i === 0 ? "font-bold" : ""}`}>{b.text}</p>)}
-                    <div className="flex flex-wrap gap-2 pt-1">{(c?.actions || []).map((a, i) => <span key={i} className="ds-badge ds-badge-primary">{a.title}</span>)}</div>
+                    {(c?.body || []).map((b, i) => <p key={i} className={`whitespace-pre-wrap break-words ${b.weight === "Bolder" ? "font-bold" : ""} ${b.size === "Large" ? "text-lg" : b.size === "Small" ? "text-xs" : ""} ${b.color === "Attention" ? "text-amber-700" : b.isSubtle ? "text-stone-500" : ""}`}>{(b.text || "").split(/(\*\*[^*]+\*\*)/g).map((part, j) => part.startsWith("**") && part.endsWith("**") ? <strong key={j}>{part.slice(2, -2)}</strong> : part)}</p>)}
+                    <div className="flex flex-wrap gap-2 pt-1">{(c?.actions || []).map((a, i) => <a key={i} href={a.url} className="ds-btn ds-btn-sm" target="_blank" rel="noopener noreferrer">{a.title}</a>)}</div>
                   </div>
                 );
               })()}

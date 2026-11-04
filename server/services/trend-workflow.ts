@@ -323,7 +323,7 @@ async function processItem(item: typeof trendWorkflowItems.$inferSelect, config:
     }
   }
   const status = drafts.length ? "done" : "brief_only";
-  if (!dryRun) await write(tx => enqueueTrendCard(`trend-item:${item.id}`, item.id, buildTrendCard(brief!, drafts, config.publicBaseUrl, item.id, { contentPath: facebook?.path || "brief_only", facebookSourceUrl: facebook?.url, facebookReason: facebook?.reason }), tx));
+  if (!dryRun) await write(tx => enqueueTrendCard(`trend-item:${item.id}`, item.id, buildTrendCard(brief!, drafts, config.publicBaseUrl, item.id), tx));
   await write(tx => tx.update(trendWorkflowItems).set({ status, checkpoint: "card_queued", error: drafts.length ? null : "Chưa cấu hình trang đích; chỉ tạo brief.", updatedAt: new Date() }).where(eq(trendWorkflowItems.id, item.id)));
 }
 /** Persist before dispatch so status survives request/proxy lifetime. */

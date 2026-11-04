@@ -21,7 +21,36 @@ Mọi endpoint cần đăng nhập. `PUT settings`, `POST run`, `POST send-test`
 ## Chạy thử nền và thẻ Teams
 - `POST /api/trend-workflow/run` body `{ "dryRun": true }`: **202** `{runId,status:"pending"}` sau khi lưu run, không chờ model. Poll `GET /api/trend-workflow/runs/:id` (hoặc `/status`). `400 DRY_RUN_REQUIRED` nếu không true. Đang có lease khác: run đã nhận chuyển `error`.
 - **Dry-run vẫn lưu deconstruction và remake THẬT nếu có page đích**, dùng chi phí model thật theo trần; chỉ không enqueue/gửi Teams. Không tự xoá dữ liệu đã tạo.
-- `GET /api/trend-workflow/trends/:id/card`: `{ payload, sent:false }`. Chỉ preview JSON, không gửi. Page chưa có bản nháp hoặc thiếu URL thì không có nút.
+- `GET /api/trend-workflow/trends/:id/card`: `{ payload, sent:false }`. Chỉ preview JSON, không gửi; cùng hàm `buildTrendCard` với outbox và gửi thử nên preview = thẻ thật. Thiếu `publicBaseUrl` thì không có nút.
+
+### Mẫu thẻ Teams (gọn, từ 2026-11-04)
+Envelope không đổi: `{ type:"message", attachments:[{ contentType:"application/vnd.microsoft.card.adaptive", content:<AdaptiveCard 1.2> }] }`. Nội dung như người trong team nhắn, tổng chữ (kể cả dấu `**` và nhãn nút) < 700 ký tự; vượt thì tự rút gọn dần (góc → lý do → tóm tắt), không bỏ trang nào có góc.
+
+| Khối | Quy tắc |
+|---|---|
+| Tiêu đề (Large, Bolder) | `Hi team, có trend “<brief.title>” đang lên 🔥` khi `decision=pursue`; khác thì `… đáng để ý`. Tên trend cắt 80 ký tự. |
+| Tóm tắt | Tối đa 2 câu đầu của `brief.summary`, ≤ 220 ký tự, cắt theo câu (không câu nào vừa thì cắt theo từ + "…"). Không dán nguyên summary. |
+| Vì sao đáng làm | Từ `decisionRationale`, ≤ 160 ký tự, chỉ khi có. |
+| Gợi ý theo trang | `• **<tên page>:** <góc ≤120>` cho từng `pageAngles` có góc (tên lấy `pageName`, thiếu thì theo `fanpageId` của draft). Brief cũ không có `pageAngles`: dùng trang đích có draft + góc draft/`suggestedAngle`. Không có góc nào thì bỏ khối. |
+| Nguồn (Small, subtle) | `Nguồn: A, B, C` — `publisher`, thiếu thì hostname bỏ `www`; gộp trùng, tối đa 3. Không in URL, không in "Nguồn Claude dẫn". |
+| Cảnh báo (Small, Attention) | `Cần duyệt kỹ trước khi đăng` chỉ khi `sensitive` hoặc `confidence = "unverified"`. (`needsReview` luôn true với brief Claude nên không dùng làm điều kiện.) |
+| Nút `Action.OpenUrl` | `Xem chi tiết trên Outlier` → `<publicBaseUrl>/trend-radar?item=<itemId>` (trang tự cuộn tới, viền và mở rộng tóm tắt trend đó, bỏ qua bộ lọc ngày/trạng thái cho trend này). `Mở bản nháp` → `/remakes?remakeId=<id>` chỉ với draft `ready`; ≥2 bản thì `Mở bản nháp <tên page>`, tối đa 2 nút bản nháp. |
+
+Đã bỏ: lượng tìm kiếm, nhãn "Nghiên cứu bởi Claude…", "Dựng từ bài Facebook/tóm tắt tin tức", link/lý do bài Facebook gốc, "Bản nháp chưa được duyệt…", "Chỉ có brief…", danh sách nguồn kèm URL. Chữ do Claude viết được bỏ dấu `*`/`` ` ``, link markdown và URL trần trước khi đưa vào thẻ. Thẻ đã nằm trong outbox trước bản này giữ payload cũ (không dựng lại).
+
+```json
+{ "type": "AdaptiveCard", "version": "1.2", "body": [
+  { "type": "TextBlock", "size": "Large", "weight": "Bolder", "wrap": true, "text": "Hi team, có trend “Tình trạng khẩn cấp” đang lên 🔥" },
+  { "type": "TextBlock", "wrap": true, "text": "Thái Lan ban bố tình trạng khẩn cấp tại Bangkok sau mưa lũ kỷ lục, sân bay Don Mueang tạm đóng cửa. Hàng nghìn khách Việt bị ảnh hưởng lịch bay, các hãng đang cho đổi vé miễn phí." },
+  { "type": "TextBlock", "wrap": true, "spacing": "Small", "text": "**Vì sao đáng làm:** Người Việt đi Thái rất đông, chủ đề thực dụng (đổi vé, bảo hiểm) dễ gắn góc AI giúp xử lý tình huống." },
+  { "type": "TextBlock", "wrap": true, "spacing": "Medium", "text": "**Gợi ý theo trang**" },
+  { "type": "TextBlock", "wrap": true, "spacing": "None", "text": "• **Ăn Nằm Với AI:** Gàn nhờ AI lên phương án đổi vé, Gèn thì hỏi AI có được bảo hiểm bồi thường không." },
+  { "type": "TextBlock", "wrap": true, "spacing": "Medium", "size": "Small", "isSubtle": true, "text": "Nguồn: VnExpress, nationthailand.com" }
+], "actions": [
+  { "type": "Action.OpenUrl", "title": "Xem chi tiết trên Outlier", "url": "https://<publicBaseUrl>/trend-radar?item=<itemId>" },
+  { "type": "Action.OpenUrl", "title": "Mở bản nháp", "url": "https://<publicBaseUrl>/remakes?remakeId=<remakeId>" }
+] }
+```
 - `POST /api/trend-workflow/trends/:id/send-test` body `{ "confirm": true, "idempotencyKey":"8-80 ký tự a-z A-Z 0-9 _ -" }`. Phải có `publicBaseUrl`, webhook và ít nhất một draft `ready` để có nút mở đúng bản nháp.
 - Gửi thử Teams cũng cần `brief.decision = "pursue"`; thiếu thì `409 DECISION_REQUIRED` (cần Claude đánh giá lại). Item thuộc run thử bị chặn `409 DRY_RUN_ONLY`, kể cả owner.
 - Lỗi: `CONFIRM_REQUIRED`, `BASE_URL_REQUIRED` (409), `RATE_LIMITED` (429), `DRAFT_REQUIRED` (409), `WEBHOOK_NOT_CONFIGURED`, `SENSITIVE_TREND`, `BRIEF_NOT_FOUND`, `INVALID_ID`.
@@ -93,7 +122,7 @@ Tool ghi cần quyền `signals-edit` (ngoài `READONLY_TOOLS`); không tool nà
 
 Sau khi nộp, Outlier chọn tối đa 1 link và chỉ gọi `fetchPostViaApify(link)` khi `apifyEnabled`, Apify đã cấu hình, còn ngân sách Apify chung, còn `maxApifyPosts` mỗi lượt và `maxApifyPostsDaily` mỗi ngày, trend không nhạy cảm và fencing còn hợp lệ. Apify không bao giờ được dùng để tìm bài. Checkpoint được ghi trước lời gọi; khi retry, Outlier dùng bài đã lưu và không gọi lại lượt bị gián đoạn để tránh tính phí hai lần.
 
-`GET /api/trend-workflow/trends` có thêm `contentPath` (`facebook_post` | `brief_only`), `facebookSourceUrl` và `facebookReason`. Thẻ Teams ghi "Dựng từ bài Facebook" hoặc "Dựng từ tóm tắt tin tức", kèm link gốc và lý do nếu có. Cài đặt mới: `researchProvider`, `apifyEnabled` (mặc định tắt), `maxFacebookPostsPerTrend` (0-1, mặc định 1), `maxApifyPosts` (0-10, mặc định 3), `maxApifyPostsDaily` (0-50, mặc định 10).
+`GET /api/trend-workflow/trends` có thêm `contentPath` (`facebook_post` | `brief_only`), `facebookSourceUrl` và `facebookReason`. Đường dựng (bài Facebook/tóm tắt tin) chỉ hiện trên trang Trend chủ động, không còn in trong thẻ Teams. Cài đặt mới: `researchProvider`, `apifyEnabled` (mặc định tắt), `maxFacebookPostsPerTrend` (0-1, mặc định 1), `maxApifyPosts` (0-10, mặc định 3), `maxApifyPostsDaily` (0-50, mặc định 10).
 
 ## Địa chỉ website (`publicBaseUrl`)
 - Khi admin lưu cài đặt mà `publicBaseUrl` đang rỗng, server dùng `OUTLIER_PUBLIC_URL`, rồi `Origin` của chính request lưu (hoặc protocol + Host của request đó). Chỉ nhận http(s); không đọc header `X-Forwarded-*`. Giao diện không còn ô nhập địa chỉ này; nó tự gửi `window.location.origin` nếu đang rỗng.

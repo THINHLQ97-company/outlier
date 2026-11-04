@@ -16,7 +16,7 @@ export interface TrendRun { id: string; status: string; error: string | null; cr
 export interface OutboxItem { id: string; status: string; attempts: number; lastError: string | null; acceptedAt: string | null; nextAttemptAt: string | null }
 export interface TrendStatus { settings: Pick<TrendSettings, "enabled"> & { researchProvider?: TrendSettings["researchProvider"]; hasTargets?: boolean }; canConfigure: boolean; hasTargets?: boolean; lastRefreshAt?: string | null; refreshedBy?: "Claude" | "chạy thử" | null; lastSlot: unknown; runs: TrendRun[]; outbox: OutboxItem[] }
 export interface TrendTargets { brands: { id: string; name: string }[]; fanpages: { id: string; brandId: string; pageName: string; platform: string; pageUrl: string }[] }
-export interface TrendCard { payload: { attachments?: { content?: { body?: { text?: string }[]; actions?: { title?: string }[] } }[] }; sent: boolean }
+export interface TrendCard { payload: { attachments?: { content?: { body?: { text?: string; size?: string; weight?: string; color?: string; isSubtle?: boolean }[]; actions?: { title?: string; url?: string }[] } }[] }; sent: boolean }
 async function request<T>(path: string, method = "GET", body?: unknown): Promise<T> {
   const res = await fetch(`${base}${path}`, { method, headers: authHeaders(body !== undefined), ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
   if (!res.ok) {

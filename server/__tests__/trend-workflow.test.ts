@@ -72,6 +72,7 @@ describe("Trend chủ động", () => {
     const config = normalizeSettings({});
     assert.equal(targetsReady(config), false);
     const card = buildTrendCard(rssBrief(item), [], "https://outlier.example.com");
-    assert.equal(card.attachments[0].content.actions.length, 0);
+    // Chỉ còn nút xem chi tiết trên Outlier, không có nút mở bản nháp.
+    assert.deepEqual(card.attachments[0].content.actions.map(a => a.title), ["Xem chi tiết trên Outlier"]);
   });
 });
