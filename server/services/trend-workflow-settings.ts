@@ -14,6 +14,14 @@ export interface TrendSettings {
 export const CONFIG_KEY = "trend_workflow_config";
 const SECRET_KEY = "trend_workflow_teams_enc";
 const int = (v: unknown, fallback: number, max: number) => Number.isInteger(v) && Number(v) >= 0 ? Math.min(Number(v), max) : fallback;
+export function publicBaseUrl(raw: unknown): string {
+  try {
+    const url = new URL(String(raw || ""));
+    if (!/^https?:$/.test(url.protocol) || url.username || url.password) return "";
+    url.hash = "";
+    return url.toString().replace(/\/$/, "");
+  } catch { return ""; }
+}
 export function normalizeSettings(raw: any = {}): TrendSettings {
   return { researchProvider: raw.researchProvider === "gemini" ? "gemini" : raw.researchProvider === "off" ? "off" : "claude_mcp",
     apifyEnabled: raw.apifyEnabled === true, maxFacebookPostsPerTrend: int(raw.maxFacebookPostsPerTrend, 1, 1),
@@ -25,8 +33,17 @@ export function normalizeSettings(raw: any = {}): TrendSettings {
     maxTrends: int(raw.maxTrends, 3, 10), maxModelCalls: int(raw.maxModelCalls, 12, 50),
     maxModelCallsDaily: int(raw.maxModelCallsDaily, 60, 200), maxOutputTokens: int(raw.maxOutputTokens, 2048, 4096),
     modelTimeoutMs: Math.max(1000, int(raw.modelTimeoutMs, 45_000, 90_000)),
-    publicBaseUrl: sourceUrl(String(raw.publicBaseUrl || process.env.OUTLIER_PUBLIC_URL || ""))?.replace(/\/$/, "") || "",
+    publicBaseUrl: publicBaseUrl(raw.publicBaseUrl) || publicBaseUrl(process.env.OUTLIER_PUBLIC_URL),
   };
+}
+/** Link "Mở bản nháp" không được thiếu: cấu hình → env OUTLIER_PUBLIC_URL (đã xử lý ở normalizeSettings) → origin của chính request admin lưu cài đặt. Chỉ nhận http(s), không dùng các header proxy. */
+export function withPublicBaseFallback(config: TrendSettings, req: { headers?: Record<string, unknown>; protocol?: string; get?: (h: string) => string | undefined }): TrendSettings {
+  if (config.publicBaseUrl) return config;
+  const origin = typeof req.headers?.origin === "string" ? req.headers.origin : req.protocol && req.get?.("host") ? `${req.protocol}://${req.get("host")}` : "";
+  const clean = publicBaseUrl(origin);
+  if (!clean) return config;
+  const u = new URL(clean);
+  return { ...config, publicBaseUrl: u.origin };
 }
 export async function readTrendSettings(): Promise<TrendSettings> {
   const all = await allSettings();

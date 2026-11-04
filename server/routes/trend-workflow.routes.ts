@@ -3,7 +3,7 @@ import { desc, eq, inArray } from "drizzle-orm";
 import { requireAuth as defaultAuth, requireAdmin as defaultAdmin, getAuthUser } from "../auth-mw";
 import { getDb as getDefaultDb, isDbConfigured as isDefaultDbConfigured } from "../db/client";
 import { brands, brandFanpages, trendWorkflowRuns, trendWorkflowItems, trendWorkflowDrafts, trendTeamsOutbox } from "../db/schema";
-import { normalizeSettings, publicTrendSettings, readTrendSettings, saveTrendSettings, teamsWebhook } from "../services/trend-workflow-settings";
+import { normalizeSettings, publicTrendSettings, readTrendSettings, saveTrendSettings, withPublicBaseFallback, teamsWebhook } from "../services/trend-workflow-settings";
 import { queueTrendDryRun as defaultQueue, lastTrendSlot } from "../services/trend-workflow";
 import { buildTrendCard, drainTrendOutbox, recoverStaleTrendOutbox, reserveTrendSendTest, resolveTrendOutbox } from "../services/trend-teams";
 import type { TrendBrief } from "../services/trend-research";
@@ -32,12 +32,12 @@ export function registerTrendWorkflowRoutes(app: Express, overrides: Partial<{ d
   }));
   app.get("/api/trend-workflow/settings", requireAuth, route(async (_req, res) => res.json(await publicTrendSettings())));
   app.put("/api/trend-workflow/settings", requireAuth, requireAdmin, route(async (req, res) => {
-    const config = normalizeSettings({ ...await readTrendSettings(), ...req.body });
+    const config = withPublicBaseFallback(normalizeSettings({ ...await readTrendSettings(), ...req.body }), req);
     const pages = await getDb().select({ id: brandFanpages.id, brandId: brandFanpages.brandId }).from(brandFanpages);
     if (config.targets.some(t => !UUID.test(t.brandId) || !UUID.test(t.fanpageId) || !pages.some(p => p.id === t.fanpageId && p.brandId === t.brandId)) || new Set(config.targets.map(t => t.fanpageId)).size !== config.targets.length) {
       return res.status(400).json({ code: "INVALID_TARGET", error: "Trang đích không hợp lệ hoặc không thuộc thương hiệu đã chọn." });
     }
-    if (config.enabled && config.teamsEnabled && !config.publicBaseUrl) return res.status(400).json({ code: "BASE_URL_REQUIRED", error: "Cần URL Outlier để mở đúng bản nháp từ Teams." });
+    if (config.enabled && config.teamsEnabled && !config.publicBaseUrl) return res.status(400).json({ code: "BASE_URL_REQUIRED", error: "Chưa xác định được địa chỉ website để tạo nút Mở bản nháp trên Teams. Hãy mở Outlier bằng địa chỉ chính thức (https) rồi lưu lại." });
     try {
       await saveTrendSettings(config, getAuthUser(req)!, typeof req.body?.teamsWebhookUrl === "string" ? req.body.teamsWebhookUrl : undefined);
     } catch { return res.status(400).json({ code: "INVALID_WEBHOOK", error: "Không lưu được webhook. Kiểm tra URL Microsoft Workflows và AUTH_SECRET trên server." }); }

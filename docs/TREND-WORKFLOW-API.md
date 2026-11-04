@@ -58,3 +58,6 @@ Tool trên `/api/mcp-signals`:
 Sau khi nộp, Outlier chọn tối đa 1 link và chỉ gọi `fetchPostViaApify(link)` khi `apifyEnabled`, Apify đã cấu hình, còn ngân sách Apify chung, còn `maxApifyPosts` mỗi lượt và `maxApifyPostsDaily` mỗi ngày, trend không nhạy cảm và fencing còn hợp lệ. Apify không bao giờ được dùng để tìm bài. Checkpoint được ghi trước lời gọi; khi retry, Outlier dùng bài đã lưu và không gọi lại lượt bị gián đoạn để tránh tính phí hai lần.
 
 `GET /api/trend-workflow/trends` có thêm `contentPath` (`facebook_post` | `brief_only`), `facebookSourceUrl` và `facebookReason`. Thẻ Teams ghi "Dựng từ bài Facebook" hoặc "Dựng từ tóm tắt tin tức", kèm link gốc và lý do nếu có. Cài đặt mới: `researchProvider`, `apifyEnabled` (mặc định tắt), `maxFacebookPostsPerTrend` (0-1, mặc định 1), `maxApifyPosts` (0-10, mặc định 3), `maxApifyPostsDaily` (0-50, mặc định 10).
+
+## Địa chỉ website (`publicBaseUrl`)
+- Khi admin lưu cài đặt mà `publicBaseUrl` đang rỗng, server dùng `OUTLIER_PUBLIC_URL`, rồi `Origin` của chính request lưu (hoặc protocol + Host của request đó). Chỉ nhận http(s); không đọc header `X-Forwarded-*`. Giao diện không còn ô nhập địa chỉ này; nó tự gửi `window.location.origin` nếu đang rỗng.

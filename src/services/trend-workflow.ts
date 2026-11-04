@@ -23,7 +23,7 @@ async function request<T>(path: string, method = "GET", body?: unknown): Promise
     if (res.status === 401) return asError(res, "Không thực hiện được, vui lòng thử lại.");
     const data = await res.json().catch(() => ({}));
     const messages: Record<string, string> = {
-      BASE_URL_REQUIRED: "Chưa có địa chỉ Outlier. Hãy lưu địa chỉ website trong phần cài đặt.",
+      BASE_URL_REQUIRED: "Chưa tạo được đường dẫn mở bản nháp. Hãy mở Outlier bằng địa chỉ chính thức rồi lưu lại cài đặt.",
       DRAFT_REQUIRED: "Trend chưa có bản nháp sẵn sàng. Hãy chờ bản nháp hoàn tất rồi thử lại.",
       RATE_LIMITED: "Bạn đã gửi thử hoặc gửi lại 3 lần trong một phút. Hãy chờ một phút rồi thử lại.",
       WEBHOOK_NOT_CONFIGURED: "Chưa có đường dẫn gửi Teams. Hãy lưu đường dẫn trong phần cài đặt.",

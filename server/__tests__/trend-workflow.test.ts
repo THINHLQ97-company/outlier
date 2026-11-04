@@ -2,13 +2,28 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { groundedBrief, latestTrendSlot, researchTrend, rssBrief, sameEvent, trendSlotDue, type TrendBrief } from "../services/trend-research";
 import { buildTrendCard, deliverTrendCard, deliveryStatus, retryDelay } from "../services/trend-teams";
-import { normalizeSettings, publicTrendSettings } from "../services/trend-workflow-settings";
+import { normalizeSettings, publicTrendSettings, withPublicBaseFallback } from "../services/trend-workflow-settings";
 import { targetsReady } from "../services/trend-workflow";
 
 const item = { title: "vf3 sạc nhanh", approxTraffic: "20K+", news: [{ title: "VinFast VF3 có trạm sạc mới", url: "https://news.example.com/vf3" }] };
 const brief = (title: string, url = "https://news.example.com/a"): TrendBrief => ({ title, provider: "gemini_search", confidence: "sourced", claims: [{ text: "VF3 có thêm trạm sạc nhanh tại Hà Nội", urls: [url] }], sources: [{ title: "Tin", url }], summary: "", sensitive: false, needsReview: true, label: "Có nguồn — cần duyệt" });
 
 describe("Trend chủ động", () => {
+  test("URL mở bản nháp ưu tiên cấu hình, môi trường rồi origin khi admin lưu", () => {
+    const previous = process.env.OUTLIER_PUBLIC_URL;
+    try {
+      process.env.OUTLIER_PUBLIC_URL = "https://env.example.com";
+      const req = { headers: { origin: "https://app.example.com", "x-forwarded-host": "evil.example.com" }, protocol: "http", get: () => "internal.example.com" };
+      assert.equal(withPublicBaseFallback(normalizeSettings({ publicBaseUrl: "https://saved.example.com" }), req).publicBaseUrl, "https://saved.example.com");
+      assert.equal(withPublicBaseFallback(normalizeSettings({ publicBaseUrl: "" }), req).publicBaseUrl, "https://env.example.com");
+      delete process.env.OUTLIER_PUBLIC_URL;
+      assert.equal(withPublicBaseFallback(normalizeSettings({}), req).publicBaseUrl, "https://app.example.com");
+      assert.equal(withPublicBaseFallback(normalizeSettings({}), { headers: { origin: "javascript:alert(1)" } }).publicBaseUrl, "");
+      assert.equal(withPublicBaseFallback(normalizeSettings({}), { headers: {}, protocol: "http", get: () => "app.example.com" }).publicBaseUrl, "http://app.example.com");
+    } finally {
+      if (previous === undefined) delete process.env.OUTLIER_PUBLIC_URL; else process.env.OUTLIER_PUBLIC_URL = previous;
+    }
+  });
   test("lịch 2 giờ VN chỉ chạy bù một lần cho mốc gần nhất", () => {
     const now = new Date("2026-11-03T08:25:00Z"); // 15:25 VN
     assert.equal(latestTrendSlot(now), "2026-11-03T14:00+07:00");

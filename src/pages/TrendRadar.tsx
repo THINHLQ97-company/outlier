@@ -258,6 +258,14 @@ function TrendCardView({ it, onCard }: { it: TrendItem; onCard: () => void }) {
   );
 }
 
+const usagePresets = {
+  economy: { label: "Tiết kiệm", description: "Tối đa 2 trend mỗi lần dò, lấy ít bài Facebook.", values: { maxTrends: 2, maxFacebookPostsPerTrend: 1, maxApifyPosts: 2, maxApifyPostsDaily: 6, maxModelCalls: 8, maxModelCallsDaily: 40, maxOutputTokens: 2048, modelTimeoutMs: 45000 } },
+  medium: { label: "Vừa", description: "Tối đa 3 trend mỗi lần dò, phù hợp sử dụng hằng ngày.", values: { maxTrends: 3, maxFacebookPostsPerTrend: 1, maxApifyPosts: 3, maxApifyPostsDaily: 10, maxModelCalls: 12, maxModelCallsDaily: 60, maxOutputTokens: 2048, modelTimeoutMs: 45000 } },
+  high: { label: "Nhiều", description: "Tối đa 5 trend mỗi lần dò, dùng nhiều tài nguyên hơn.", values: { maxTrends: 5, maxFacebookPostsPerTrend: 1, maxApifyPosts: 5, maxApifyPostsDaily: 20, maxModelCalls: 20, maxModelCallsDaily: 120, maxOutputTokens: 2048, modelTimeoutMs: 45000 } },
+} as const;
+
+type UsageKey = keyof typeof usagePresets;
+
 function Settings({ isAdmin, onSaved }: { isAdmin: boolean; onSaved: () => void }) {
   const [cfg, setCfg] = useState<TrendSettings | null>(null);
   const [targets, setTargets] = useState<TrendTargets | null>(null);
@@ -286,6 +294,7 @@ function Settings({ isAdmin, onSaved }: { isAdmin: boolean; onSaved: () => void 
       <input id={id} type="number" min={min} max={max} step={1} className="ds-input w-full" value={cfg[k]} disabled={!isAdmin || saving} onChange={(e) => set(k, Number(e.target.value))} />
       <p className="text-[11px] text-stone-500 mt-0.5">{hint}</p></div>
   );
+  const usage = (Object.keys(usagePresets) as UsageKey[]).find((key) => Object.entries(usagePresets[key].values).every(([k, v]) => cfg[k as keyof TrendSettings] === v));
   const picked = (id: string) => cfg.targets.some((t) => t.fanpageId === id);
 
   async function save() {
@@ -296,7 +305,7 @@ function Settings({ isAdmin, onSaved }: { isAdmin: boolean; onSaved: () => void 
     try {
       const body: Partial<TrendSettings> & { teamsWebhookUrl?: string } = {
         researchProvider: cfg.researchProvider, apifyEnabled: cfg.apifyEnabled, maxFacebookPostsPerTrend: cfg.maxFacebookPostsPerTrend, maxApifyPosts: cfg.maxApifyPosts, maxApifyPostsDaily: cfg.maxApifyPostsDaily,
-        enabled: cfg.enabled, teamsEnabled: cfg.teamsEnabled, targets: cfg.targets, publicBaseUrl: cfg.publicBaseUrl,
+        enabled: cfg.enabled, teamsEnabled: cfg.teamsEnabled, targets: cfg.targets, publicBaseUrl: cfg.publicBaseUrl || window.location.origin,
         maxTrends: cfg.maxTrends, maxModelCalls: cfg.maxModelCalls, maxModelCallsDaily: cfg.maxModelCallsDaily, maxOutputTokens: cfg.maxOutputTokens, modelTimeoutMs: cfg.modelTimeoutMs,
       };
       if (clearHook) body.teamsWebhookUrl = "";
@@ -320,17 +329,25 @@ function Settings({ isAdmin, onSaved }: { isAdmin: boolean; onSaved: () => void 
         {!isAdmin && <p className="text-xs text-stone-500 mt-1">Bạn chỉ xem được. Chỉ quản trị viên mới đổi được cài đặt.</p>}
       </div>
       {!cfg.keyConfigured && <div className="ds-alert ds-alert-warning">Máy chủ chưa có khoá để nghiên cứu tin tức, nên chưa dò được. Nhờ người quản lý hệ thống bổ sung.</div>}
-      <div><label className="ds-label" htmlFor="tr-research">Nguồn nghiên cứu</label>
-        <select id="tr-research" className="ds-select" disabled={!isAdmin || saving} value={cfg.researchProvider} onChange={e => set("researchProvider", e.target.value as TrendSettings["researchProvider"])}>
-          <option value="claude_mcp">Claude qua MCP (mặc định)</option><option value="gemini">Gemini (dự phòng)</option><option value="off">Chỉ dùng tin RSS, chưa xác minh</option>
-        </select></div>
-      <div className="flex flex-col gap-2">
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={cfg.apifyEnabled} disabled={!isAdmin || saving} onChange={e => set("apifyEnabled", e.target.checked)} /> Lấy nội dung bài Facebook qua Apify khi đã có link cụ thể</label>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={cfg.enabled} disabled={!isAdmin || saving} onChange={(e) => set("enabled", e.target.checked)} /> Bật dò trend tự động</label>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={cfg.teamsEnabled} disabled={!isAdmin || saving} onChange={(e) => set("teamsEnabled", e.target.checked)} /> Gửi thẻ lên Microsoft Teams</label>
+      <div className="flex items-center gap-3">
+        <input id="tr-enabled" type="checkbox" role="switch" className="relative h-6 w-11 shrink-0 cursor-pointer appearance-none rounded-full bg-stone-300 transition-colors checked:bg-storm-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-storm-600 disabled:cursor-not-allowed disabled:opacity-50 before:absolute before:left-1 before:top-1 before:h-4 before:w-4 before:rounded-full before:bg-white before:transition-transform checked:before:translate-x-5" checked={cfg.enabled} disabled={!isAdmin || saving} onChange={(e) => set("enabled", e.target.checked)} />
+        <label htmlFor="tr-enabled" className="ds-label !mb-0">Bật Trend chủ động</label>
       </div>
-
       <div>
+        <div className="ds-label">Trang nhận bản nháp</div>
+        {!targets ? <p className="text-xs text-stone-500">Chưa tải được danh sách trang.</p> : targets.fanpages.length === 0 ? <p className="text-xs text-stone-500">Chưa có trang nào. Thêm trang ở mục Thương hiệu.</p> : (
+          <div className="flex flex-col gap-1">{targets.fanpages.map((p) => (
+            <div key={p.id} className="flex items-center gap-2 text-sm">
+              <input id={`tr-page-${p.id}`} type="checkbox" checked={picked(p.id)} disabled={!isAdmin || saving} onChange={(e) => set("targets", e.target.checked ? [...cfg.targets, { brandId: p.brandId, fanpageId: p.id }] : cfg.targets.filter((t) => t.fanpageId !== p.id))} />
+              <label htmlFor={`tr-page-${p.id}`}>{p.pageName} <span className="text-xs text-stone-500">({targets.brands.find((b) => b.id === p.brandId)?.name || "Thương hiệu"})</span></label></div>))}</div>
+        )}
+        <p className="text-xs text-stone-500 mt-1">Chưa chọn trang thì chỉ tạo tóm tắt, không soạn bản nháp.</p>
+      </div>
+      <div className="flex items-center gap-3">
+        <input id="tr-teams" type="checkbox" role="switch" className="relative h-6 w-11 shrink-0 cursor-pointer appearance-none rounded-full bg-stone-300 transition-colors checked:bg-storm-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-storm-600 disabled:cursor-not-allowed disabled:opacity-50 before:absolute before:left-1 before:top-1 before:h-4 before:w-4 before:rounded-full before:bg-white before:transition-transform checked:before:translate-x-5" checked={cfg.teamsEnabled} disabled={!isAdmin || saving} onChange={(e) => set("teamsEnabled", e.target.checked)} />
+        <label htmlFor="tr-teams" className="ds-label !mb-0">Gửi thẻ lên Teams</label>
+      </div>
+      {cfg.teamsEnabled &&       <div>
         <div className="ds-label">Đường dẫn gửi lên Teams</div>
         <div className="flex items-center gap-2 flex-wrap">
           <span className={`ds-badge ${cfg.webhookConfigured && !clearHook ? "ds-badge-success" : ""}`}>{cfg.webhookConfigured && !clearHook ? "Đã cấu hình" : "Chưa cấu hình"}</span>
@@ -344,23 +361,28 @@ function Settings({ isAdmin, onSaved }: { isAdmin: boolean; onSaved: () => void 
             <input id="tr-hook" type="password" autoComplete="off" className="ds-input w-full" value={webhook} disabled={saving} onChange={(e) => setWebhook(e.target.value)} placeholder="https://..." /></div>
         )}
         <p className="text-xs text-stone-500 mt-1">Đường dẫn này ai có cũng đăng được vào kênh, đừng chia sẻ. Sau khi lưu sẽ không hiện lại được.</p>
-      </div>
+      </div>}
 
       <div>
-        <div className="ds-label">Trang nhận bản nháp</div>
-        {!targets ? <p className="text-xs text-stone-500">Chưa tải được danh sách trang.</p> : targets.fanpages.length === 0 ? <p className="text-xs text-stone-500">Chưa có trang nào. Thêm trang ở mục Thương hiệu.</p> : (
-          <div className="flex flex-col gap-1">{targets.fanpages.map((p) => (
-            <label key={p.id} className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={picked(p.id)} disabled={!isAdmin || saving} onChange={(e) => set("targets", e.target.checked ? [...cfg.targets, { brandId: p.brandId, fanpageId: p.id }] : cfg.targets.filter((t) => t.fanpageId !== p.id))} />
-              {p.pageName} <span className="text-xs text-stone-500">({targets.brands.find((b) => b.id === p.brandId)?.name || "Thương hiệu"})</span></label>))}</div>
-        )}
-        <p className="text-xs text-stone-500 mt-1">Chưa chọn trang nào thì hệ thống chỉ tạo tóm tắt, không soạn bản nháp.</p>
+        <div className="flex items-center gap-3">
+          <input id="tr-apify" type="checkbox" role="switch" className="relative h-6 w-11 shrink-0 cursor-pointer appearance-none rounded-full bg-stone-300 transition-colors checked:bg-storm-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-storm-600 disabled:cursor-not-allowed disabled:opacity-50 before:absolute before:left-1 before:top-1 before:h-4 before:w-4 before:rounded-full before:bg-white before:transition-transform checked:before:translate-x-5" checked={cfg.apifyEnabled} disabled={!isAdmin || saving} onChange={(e) => set("apifyEnabled", e.target.checked)} />
+          <label htmlFor="tr-apify" className="ds-label !mb-0">Lấy nội dung bài Facebook khi tìm thấy</label>
+        </div>
+        <p className="text-xs text-stone-500 mt-1">Tốn phí Apify; chỉ lấy đúng bài Claude tìm được.</p>
       </div>
-
-      <div><label className="ds-label" htmlFor="tr-base">Địa chỉ website Outlier</label>
-        <input id="tr-base" type="url" className="ds-input w-full" value={cfg.publicBaseUrl} disabled={!isAdmin || saving} onChange={(e) => set("publicBaseUrl", e.target.value)} placeholder="https://..." />
-        <p className="text-xs text-stone-500 mt-0.5">Dùng để nút "Mở bản nháp" trên Teams mở đúng trang. Bắt buộc khi bật gửi Teams.</p></div>
-
+      <fieldset disabled={!isAdmin || saving}>
+        <legend className="ds-label">Mức sử dụng</legend>
+        {!usage && <p className="text-sm text-stone-600 mb-2">Đang chọn: Tuỳ chỉnh</p>}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          {(Object.keys(usagePresets) as UsageKey[]).map((key) => <label key={key} htmlFor={`tr-usage-${key}`} className={`cursor-pointer rounded-lg border p-3 text-sm ${usage === key ? "border-storm-600 bg-storm-50" : "border-stone-200"}`}>
+            <span className="flex items-center gap-2 font-semibold"><input id={`tr-usage-${key}`} type="radio" name="tr-usage" checked={usage === key} onChange={() => setCfg({ ...cfg, ...usagePresets[key].values })} />{usagePresets[key].label}</span>
+            <span className="block text-xs text-stone-500 mt-1">{usagePresets[key].description}</span>
+          </label>)}
+        </div>
+      </fieldset>
+      <details className="border border-stone-200 rounded-lg p-3">
+        <summary className="cursor-pointer text-sm font-semibold text-stone-700">Nâng cao (ít khi cần đổi)</summary>
+        <p className="text-xs text-stone-500 mt-2">Chỉnh giới hạn chi tiết tại đây nếu các mức trên chưa phù hợp.</p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {num("tr-fb1", "Số bài Facebook mỗi trend", "maxFacebookPostsPerTrend", "0 để tắt, tối đa 1 bài; không dùng Apify tìm bài.", 0, 1)}
         {num("tr-fb2", "Số bài Apify mỗi lượt", "maxApifyPosts", "Từ 0 đến 10, tính cả lượt lấy không thành công.", 0, 10)}
@@ -372,11 +394,12 @@ function Settings({ isAdmin, onSaved }: { isAdmin: boolean; onSaved: () => void 
         {num("tr-timeout", "Thời gian chờ mỗi lần dùng AI (mili giây)", "modelTimeoutMs", "Từ 1.000 đến 90.000 mili giây.", 1000, 90000)}
       </div>
 
+      </details>
+
       {err && <div role="alert" className="ds-alert ds-alert-danger">{err}</div>}
       {ok && <div role="status" className="ds-alert ds-alert-success">Đã lưu cài đặt.</div>}
       {isAdmin && (
         <div className="flex flex-col gap-3">
-          <div><button type="button" className="ds-btn ds-btn-primary" onClick={save} disabled={saving}>{saving && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />} Lưu cài đặt</button></div>
           <div className="border-t border-stone-200 pt-3">
             <label className="ds-label" htmlFor="tr-test">Gửi thử một thẻ lên Teams</label>
             <div className="flex flex-col sm:flex-row gap-2">
@@ -386,10 +409,11 @@ function Settings({ isAdmin, onSaved }: { isAdmin: boolean; onSaved: () => void 
                 {testing ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Send className="w-4 h-4" aria-hidden="true" />} Gửi thử lên Teams</button>
             </div>
             {!cfg.webhookConfigured && <p className="text-xs text-stone-500 mt-1">Cần lưu đường dẫn Teams trước.</p>}
-            {!cfg.publicBaseUrl && <p className="text-xs text-stone-500 mt-1">Cần lưu địa chỉ website Outlier trước.</p>}
+            {!cfg.publicBaseUrl && <p className="text-xs text-stone-500 mt-1">Hãy lưu cài đặt để tạo đường dẫn mở bản nháp.</p>}
             {testItem && !items.find((i) => i.id === testItem)?.drafts.some((d) => d.status === "ready") && <p className="text-xs text-stone-500 mt-1">Trend chưa có bản nháp sẵn sàng. Hãy chọn trend khác hoặc chờ xử lý xong.</p>}
             {testMsg && <div role={testMsg.ok ? "status" : "alert"} className={`ds-alert mt-2 ${testMsg.ok ? "ds-alert-success" : "ds-alert-danger"}`}>{testMsg.text}</div>}
           </div>
+          <div><button type="button" className="ds-btn ds-btn-primary" onClick={save} disabled={saving}>{saving && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />} Lưu cài đặt</button></div>
         </div>
       )}
       <ConfirmDialog isOpen={confirmTest} title="Gửi thử lên Teams?" message="Thẻ sẽ được đăng thật vào kênh Teams đã cấu hình và mọi người trong kênh đều thấy. Bạn chắc chắn muốn gửi?" confirmText="Gửi thử" onConfirm={send} onCancel={() => setConfirmTest(false)} />
