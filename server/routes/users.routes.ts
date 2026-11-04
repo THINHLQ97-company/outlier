@@ -36,6 +36,17 @@ function publicUser(u: any) {
 }
 
 export function registerUserRoutes(app: Express) {
+  app.post("/api/admin/images/repair", requireAuth, requireAdmin, async (req, res) => {
+    if (dbDown(res)) return;
+    try {
+      const { repairExpiringImages } = await import("../services/image-repair-job");
+      if (req.body?.retryFailed === true) await (await import("../services/durable-images")).resetImageRetries();
+      res.json(await repairExpiringImages(Number(req.body?.limit) || 30));
+    } catch (e: any) {
+      console.warn("[image-repair] admin run failed", e?.code || "repair failed");
+      res.status(500).json({ error: "Chưa sửa được ảnh. Vui lòng thử lại sau." });
+    }
+  });
   // Xem TÊN TRƯỜNG mà dịch vụ quét trả về, lấy từ bộ nhớ đệm.
   //
   // Vì sao cần: mỗi actor đặt tên trường một kiểu, đoán sai thì dữ liệu rơi im

@@ -1,3 +1,4 @@
+import SafeImage from "./SafeImage";
 import { useEffect, useState } from "react";
 import { Loader2, Plus, Trash2, Link2, Link2Off, RefreshCw, ExternalLink, Star, Users } from "lucide-react";
 import {
@@ -237,9 +238,10 @@ export default function BrandFanpages({
                 <li key={fp.id} className="border border-stone-200 rounded-xl p-3">
                   <div className="flex items-start justify-between gap-3 flex-wrap">
                     <div className="min-w-0 flex gap-3">
-                      {fp.metaPictureUrl && (
-                        <img
-                          src={fp.metaPictureUrl}
+                      {(
+                        <SafeImage
+                          src={imageDisplayUrl(fp.metaPictureUrl)}
+                          variant="avatar" name={fp.pageName || fp.pageUrl}
                           alt=""
                           className="w-11 h-11 rounded-full object-cover shrink-0 bg-stone-100"
                           loading="lazy"
@@ -416,8 +418,9 @@ export default function BrandFanpages({
                                   {/* imageMissing = có đường dẫn nhưng file đã mất; hiện thẻ img
                                       lúc đó chỉ ra một ô ảnh vỡ. Dùng chữ cái đầu thay thế. */}
                                   {c.referenceImageUrl && !c.imageMissing ? (
-                                    <img
+                                    <SafeImage
                                       src={imageDisplayUrl(c.referenceImageUrl) || undefined}
+                                      variant="avatar" name={c.name}
                                       alt=""
                                       className="w-7 h-7 rounded-full object-cover bg-stone-100 shrink-0"
                                       loading="lazy"

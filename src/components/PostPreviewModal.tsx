@@ -1,3 +1,4 @@
+import SafeImage from "./SafeImage";
 import { useEffect } from "react";
 import { X, ExternalLink, Download, ShieldCheck, ShieldAlert, Send, Copy } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -69,19 +70,19 @@ export default function PostPreviewModal({ row, onClose }: { row: RemakeRow; onC
               {mainImage ? (
                 <>
                   <a href={imageDisplayUrl(mainImage) || "#"} target="_blank" rel="noreferrer">
-                    <img
+                    <SafeImage
                       src={imageDisplayUrl(mainImage) || undefined}
-                      alt=""
+                      alt={(row.draft || "").slice(0, 100)}
                       className="w-full rounded-xl border border-stone-200 bg-stone-50"
                     />
                   </a>
                   {images.length > 1 && (
                     <div className="flex gap-1.5 mt-2 flex-wrap">
                       {images.map((img) => (
-                        <img
+                        <SafeImage
                           key={img.url}
                           src={imageDisplayUrl(img.url) || undefined}
-                          alt=""
+                          alt={img.prompt.slice(0, 100)}
                           title={img.prompt}
                           className={`w-14 h-14 rounded-lg object-cover border ${
                             img.url === row.selectedImageUrl ? "border-storm-500 ring-2 ring-storm-200" : "border-stone-200"

@@ -1,3 +1,5 @@
+import SafeImage from "./SafeImage";
+import { imageDisplayUrl } from "../services/http";
 import { ExternalLink, TrendingUp, Clock, LayoutGrid, CalendarDays } from "lucide-react";
 import type { FanpageStats } from "../types";
 
@@ -95,9 +97,9 @@ export default function FanpageStatsPanel({ stats }: { stats: FanpageStats }) {
             {outliers.map((p) => (
               <li key={p.id} className="flex gap-2 border border-stone-200 rounded-lg p-2">
                 {p.thumbnailUrl ? (
-                  <img
-                    src={p.thumbnailUrl}
-                    alt=""
+                  <SafeImage
+                    src={imageDisplayUrl(p.thumbnailUrl)}
+                    alt={(p.message || "").slice(0, 100)}
                     className="w-14 h-14 rounded object-cover shrink-0 bg-stone-100"
                     loading="lazy"
                   />

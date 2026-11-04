@@ -1168,3 +1168,23 @@ export const trendTeamsOutbox = pgTable("trend_teams_outbox", {
   acceptedAt: timestamp("accepted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// Best-effort image preservation ledger, keyed by SHA-256 of the exact URL.
+export const imageCacheEntries = pgTable("image_cache_entries", {
+  lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+  urlHash: text("url_hash").primaryKey(),
+  localUrl: text("local_url"),
+  dead: boolean("dead").notNull().default(false),
+  attempts: integer("attempts").notNull().default(0),
+  retryAt: timestamp("retry_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const imagePendingUpdates = pgTable("image_pending_updates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  targetTable: text("target_table").notNull(),
+  targetColumn: text("target_column").notNull(),
+  targetId: uuid("target_id").notNull(),
+  postId: text("post_id").notNull().default(""),
+  sourceUrl: text("source_url").notNull(),
+  queuedAt: timestamp("queued_at", { withTimezone: true }).notNull().defaultNow(),
+}, t => [uniqueIndex("image_pending_target_idx").on(t.targetTable,t.targetColumn,t.targetId,t.postId)]);

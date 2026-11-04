@@ -1,3 +1,4 @@
+import { startImageRepairJob } from "./server/services/image-repair-job";
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
@@ -185,6 +186,7 @@ async function startServer() {
     startChannelDailyScanJob();
     // Mỗi giờ: bài trang nhà + bài nào đang chạy quảng cáo + đơn đặt quảng cáo.
     startFanpageAdsJob();
+    startImageRepairJob();
     // Mỗi 2 giờ trong khung 08-22 giờ VN; thiếu cấu hình chỉ cảnh báo.
     startTrendWorkflowJob();
   });

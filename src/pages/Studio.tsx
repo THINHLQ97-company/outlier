@@ -1,3 +1,4 @@
+import SafeImage from "../components/SafeImage";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -547,7 +548,7 @@ export default function Studio() {
                               <span className="text-[9px]">Ảnh đã mất</span>
                             </div>
                           ) : (
-                            <img
+                            <SafeImage
                               src={imageDisplayUrl(a.imageUrl) || undefined}
                               alt={a.name}
                               className="w-full h-20 object-cover bg-stone-100"
@@ -610,7 +611,7 @@ export default function Studio() {
                     <span key={c.id} className="flex items-center gap-1 text-[11px] bg-storm-50 text-storm-700 px-1.5 py-1 rounded-lg">
                       <span className="w-4 h-4 rounded-full overflow-hidden bg-stone-100 shrink-0">
                         {c.referenceImageUrl && (
-                          <img src={imageDisplayUrl(c.referenceImageUrl) || undefined} alt="" className="w-full h-full object-cover" />
+                          <SafeImage src={imageDisplayUrl(c.referenceImageUrl) || undefined} alt="" className="w-full h-full object-cover" />
                         )}
                       </span>
                       {c.name}
@@ -620,7 +621,7 @@ export default function Studio() {
                     .filter((a) => selectedAssetIds.includes(a.id))
                     .map((a) => (
                       <span key={a.id} className="flex items-center gap-1 text-[11px] bg-stone-100 text-stone-600 px-1.5 py-1 rounded-lg">
-                        <img src={imageDisplayUrl(a.imageUrl) || undefined} alt="" className="w-4 h-4 rounded object-cover shrink-0" />
+                        <SafeImage src={imageDisplayUrl(a.imageUrl) || undefined} alt="" className="w-4 h-4 rounded object-cover shrink-0" />
                         {a.name}
                       </span>
                     ))}
@@ -748,7 +749,7 @@ export default function Studio() {
                       >
                         <div className="w-full h-16 bg-stone-100 flex items-center justify-center">
                           {img ? (
-                            <img src={img} alt={s.name} className="w-full h-full object-cover" />
+                            <SafeImage src={img} alt={s.name} className="w-full h-full object-cover" />
                           ) : (
                             <Sparkles className="w-5 h-5 text-stone-300" aria-hidden="true" />
                           )}
@@ -910,7 +911,7 @@ export default function Studio() {
               disabled={selecting}
               className="relative rounded-xl overflow-hidden border-2 border-transparent hover:border-storm-200 transition-colors"
             >
-              <img
+              <SafeImage
                 src={imageDisplayUrl(v.url) || undefined}
                 alt={`Biến thể ảnh ${i + 1}`}
                 className="w-full object-cover bg-stone-100"
@@ -998,7 +999,7 @@ export default function Studio() {
                             title={it.label}
                             className={`shrink-0 w-20 rounded-lg overflow-hidden border-2 ${current ? "border-storm-500" : "border-transparent hover:border-storm-300"}`}
                           >
-                            <img src={imageDisplayUrl(it.url) || undefined} alt={it.label} className="w-20 h-20 object-cover bg-stone-100" />
+                            <SafeImage src={imageDisplayUrl(it.url) || undefined} alt={it.label} className="w-20 h-20 object-cover bg-stone-100" />
                             <span className="block text-[9px] text-stone-500 px-1 py-0.5 truncate">{current ? "Hiện tại" : it.label}</span>
                           </button>
                         );
@@ -1122,7 +1123,7 @@ function EditContextPanel({ post, characters }: { post: PostRow; characters: Cha
                 >
                   <span className="w-4 h-4 rounded-full overflow-hidden bg-stone-100 shrink-0 flex items-center justify-center">
                     {row?.referenceImageUrl ? (
-                      <img src={imageDisplayUrl(row.referenceImageUrl) || undefined} alt="" className="w-full h-full object-cover" />
+                      <SafeImage src={imageDisplayUrl(row.referenceImageUrl) || undefined} alt="" className="w-full h-full object-cover" />
                     ) : (
                       <UserRound className="w-2.5 h-2.5 text-stone-300" aria-hidden="true" />
                     )}

@@ -373,10 +373,12 @@ export async function refreshChannelInBackground(channelId: string, limit?: numb
       // Tên quét được thắng tên cũ: lần đầu thêm kênh thì tên chính là URL,
       // giữ nó lại thì danh sách mãi hiện đường dẫn thay vì tên trang.
       channelName: first?.channelName ?? chan.channelName ?? null,
-      channelAvatarUrl: (withAvatar as any)?.channelAvatarUrl ?? chan.channelAvatarUrl ?? null,
+      channelAvatarUrl: (await import("../services/image-write")).durableImageWrite(watchedChannels.channelAvatarUrl, await (await import("../services/durable-images")).storedImage((withAvatar as any)?.channelAvatarUrl)),
       followerCount: first?.followerCount ?? graphFollowers ?? chan.followerCount,
       updatedAt: new Date(),
     }).where(eq(watchedChannels.id, channelId));
+    await (await import("../services/durable-images")).queueImage({ table: "watched_channels", column: "channel_avatar_url", id: channelId }, (withAvatar as any)?.channelAvatarUrl)
+      .catch((e: any) => console.warn("[channels] Chưa xếp hàng ảnh đại diện mới:", e?.message || e));
   } catch (e: any) {
     console.error("refresh channel:", e?.message || e);
     await getDb().update(watchedChannels)

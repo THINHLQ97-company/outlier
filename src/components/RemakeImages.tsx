@@ -1,3 +1,4 @@
+import SafeImage from "./SafeImage";
 import { useEffect, useState } from "react";
 import { Loader2, ImagePlus, Check, Download, Pencil, Wand2, X } from "lucide-react";
 import { generateRemakeImage, selectRemakeImage, editRemakeImage, proposeRemakeConcepts } from "../services/remakes";
@@ -421,7 +422,7 @@ export default function RemakeImages({
                         isSelected ? "border-storm-500 ring-2 ring-storm-200" : "border-stone-200"
                       }`}
                     >
-                      <img src={imageDisplayUrl(img.url) || undefined} alt={img.prompt.slice(0, 80)} className="w-full aspect-square object-cover bg-stone-100" loading="lazy" />
+                      <SafeImage src={imageDisplayUrl(img.url) || undefined} alt={img.prompt.slice(0, 80)} className="w-full aspect-square object-cover bg-stone-100" loading="lazy" />
                       <div className="p-2">
                         {/* Mô tả đã dùng để vẽ — trước đây lưu mà không hiện ra bao giờ. */}
                         <details className="mb-1.5">

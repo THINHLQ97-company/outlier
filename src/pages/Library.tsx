@@ -1,3 +1,4 @@
+import SafeImage from "../components/SafeImage";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -249,7 +250,7 @@ function GalleryTab() {
                 <button onClick={() => setDetail(p)} className="block w-full text-left">
                   <div className="aspect-square bg-stone-100 flex items-center justify-center">
                     {url ? (
-                      <img src={url} alt="" className="w-full h-full object-cover" />
+                      <SafeImage src={url} alt="" className="w-full h-full object-cover" />
                     ) : (
                       <ImageOff className="w-6 h-6 text-stone-300" aria-hidden="true" />
                     )}
@@ -435,7 +436,7 @@ function GalleryDetailModal({
         </div>
         <div className="ds-modal-body flex flex-col gap-3">
           <div className="rounded-lg overflow-hidden bg-stone-100 flex items-center justify-center">
-            {url ? <img src={url} alt="" className="w-full max-h-96 object-contain" /> : <ImageOff className="w-8 h-8 text-stone-300 m-10" aria-hidden="true" />}
+            {url ? <SafeImage src={url} alt="" className="w-full max-h-96 object-contain" /> : <ImageOff className="w-8 h-8 text-stone-300 m-10" aria-hidden="true" />}
           </div>
           {post.caption && <p className="text-sm text-stone-600 italic">"{post.caption}"</p>}
           <div className="flex items-center gap-1.5 flex-wrap text-xs">
@@ -793,7 +794,7 @@ function CharacterCard({
       <div className="flex items-start gap-3">
         <div className="w-16 h-16 rounded-lg overflow-hidden bg-stone-100 border border-stone-200 shrink-0 flex items-center justify-center">
           {c.referenceImageUrl && !c.imageMissing ? (
-            <img src={imageDisplayUrl(c.referenceImageUrl) || undefined} alt={c.name} className="w-full h-full object-cover" />
+            <SafeImage src={imageDisplayUrl(c.referenceImageUrl) || undefined} alt={c.name} className="w-full h-full object-cover" />
           ) : (
             <UserRound className="w-7 h-7 text-stone-300" aria-hidden="true" />
           )}
@@ -1249,7 +1250,7 @@ function StyleCard({
     <div className="ds-card-body flex flex-col gap-3">
       <div className="aspect-video rounded-lg overflow-hidden bg-stone-100 flex items-center justify-center">
         {img ? (
-          <img src={img} alt={s.name} className="w-full h-full object-cover" />
+          <SafeImage src={img} alt={s.name} className="w-full h-full object-cover" />
         ) : (
           <Sparkles className="w-6 h-6 text-stone-300" aria-hidden="true" />
         )}
@@ -1507,7 +1508,7 @@ function RagTab() {
             return (
               <div key={ex.id} className="relative rounded-xl overflow-hidden border border-stone-200 bg-white flex flex-col">
                 <div className="aspect-square bg-stone-100 flex items-center justify-center">
-                  {url ? <img src={url} alt="" className="w-full h-full object-cover" /> : <ImageOff className="w-6 h-6 text-stone-300" aria-hidden="true" />}
+                  {url ? <SafeImage src={url} alt="" className="w-full h-full object-cover" /> : <ImageOff className="w-6 h-6 text-stone-300" aria-hidden="true" />}
                 </div>
                 <div className="p-2 flex flex-col gap-1 flex-1">
                   {ex.scene && <p className="text-[11px] text-stone-600 line-clamp-2 leading-snug">{ex.scene}</p>}
@@ -1661,9 +1662,9 @@ function StyleForm({
                 }}
               />
               {imageDataUrl ? (
-                <img src={imageDataUrl} alt="Xem trước" className="w-12 h-12 rounded-lg object-cover border border-stone-200" />
+                <SafeImage src={imageDataUrl} alt="Xem trước" className="w-12 h-12 rounded-lg object-cover border border-stone-200" />
               ) : initial?.referenceImageUrl && !initial.imageMissing ? (
-                <img
+                <SafeImage
                   src={imageDisplayUrl(initial.referenceImageUrl) || undefined}
                   alt="Ảnh hiện tại"
                   className="w-12 h-12 rounded-lg object-cover border border-stone-200"

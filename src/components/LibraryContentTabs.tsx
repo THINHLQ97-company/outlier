@@ -1,3 +1,4 @@
+import SafeImage from "./SafeImage";
 import { useEffect, useState } from "react";
 import { Loader2, ExternalLink, Download, FileText, Image as ImageIcon, Film, X, Heart, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -60,7 +61,7 @@ export function PostsTab() {
               {/* Ảnh to hơn hẳn: 64px không đọc được chữ nằm trong ảnh, mà với
                   nhiều bài thì chữ trong ảnh mới là nội dung chính. */}
               {hasImage ? (
-                <img src={imageDisplayUrl(r.selectedImageUrl) || undefined} alt="" className="w-32 h-32 rounded-lg object-cover bg-stone-100 shrink-0" loading="lazy" />
+                <SafeImage src={imageDisplayUrl(r.selectedImageUrl) || undefined} alt={(r.draft || "").slice(0, 100)} className="w-32 h-32 rounded-lg object-cover bg-stone-100 shrink-0" loading="lazy" />
               ) : (
                 <div className="w-32 h-32 rounded-lg bg-stone-100 shrink-0 flex items-center justify-center">
                   <FileText className="w-6 h-6 text-stone-300" aria-hidden="true" />
@@ -188,7 +189,7 @@ export function ImagesTab() {
       {items.map((img) => (
         <li key={img.url} className="border border-stone-200 rounded-xl overflow-hidden">
           <button type="button" onClick={() => setZoom(img)} className="block w-full" title="Bấm để xem lớn">
-            <img src={imageDisplayUrl(img.url) || undefined} alt={img.prompt.slice(0, 60)} className="w-full aspect-square object-cover bg-stone-100" loading="lazy" />
+            <SafeImage src={imageDisplayUrl(img.url) || undefined} alt={img.prompt.slice(0, 60)} className="w-full aspect-square object-cover bg-stone-100" loading="lazy" />
           </button>
           <div className="p-2">
             <p className="text-[11px] text-stone-500 line-clamp-2">{img.prompt}</p>
@@ -260,7 +261,7 @@ export function ImagesTab() {
             </button>
           </div>
           <div className="ds-modal-body max-h-[75vh] overflow-y-auto">
-            <img src={imageDisplayUrl(zoom.url) || undefined} alt="" className="w-full rounded-xl bg-stone-50" />
+            <SafeImage src={imageDisplayUrl(zoom.url) || undefined} alt={zoom.prompt.slice(0, 100)} className="w-full rounded-xl bg-stone-50" />
             <div className="flex items-center gap-2 mt-3">
               <Link to={`/remakes?id=${zoom.remakeId}`} className="ds-btn ds-btn-primary ds-btn-sm">
                 Mở bài dùng ảnh này

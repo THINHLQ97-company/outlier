@@ -1,3 +1,4 @@
+import SafeImage from "../components/SafeImage";
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, ExternalLink, Megaphone, UserCog, AlertTriangle, Plus, ChevronUp, Bot } from "lucide-react";
 import {
@@ -153,7 +154,7 @@ function OrderCard({
     <li className="ds-card">
       <div className="p-3 flex gap-3">
         {thumb ? (
-          <img src={thumb} alt="" className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg object-cover shrink-0 bg-stone-100" loading="lazy" />
+          <SafeImage src={thumb} alt={(order.postMessage || "").slice(0, 100)} className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg object-cover shrink-0 bg-stone-100" loading="lazy" />
         ) : (
           <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg bg-stone-100 shrink-0" aria-hidden="true" />
         )}

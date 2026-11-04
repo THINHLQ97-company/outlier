@@ -281,7 +281,7 @@ export function registerAdOrderRoutes(app: Express) {
           postId,
           postMessage: post.message,
           postPermalink: post.permalink,
-          postThumbnailUrl: post.thumbnailUrl,
+          postThumbnailUrl: await (await import("../services/durable-images")).storedImage(post.thumbnailUrl),
           note,
           requestedBy: username,
           assignee: runner,

@@ -1,3 +1,5 @@
+import SafeImage from "../components/SafeImage";
+import { imageDisplayUrl } from "../services/http";
 import { useEffect, useRef, useState, useCallback} from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -828,9 +830,9 @@ function DeconstructDetailPanel({
                   <ImagePlus className="w-4 h-4 text-storm-500" aria-hidden="true" />
                   Ảnh của bài
                 </h3>
-                <a href={row.thumbnailUrl} target="_blank" rel="noreferrer" className="block mt-2">
-                  <img
-                    src={row.thumbnailUrl}
+                <a href={imageDisplayUrl(row.thumbnailUrl) || "#"} target="_blank" rel="noreferrer" className="block mt-2">
+                  <SafeImage
+                    src={imageDisplayUrl(row.thumbnailUrl)}
                     alt=""
                     className="max-w-md w-full rounded-xl border border-stone-200 bg-stone-50"
                     loading="lazy"

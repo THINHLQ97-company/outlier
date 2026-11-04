@@ -116,7 +116,8 @@ export async function runDeconstructInBackground(id: string, url: string, _allow
           .where(eq(deconstructions.id, id));
         return;
       }
-      const post = out.post;
+      const post = { ...out.post };
+      post.thumbnailUrl = (await (await import("../services/durable-images")).keepImage(post.thumbnailUrl)) || post.thumbnailUrl;
 
       const { structureFetchedPost } = await import("../services/fetched-post-structure");
       const result = await structureFetchedPost(post);
@@ -398,7 +399,7 @@ export function registerDeconstructRoutes(app: Express) {
             ? {
                 platform: fromRadar.platform,
                 title: fromRadar.title,
-                thumbnailUrl: fromRadar.coverUrl,
+                thumbnailUrl: await (await import("../services/durable-images")).storedImage(fromRadar.coverUrl),
                 views: fromRadar.views,
                 likes: fromRadar.likes,
                 comments: fromRadar.comments,

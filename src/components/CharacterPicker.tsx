@@ -1,3 +1,4 @@
+import SafeImage from "./SafeImage";
 import { UserRound } from "lucide-react";
 import { imageDisplayUrl } from "../services/http";
 import type { CharacterRow } from "../types";
@@ -36,7 +37,7 @@ export default function CharacterPicker({ characters, selectedIds, onToggle, dis
           >
             <span className="w-7 h-7 rounded-full overflow-hidden bg-stone-100 border border-stone-200 shrink-0 flex items-center justify-center">
               {c.referenceImageUrl ? (
-                <img src={imageDisplayUrl(c.referenceImageUrl) || undefined} alt="" className="w-full h-full object-cover" />
+                <SafeImage src={imageDisplayUrl(c.referenceImageUrl) || undefined} alt="" className="w-full h-full object-cover" />
               ) : (
                 <UserRound className="w-4 h-4 text-stone-300" aria-hidden="true" />
               )}

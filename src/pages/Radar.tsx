@@ -1,3 +1,4 @@
+import SafeImage from "../components/SafeImage";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -745,7 +746,7 @@ function RadarItemCard({ item, minSampleForBaseline }: { item: RadarItem; minSam
           {/* Ảnh bài giờ được giữ trong kho nội bộ (/api/files) nên PHẢI đi qua
               imageDisplayUrl để kèm token — dùng thẳng coverUrl là 401, ra ô trống. */}
           {item.coverUrl ? (
-            <img src={imageDisplayUrl(item.coverUrl) || undefined} alt="" className="w-full h-full object-cover" loading="lazy" />
+            <SafeImage src={imageDisplayUrl(item.coverUrl) || undefined} alt={(item.title || "").slice(0, 100)} className="w-full h-full object-cover" loading="lazy" />
           ) : (
             <ImageIcon className="w-6 h-6 text-stone-300" aria-hidden="true" />
           )}

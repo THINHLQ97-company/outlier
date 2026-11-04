@@ -1,3 +1,4 @@
+import SafeImage from "./SafeImage";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, RefreshCw, ExternalLink, Megaphone, AlertTriangle, X, Heart, MessageCircle, Share2, Eye } from "lucide-react";
 import {
@@ -118,7 +119,7 @@ function PostRow({ post, onOrder }: { post: FanpagePost; onOrder: (p: FanpagePos
       }`}
     >
       {thumb ? (
-        <img src={thumb} alt="" className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg object-cover shrink-0 bg-stone-100" loading="lazy" />
+        <SafeImage src={thumb} alt={(post.message || "").slice(0, 100)} className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg object-cover shrink-0 bg-stone-100" loading="lazy" />
       ) : (
         <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg bg-stone-100 shrink-0" aria-hidden="true" />
       )}

@@ -124,6 +124,7 @@ async function runScanInBackground(
       // hết. Người dùng đang theo dõi sẽ thấy con số nhích dần thay vì đứng im
       // suốt cả phút khi quét nhiều nền tảng.
       if (r.candidates.length > 0) {
+        await (await import("../services/durable-images")).keepImageFields(r.candidates, "coverUrl", 20);
         await getDb().insert(radarItems).values(r.candidates.map((c) => ({
           jobId, platform: c.platform, itemKey: c.itemKey, url: c.url,
           title: c.title ?? null, coverUrl: c.coverUrl ?? null, durationSec: c.durationSec ?? null,

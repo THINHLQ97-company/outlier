@@ -1,3 +1,5 @@
+import { durableImageWrite, durableStatsWrite } from "./image-write";
+import { queueImage, writeThenQueue } from "./durable-images";
 // Nối một fanpage đã khai trong hồ sơ thương hiệu với Meta, rồi quét bài của
 // chính page đó về làm tài liệu để bóc tính cách.
 //
@@ -128,12 +130,13 @@ export async function connectFanpageMeta(
       pageName: row.pageName || page.name,
       handle: row.handle || (page.username ? `@${page.username}` : null),
       followerCount: page.followers ?? row.followerCount,
-      metaPictureUrl: page.pictureUrl ?? null,
+      metaPictureUrl: durableImageWrite(brandFanpages.metaPictureUrl, await (await import("./durable-images")).storedImage(page.pictureUrl)),
       metaCategory: page.category ?? null,
       metaAbout: page.about ?? null,
     })
     .where(eq(brandFanpages.id, fanpageRowId));
 
+  await queueImage({table:"brand_fanpages",column:"meta_picture_url",id:fanpageRowId},page.pictureUrl);
   return { fanpageId: fanpageRowId, page, tokenNote, tokenNeverExpires, tokenDaysLeft };
 }
 
@@ -184,7 +187,17 @@ export async function syncFanpagePosts(fanpageRowId: string, limit = 100): Promi
     throw new Error("Không lấy được bài nào có chữ. Page chưa đăng bài, hoặc token thiếu quyền pages_read_engagement.");
   }
 
+  const { storedImage } = await import("./durable-images");
   const stats = summarizePosts(posts);
+  // Remember the raw sources before swapping in cached copies; they are only
+  // queued after the business row is written (same transaction, below).
+  const pending = [
+    { target: { table: "brand_fanpages" as const, column: "meta_picture_url" as const, id: fanpageRowId }, url: page.pictureUrl },
+    ...stats.topPosts.map(p => ({ target: { table: "brand_fanpages" as const, column: "meta_stats_json" as const, id: fanpageRowId, postId: p.id }, url: p.thumbnailUrl })),
+  ];
+  for (const p of stats.topPosts) {
+    p.thumbnailUrl = (await storedImage(p.thumbnailUrl)) || undefined;
+  }
   // Số liệu đi kèm vào tài liệu chứ không để riêng: nhờ vậy khi bóc hồ sơ, model
   // thấy luôn bài nào của trang ăn hơn hẳn phần còn lại và học giọng từ bài đó.
   const doc = `${postsToDocument(page, posts)}\n--- SỐ LIỆU CỦA TRANG ---\n${statsToText(stats)}\n`;
@@ -204,18 +217,20 @@ export async function syncFanpagePosts(fanpageRowId: string, limit = 100): Promi
   const videoCount = posts.filter((p) => p.mediaType === "video").length;
   const videoRatio = Math.round((videoCount / posts.length) * 100) / 100;
 
-  await db
+  const metaPictureUrl = await storedImage(page.pictureUrl);
+  await writeThenQueue(db, async (tx) => (await tx
     .update(brandFanpages)
     .set({
       metaLastSyncAt: new Date(),
       metaLastPostCount: posts.length,
       followerCount: page.followers ?? row.followerCount,
-      metaPictureUrl: page.pictureUrl ?? row.metaPictureUrl,
+      metaPictureUrl: durableImageWrite(brandFanpages.metaPictureUrl, metaPictureUrl),
       metaCategory: page.category ?? row.metaCategory,
       metaAbout: page.about ?? row.metaAbout,
-      metaStatsJson: stats,
+      metaStatsJson: durableStatsWrite(brandFanpages.metaStatsJson, stats),
     })
-    .where(eq(brandFanpages.id, fanpageRowId));
+    .where(eq(brandFanpages.id, fanpageRowId))
+    .returning({ id: brandFanpages.id })).length > 0, pending);
 
   return {
     fanpageId: fanpageRowId,

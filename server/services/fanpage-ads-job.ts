@@ -1,3 +1,5 @@
+import { durableImageWrite } from "./image-write";
+import { queueImage } from "./durable-images";
 // Mỗi giờ: đồng bộ bài của trang nhà + đánh dấu bài đang chạy quảng cáo, rồi
 // tự chuyển trạng thái đơn đặt quảng cáo (task #6843).
 //
@@ -7,7 +9,7 @@ import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { getDb, isDbConfigured } from "../db/client";
 import { adOrders, brandFanpages, fanpagePosts } from "../db/schema";
 import { decryptToken } from "./meta-token";
-import { fetchPagePosts, fetchPost, type MetaPost } from "./meta-graph";
+import { fetchPageInfo, fetchPagePosts, fetchPost, type MetaPost } from "./meta-graph";
 import { autoOrderStatus, fetchActiveAdsForPage, MetaAdsError, networkAdsError, type AdsStatus, type StoryAds } from "./fanpage-ads";
 
 const EVERY_MS = 60 * 60_000;
@@ -28,11 +30,12 @@ export interface FanpageAdsSyncResult {
 async function upsertPosts(fanpageId: string, posts: MetaPost[]) {
   const db = getDb();
   const now = new Date();
+  const { storedImage } = await import("./durable-images");
   for (const p of posts) {
     const values = {
       message: p.message || null,
       permalink: p.permalink || null,
-      thumbnailUrl: p.thumbnailUrl || null,
+      thumbnailUrl: await storedImage(p.thumbnailUrl),
       mediaType: p.mediaType,
       createdTime: p.createdTime ? new Date(p.createdTime) : null,
       likes: p.likes,
@@ -40,10 +43,11 @@ async function upsertPosts(fanpageId: string, posts: MetaPost[]) {
       shares: p.shares,
       syncedAt: now,
     };
-    await db
+    const [written] = await db
       .insert(fanpagePosts)
       .values({ fanpageId, postId: p.id, ...values })
-      .onConflictDoUpdate({ target: [fanpagePosts.fanpageId, fanpagePosts.postId], set: values });
+      .onConflictDoUpdate({ target: [fanpagePosts.fanpageId, fanpagePosts.postId], set: { ...values, thumbnailUrl: durableImageWrite(fanpagePosts.thumbnailUrl, values.thumbnailUrl) } }).returning({ id: fanpagePosts.id });
+    await queueImage({table:"fanpage_posts",column:"thumbnail_url",id:written.id}, p.thumbnailUrl);
   }
 }
 
@@ -122,6 +126,18 @@ export async function syncFanpageAds(fanpageId: string): Promise<FanpageAdsSyncR
 
   const pageToken = decryptToken(fp.metaTokenEnc);
   const now = new Date();
+  // Refresh the page picture too: an expired signature in an old row cannot
+  // be recovered by downloading it again. A new Graph URL can be preserved.
+  try {
+    const page = await fetchPageInfo(fp.metaPageId, pageToken);
+    const { storedImage } = await import("./durable-images");
+    if (page.pictureUrl) await db.update(brandFanpages)
+      .set({ metaPictureUrl: durableImageWrite(brandFanpages.metaPictureUrl, await storedImage(page.pictureUrl)) })
+      .where(eq(brandFanpages.id, fanpageId));
+    await queueImage({table:"brand_fanpages",column:"meta_picture_url",id:fanpageId},page.pictureUrl);
+  } catch (e: any) {
+    console.warn("[fanpage-ads] Chưa làm mới được ảnh trang:", e?.message || e);
+  }
 
   // 1. Danh mục bài gần nhất (page token, miễn phí).
   const recent = await fetchPagePosts(fp.metaPageId, pageToken, RECENT_POSTS, { includeEmpty: true });

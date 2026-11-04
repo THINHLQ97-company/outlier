@@ -1,3 +1,4 @@
+import SafeImage from "./SafeImage";
 import { useEffect } from "react";
 import { X, ExternalLink } from "lucide-react";
 import { imageDisplayUrl } from "../services/http";
@@ -59,7 +60,7 @@ export default function ImageLightbox({
           </div>
         </div>
         <div className="p-3 bg-stone-900/5 max-h-[80vh] overflow-auto flex items-center justify-center">
-          <img
+          <SafeImage
             src={imageDisplayUrl(url) || undefined}
             alt={title || "Ảnh bài viết"}
             className="max-w-full h-auto rounded-lg"

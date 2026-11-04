@@ -1,3 +1,4 @@
+import SafeImage from "./SafeImage";
 import { Image as ImageIcon, Type, Sparkles } from "lucide-react";
 import { imageDisplayUrl } from "../services/http";
 import type { ImageReadingRecord } from "../types";
@@ -42,9 +43,9 @@ export default function ImageReadingPanel({
 
         <div className="flex gap-3 mt-3">
           {thumbnailUrl && (
-            <img
+            <SafeImage
               src={imageDisplayUrl(thumbnailUrl) || undefined}
-              alt=""
+              alt={(reading.textInImage || "").slice(0, 100)}
               className="w-28 h-28 rounded-lg object-cover bg-stone-100 shrink-0"
               loading="lazy"
             />

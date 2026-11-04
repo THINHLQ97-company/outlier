@@ -1,3 +1,5 @@
+import SafeImage from "../components/SafeImage";
+import { imageDisplayUrl } from "../services/http";
 import { useEffect, useState } from "react";
 import { Loader2, ShieldAlert, Plus, X, KeyRound, Mail, Check } from "lucide-react";
 import { listUsers, createUser, updateUser, inviteUser } from "../services/users";
@@ -146,7 +148,7 @@ function AdminUsersInner() {
                     <td>
                       <div className="flex items-center gap-2">
                         {u.avatarUrl ? (
-                          <img src={u.avatarUrl} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
+                          <SafeImage src={imageDisplayUrl(u.avatarUrl)} variant="avatar" name={u.username} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
                         ) : (
                           <span className="w-6 h-6 rounded-full bg-stone-100 text-stone-400 flex items-center justify-center text-[11px] font-medium shrink-0">
                             {(u.email || u.username).charAt(0).toUpperCase()}

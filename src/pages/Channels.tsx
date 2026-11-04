@@ -1,3 +1,4 @@
+import SafeImage from "../components/SafeImage";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -341,8 +342,9 @@ export default function Channels() {
                 <div className="flex items-start justify-between gap-2">
                   <span className="flex items-center gap-2 min-w-0">
                     {c.channelAvatarUrl ? (
-                      <img
-                        src={c.channelAvatarUrl}
+                      <SafeImage
+                        src={imageDisplayUrl(c.channelAvatarUrl)}
+                        variant="avatar" name={c.channelName || c.channelUrl}
                         alt=""
                         className="w-7 h-7 rounded-full object-cover bg-stone-100 shrink-0"
                         loading="lazy"
@@ -753,8 +755,9 @@ function ChannelDetailPanel({
           <div className="flex-1 min-w-0 flex gap-3">
             {/* Avatar kênh: nhận ra ngay đang xem kênh nào, không phải đọc URL. */}
             {detail.channelAvatarUrl ? (
-              <img
-                src={detail.channelAvatarUrl}
+              <SafeImage
+                src={imageDisplayUrl(detail.channelAvatarUrl)}
+                variant="avatar" name={detail.channelName || detail.channelUrl}
                 alt=""
                 className="w-11 h-11 rounded-full object-cover bg-stone-100 shrink-0"
                 loading="lazy"
@@ -938,7 +941,7 @@ function ChannelItemCard({ item }: { item: RadarItem }) {
               title="Bấm để xem ảnh lớn"
               aria-label="Xem ảnh lớn"
             >
-              <img src={imageDisplayUrl(item.coverUrl) || undefined} alt="" className="w-full h-full object-cover" loading="lazy" />
+              <SafeImage src={imageDisplayUrl(item.coverUrl) || undefined} alt={(item.title || "").slice(0, 100)} className="w-full h-full object-cover" loading="lazy" />
             </button>
           ) : (
             <ImageIcon className="w-6 h-6 text-stone-300" aria-hidden="true" />

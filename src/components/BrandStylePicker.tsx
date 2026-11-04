@@ -1,3 +1,4 @@
+import SafeImage from "./SafeImage";
 import { useEffect, useState } from "react";
 import { Loader2, Palette, AlertTriangle } from "lucide-react";
 import { listStyles } from "../services/styles";
@@ -55,7 +56,7 @@ export default function BrandStylePicker({
         <div className="flex items-start gap-3">
           <div className="w-16 h-16 rounded-lg overflow-hidden bg-stone-100 shrink-0 flex items-center justify-center">
             {img ? (
-              <img src={img} alt={current?.name} className="w-full h-full object-cover" />
+              <SafeImage src={img} alt={current?.name} className="w-full h-full object-cover" />
             ) : (
               <Palette className="w-6 h-6 text-stone-300" aria-hidden="true" />
             )}
