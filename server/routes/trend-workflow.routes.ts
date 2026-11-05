@@ -1,14 +1,14 @@
 import type { Express } from "express";
-import { and, desc, eq, inArray, isNull, isNotNull } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, isNotNull } from "drizzle-orm";
 import { requireAuth as defaultAuth, requireAdmin as defaultAdmin, getAuthUser } from "../auth-mw";
 import { getDb as getDefaultDb, isDbConfigured as isDefaultDbConfigured } from "../db/client";
 import { brands, brandFanpages, trendWorkflowRuns, trendWorkflowItems, trendWorkflowDrafts, trendTeamsOutbox, users } from "../db/schema";
 import { normalizeSettings, publicTrendSettings, readTrendSettings, saveTrendSettings, withPublicBaseFallback, teamsWebhook } from "../services/trend-workflow-settings";
 import { queueTrendDryRun as defaultQueue, lastTrendSlot } from "../services/trend-workflow";
-import { trendRefreshState } from "../services/trend-claude";
+import { publicTrendDraft, trendRefreshState } from "../services/trend-claude";
 import { buildTrendCard, drainTrendOutbox, recoverStaleTrendOutbox, reserveTrendSendTest, resolveTrendOutbox } from "../services/trend-teams";
 import { trashTrends, restoreTrends } from "../services/trend-trash";
-import type { TrendBrief } from "../services/trend-research";
+import { sensitiveTrend, type TrendBrief } from "../services/trend-research";
 /** Safe derived fields; never expose raw input. Skip reason is stored in error without a new migration. */
 export function trendItemPublicFields(r: { status: string; error: string | null; input: unknown; brief?: unknown }) {
   const skipped = r.status === "skipped";
@@ -23,15 +23,23 @@ export function trendSendDecisionGuard(item: { brief: unknown }, dryRun = false)
   return null;
 }
 
+/** Gửi tay: cùng cổng biên tập với thẻ tự động, nhưng KHÔNG đòi teamsEnabled hay bản nháp. */
+export function trendManualSendGuard(item: { status: string; title: string; brief: unknown }, dryRun: boolean) {
+  const b = item.brief as TrendBrief | null;
+  if (item.status === "excluded" || b?.sensitive || sensitiveTrend(item.title)) return { code: "SENSITIVE_TREND", error: "Xu hướng nhạy cảm; không gửi Teams." };
+  return trendSendDecisionGuard(item, dryRun);
+}
+/** Chống bấm trùng: mọi lần gửi tay của một trend trong 2 phút gần nhất coi là một. */
+export const MANUAL_SEND_WINDOW_MS = 120_000;
 export async function sendTestGuard(owner: string, deps = { settings: readTrendSettings, reserve: reserveTrendSendTest }) {
   // Check base URL before spending a rate-limit slot.
   if (!(await deps.settings()).publicBaseUrl) return { status: 409, code: "BASE_URL_REQUIRED", error: "Cần URL Outlier để mở bản nháp từ Teams." };
   if (!await deps.reserve(owner)) return { status: 429, code: "RATE_LIMITED", error: "Tối đa 3 lượt gửi thử hoặc gửi lại mỗi phút mỗi người." };
   return null;
 }
-export function registerTrendWorkflowRoutes(app: Express, overrides: Partial<{ db: typeof getDefaultDb; configured: typeof isDefaultDbConfigured; auth: typeof defaultAuth; admin: typeof defaultAdmin; queue: typeof defaultQueue; guard: typeof sendTestGuard }> = {}) {
-  const defaultGuard = sendTestGuard;
-  const { db: getDb, configured: isDbConfigured, auth: requireAuth, queue: queueTrendDryRun, guard: checkSendTest } = { db: () => getDefaultDb(), configured: isDefaultDbConfigured, auth: defaultAuth, queue: defaultQueue, guard: sendTestGuard, ...overrides };
+export function registerTrendWorkflowRoutes(app: Express, overrides: Partial<{ db: typeof getDefaultDb; configured: typeof isDefaultDbConfigured; auth: typeof defaultAuth; admin: typeof defaultAdmin; queue: typeof defaultQueue; guard: typeof sendTestGuard; drain: (onlyId: string) => Promise<void>; webhook: typeof teamsWebhook; settings: typeof readTrendSettings }> = {}) {
+  const { db: getDb, configured: isDbConfigured, auth: requireAuth, queue: queueTrendDryRun, guard: checkSendTest, drain: drainOne, webhook: getWebhook, settings: getSettings } = { db: () => getDefaultDb(), configured: isDefaultDbConfigured, auth: defaultAuth, queue: defaultQueue, guard: sendTestGuard,
+    drain: (onlyId: string) => drainTrendOutbox(undefined, onlyId), webhook: teamsWebhook, settings: readTrendSettings, ...overrides };
   const canConfigure = async (req: any) => {
     const username = getAuthUser(req);
     if (!username) return false;
@@ -60,7 +68,7 @@ export function registerTrendWorkflowRoutes(app: Express, overrides: Partial<{ d
     const outbox = await getDb().select({ id: trendTeamsOutbox.id, status: trendTeamsOutbox.status, attempts: trendTeamsOutbox.attempts, lastError: trendTeamsOutbox.lastError, acceptedAt: trendTeamsOutbox.acceptedAt, nextAttemptAt: trendTeamsOutbox.nextAttemptAt }).from(trendTeamsOutbox).orderBy(desc(trendTeamsOutbox.createdAt)).limit(30);
     const settings = await publicTrendSettings();
     const refresh = await trendRefreshState(getDb());
-    res.json({ canConfigure: allowed, settings: { skippedRetentionDays: settings.skippedRetentionDays, enabled: settings.enabled, researchProvider: settings.researchProvider, hasTargets: settings.targets.length > 0 }, lastRefreshAt: refresh.lastRefreshAt, refreshedBy: refresh.refreshedBy, lastSlot: await lastTrendSlot(), runs: runs.map(r => ({ id: r.id, status: r.status, error: r.error, createdAt: r.createdAt, dryRun: r.dryRun })), outbox: allowed ? outbox : [] });
+    res.json({ canConfigure: allowed, settings: { skippedRetentionDays: settings.skippedRetentionDays, enabled: settings.enabled, researchProvider: settings.researchProvider, hasTargets: settings.targets.length > 0, webhookConfigured: allowed ? settings.webhookConfigured : undefined }, lastRefreshAt: refresh.lastRefreshAt, refreshedBy: refresh.refreshedBy, lastSlot: await lastTrendSlot(), runs: runs.map(r => ({ id: r.id, status: r.status, error: r.error, createdAt: r.createdAt, dryRun: r.dryRun })), outbox: allowed ? outbox : [] });
   }));
   app.get("/api/trend-workflow/settings", requireAuth, requireTrendOwner, route(async (_req, res) => res.json(await publicTrendSettings())));
   app.put("/api/trend-workflow/settings", requireAuth, requireTrendOwner, route(async (req, res) => {
@@ -92,7 +100,12 @@ export function registerTrendWorkflowRoutes(app: Express, overrides: Partial<{ d
     const total = (await getDb().select({ id: trendWorkflowItems.id }).from(trendWorkflowItems).where(trash ? isNotNull(trendWorkflowItems.deletedAt) : isNull(trendWorkflowItems.deletedAt))).length;
     const trashTotal = trash ? total : await canConfigure(req) ? (await getDb().select({ id: trendWorkflowItems.id }).from(trendWorkflowItems).where(isNotNull(trendWorkflowItems.deletedAt))).length : 0;
     const drafts = rows.length ? await getDb().select().from(trendWorkflowDrafts).where(inArray(trendWorkflowDrafts.itemId, rows.map(r => r.id))) : [];
-    res.json({ total, trashTotal, items: rows.map(r => ({ ...r, ...trendItemPublicFields(r), facebook: undefined, input: undefined, title: (r.brief as any)?.title || r.title, drafts: drafts.filter(d => d.itemId === r.id).map(d => ({ ...d, href: `/remakes?remakeId=${d.remakeId}` })) })) });
+    // Chỉ thời điểm Teams đã nhận (accepted) — không có nghĩa đã hiển thị; không lộ payload/lỗi outbox.
+    const sent = rows.length ? await getDb().select({ itemId: trendTeamsOutbox.itemId, acceptedAt: trendTeamsOutbox.acceptedAt }).from(trendTeamsOutbox).where(and(inArray(trendTeamsOutbox.itemId, rows.map(r => r.id)), eq(trendTeamsOutbox.status, "accepted"))) : [];
+    const lastSent = (id: string) => sent.filter(o => o.itemId === id && o.acceptedAt).map(o => new Date(o.acceptedAt!).getTime()).sort((a, b) => b - a)[0];
+    const runs = rows.length ? await getDb().select({ id: trendWorkflowRuns.id, dryRun: trendWorkflowRuns.dryRun }).from(trendWorkflowRuns).where(inArray(trendWorkflowRuns.id, [...new Set(rows.map(r => r.runId))])) : [];
+    res.json({ total, trashTotal, items: rows.map(r => ({ ...r, ...trendItemPublicFields(r), facebook: undefined, input: undefined, title: (r.brief as any)?.title || r.title, drafts: drafts.filter(d => d.itemId === r.id).map(publicTrendDraft),
+      dryRun: Boolean(runs.find(x => x.id === r.runId)?.dryRun), teamsSentAt: lastSent(r.id) ? new Date(lastSent(r.id)!).toISOString() : null })) });
   }));
   for (const action of ["delete", "restore"] as const) app.post(`/api/trend-workflow/trends/${action}`, requireAuth, requireTrendOwner, route(async (req, res) => {
     const ids = req.body?.ids;
@@ -155,5 +168,37 @@ export function registerTrendWorkflowRoutes(app: Express, overrides: Partial<{ d
     await drainTrendOutbox(undefined, out.id);
     const [after] = await getDb().select().from(trendTeamsOutbox).where(eq(trendTeamsOutbox.id, out.id));
     res.json({ id: after.id, status: after.status, attempts: after.attempts, error: after.lastError, message: after.status === "accepted" ? "Teams đã nhận (chưa xác nhận đã hiển thị)." : "Đã lưu trạng thái gửi; xem lại kết quả trong outbox." });
+  }));
+  // Gửi thẻ thật bằng tay (owner). Dùng chung outbox/claim/drain với thẻ tự động; key riêng
+  // nên không bị chặn bởi thẻ tự động đã gửi, nhưng bấm trùng trong 2 phút chỉ gửi một lần.
+  app.post("/api/trend-workflow/trends/:id/send", requireAuth, requireTrendOwner, route(async (req, res) => {
+    if (req.body?.confirm !== true) return res.status(400).json({ code: "CONFIRM_REQUIRED", error: "Cần xác nhận gửi thẻ lên Teams." });
+    if (!UUID.test(req.params.id)) return res.status(400).json({ code: "INVALID_ID", error: "Mã xu hướng không hợp lệ." });
+    const [item] = await getDb().select().from(trendWorkflowItems).where(and(eq(trendWorkflowItems.id, req.params.id), isNull(trendWorkflowItems.deletedAt)));
+    if (!item?.brief) return res.status(404).json({ code: "BRIEF_NOT_FOUND", error: "Chưa có bản tóm tắt." });
+    const [parentRun] = await getDb().select().from(trendWorkflowRuns).where(eq(trendWorkflowRuns.id, item.runId));
+    const blockedItem = trendManualSendGuard(item, Boolean(parentRun?.dryRun));
+    if (blockedItem) return res.status(409).json(blockedItem);
+    if (!await getWebhook()) return res.status(409).json({ code: "WEBHOOK_NOT_CONFIGURED", error: "Chưa cấu hình Workflow riêng cho Outlier." });
+    const prefix = `manual:${item.id}:`;
+    const since = new Date(Date.now() - MANUAL_SEND_WINDOW_MS);
+    const outboxView = (o: any) => ({ id: o.id, status: o.status, attempts: o.attempts, error: o.lastError, acceptedAt: o.acceptedAt });
+    const recent = (await getDb().select().from(trendTeamsOutbox).where(and(eq(trendTeamsOutbox.itemId, item.id), gte(trendTeamsOutbox.createdAt, since))))
+      .filter(o => o.idempotencyKey.startsWith(prefix)).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+    if (recent) return res.status(409).json({ code: "RECENTLY_SENT", error: "Trend này vừa được gửi trong 2 phút qua; không gửi lại.", ...outboxView(recent) });
+    const blocked = await checkSendTest(getAuthUser(req)!);
+    if (blocked) return res.status(blocked.status).json({ code: blocked.code, error: blocked.error });
+    const config = await getSettings();
+    const drafts = await getDb().select().from(trendWorkflowDrafts).where(eq(trendWorkflowDrafts.itemId, item.id));
+    const hasDraft = drafts.some(d => d.status === "ready" && d.remakeId);
+    // Bucket 2 phút trong key: hai request đồng thời cùng chèn một key, unique index chỉ cho một dòng.
+    const idempotencyKey = `${prefix}${Math.floor(Date.now() / MANUAL_SEND_WINDOW_MS)}`;
+    const inserted = await getDb().insert(trendTeamsOutbox).values({ idempotencyKey, itemId: item.id, nextAttemptAt: new Date(), createdAt: new Date(), payload: buildTrendCard(item.brief as TrendBrief, drafts, config.publicBaseUrl, item.id) }).onConflictDoNothing().returning();
+    const [out] = await getDb().select().from(trendTeamsOutbox).where(eq(trendTeamsOutbox.idempotencyKey, idempotencyKey));
+    if (!inserted.length) return res.status(409).json({ code: "RECENTLY_SENT", error: "Trend này vừa được gửi trong 2 phút qua; không gửi lại.", ...outboxView(out) });
+    await drainOne(out.id);
+    const [after] = await getDb().select().from(trendTeamsOutbox).where(eq(trendTeamsOutbox.id, out.id));
+    res.json({ ...outboxView(after), warning: hasDraft ? null : "Chưa có bản nháp; thẻ chỉ có nút xem chi tiết.",
+      message: after.status === "accepted" ? "Teams đã nhận (chưa xác nhận đã hiển thị)." : after.status === "unknown" ? "Chưa rõ Teams đã nhận chưa; kiểm tra kênh Teams trước khi gửi lại." : after.status === "failed" ? "Teams từ chối thẻ; xem lỗi trong outbox." : "Đã lưu lượt gửi; sẽ thử lại tự động." });
   }));
 }

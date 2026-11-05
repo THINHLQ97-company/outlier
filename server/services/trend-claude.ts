@@ -189,11 +189,21 @@ export async function submitTrendResearch(itemId: string, input: ClaudeResearchI
 function dispatchResearchRun(run: { id: string; dryRun: boolean }) {
   setImmediate(() => void import("./trend-workflow").then(m => m.runTrendWorkflow({ reason: "Claude nộp nghiên cứu", queuedRunId: run.id, dryRun: run.dryRun })).catch(e => console.warn("[trend] Chưa xử lý nghiên cứu:", e?.message)));
 }
+/**
+ * Một bản nháp theo page cho client/Claude. ready + error = bản nháp dùng được, chỉ ý tưởng ảnh lỗi
+ * (tạo lại trong trang remake); error = page đó chưa viết được nháp, không có link.
+ */
+export function publicTrendDraft<T extends { remakeId: string | null; status: string; error: string | null }>(d: T) {
+  const ready = d.status === "ready" && !!d.remakeId;
+  return { ...d, href: ready ? `/remakes?remakeId=${encodeURIComponent(d.remakeId!)}` : null,
+    imageIdeas: !ready ? null : d.error ? "error" as const : "ok" as const,
+    note: ready ? (d.error ? "Bản nháp sẵn sàng · Ý tưởng ảnh lỗi, tạo lại trong trang remake." : "Bản nháp sẵn sàng.") : d.status === "error" ? "Page này chưa viết được bản nháp." : "Đang soạn bản nháp." };
+}
 export async function trendResearchStatus(itemId: string, db: any = getDb()) {
   const [item] = await db.select().from(trendWorkflowItems).where(eq(trendWorkflowItems.id, itemId));
   if (!item || item.deletedAt) throw new Error("Không tìm thấy item.");
   const drafts = await db.select().from(trendWorkflowDrafts).where(eq(trendWorkflowDrafts.itemId, itemId));
   const { facebook, input, ...publicItem } = item;
   const skipped = item.status === "skipped";
-  return { ...publicItem, decision: skipped ? "skip" : (item.brief as any)?.decision ?? null, discoverySource: input?.origin === "claude_discover" ? "claude" : "google_trends", skipReason: skipped ? String(item.error || "").replace(/^Claude bỏ qua: /, "") || null : null, error: skipped ? null : item.error, drafts };
+  return { ...publicItem, decision: skipped ? "skip" : (item.brief as any)?.decision ?? null, discoverySource: input?.origin === "claude_discover" ? "claude" : "google_trends", skipReason: skipped ? String(item.error || "").replace(/^Claude bỏ qua: /, "") || null : null, error: skipped ? null : item.error, drafts: drafts.map(publicTrendDraft) };
 }

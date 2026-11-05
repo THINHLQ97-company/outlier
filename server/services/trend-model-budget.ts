@@ -52,6 +52,8 @@ export function createTrendModelBudget(config: TrendSettings, reserve: () => Pro
   return {
     invoke,
     text: async (prompt: string) => (await invoke(prompt)).text || "",
+    /** JSON mode (+ khuôn nếu có): bước cần JSON không được gọi như văn bản thường, model sẽ trả markdown. */
+    json: async (prompt: string, schema?: Record<string, any>) => (await invoke(prompt, { responseMimeType: "application/json", ...(schema ? { responseSchema: schema } : {}) })).text || "",
     assertActive: () => { if (stopped) throw stopped; },
   };
 }

@@ -16,6 +16,17 @@ export function trendGroup(it: TrendItem): TrendGroup {
   // Chỉ quyết định biên tập mới được xếp "Đáng làm"; thiếu decision (dữ liệu cũ) = chờ đánh giá, không suy từ confidence.
   return decisionOf(it) === "pursue" ? "worth" : "watch";
 }
+/** Lý do không gửi tay được lên Teams (null = gửi được). Server kiểm lại cùng điều kiện. */
+export function manualSendBlock(it: TrendItem, webhookConfigured: boolean | undefined): string | null {
+  if (it.deletedAt) return "Trend đang ở Thùng rác.";
+  if (!it.brief) return "Chưa có bản tóm tắt.";
+  if (it.status === "excluded" || it.brief.sensitive) return "Trend nhạy cảm không gửi lên Teams.";
+  if (it.dryRun) return "Trend của lần chạy thử không gửi lên Teams.";
+  if (decisionOf(it) !== "pursue") return "Claude chưa chọn đu trend này.";
+  if (!webhookConfigured) return "Chưa cấu hình đường dẫn gửi Teams trong Cài đặt.";
+  return null;
+}
+const fmtTime = (iso: string) => new Date(iso).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour12: false });
 function safeUrl(url: string): URL | null {
   try { const parsed = new URL(url); return ["https:", "http:"].includes(parsed.protocol) ? parsed : null; } catch { return null; }
 }
@@ -75,7 +86,9 @@ function Summary({ text, initiallyExpanded = false }: { text: string; initiallyE
     {(overflow || expanded) && <button type="button" className="ds-btn ds-btn-ghost ds-btn-sm mt-1" onClick={() => setExpanded(!expanded)} aria-expanded={expanded}>{expanded ? "Thu gọn" : "Xem thêm"}</button>}
   </>;
 }
-export default function TrendCardView({ it, onCard, expanded = false, canConfigure = false, selected = false, onSelect, onTrash, busy = false, skippedRetentionDays = 7, pages = [] }: { it: TrendItem; onCard: () => void; expanded?: boolean; canConfigure?: boolean; selected?: boolean; onSelect?: () => void; onTrash?: () => void; busy?: boolean; skippedRetentionDays?: number; pages?: { id: string; pageName: string }[] }) {
+export default function TrendCardView({ it, onCard, onSend, webhookConfigured, expanded = false, canConfigure = false, selected = false, onSelect, onTrash, busy = false, skippedRetentionDays = 7, pages = [] }: { it: TrendItem; onCard: () => void; onSend?: () => void; webhookConfigured?: boolean; expanded?: boolean; canConfigure?: boolean; selected?: boolean; onSelect?: () => void; onTrash?: () => void; busy?: boolean; skippedRetentionDays?: number; pages?: { id: string; pageName: string }[] }) {
+  const readyDrafts = it.drafts.filter(d => d.status === "ready" && d.remakeId);
+  const sendBlock = canConfigure ? manualSendBlock(it, webhookConfigured) : null;
   const b = it.brief;
   const group = trendGroup(it);
   const label = group === "skipped" ? "Đã bỏ qua" : b?.sensitive ? "Nhạy cảm — cần duyệt kỹ" : group === "worth" ? "Đáng làm" : group === "watch" ? (decisionOf(it) === "watch" || it.status === "watch" ? "Đang theo dõi" : "Chờ đánh giá") : "Đang xử lý";
@@ -91,8 +104,13 @@ export default function TrendCardView({ it, onCard, expanded = false, canConfigu
     {b && <Angles brief={b} pages={pages} />}
     {b && <SourceList sources={b.sources} />}
     {(it.contentPath || fb || (it.facebookReason && !isTargetError(it.facebookReason))) && <section className="border-t border-stone-100 pt-3"><h3 className="text-sm font-semibold text-stone-700">Bài Facebook dùng để remake</h3><div className="flex flex-wrap items-center gap-2 mt-1">{it.contentPath && <span className="ds-badge">{it.contentPath === 'facebook_post' ? 'Dựng từ bài Facebook' : 'Dựng từ tóm tắt tin tức'}</span>}{fb && <a href={fb.href} target="_blank" rel="noopener noreferrer" className="text-sm text-storm-700 underline">Mở bài Facebook gốc <span className="sr-only">(mở tab mới)</span></a>}</div>{it.facebookReason && !isTargetError(it.facebookReason) && <p className="text-sm text-stone-500 mt-1">{it.facebookReason}</p>}</section>}
-    {it.error && group !== 'skipped' && !isTargetError(it.error) && <div role="alert" className="ds-alert ds-alert-warning">Trend này chưa xử lý xong. Hãy kiểm tra lại sau.</div>}
-    {it.drafts.length > 0 && <section><h3 className="text-sm font-semibold text-stone-700 mb-2">Bản nháp từng trang</h3><div className="flex flex-col gap-2">{it.drafts.map(d => <div key={`${d.fanpageId}-${d.remakeId}`} className="border border-stone-200 rounded-lg p-3 flex items-center justify-between gap-2 flex-wrap"><div className="min-w-0"><div className="text-sm font-medium text-stone-800">{d.pageName}</div>{d.angle && <div className="text-sm text-stone-500">{d.angle}</div>}<span className={`ds-badge mt-1 ${d.status === 'ready' ? 'ds-badge-success' : d.status === 'error' ? 'ds-badge-danger' : 'ds-badge-info'}`}>{d.status === 'ready' ? 'Sẵn sàng' : d.status === 'error' ? 'Lỗi khi soạn' : 'Đang soạn'}</span>{d.status === 'error' && <p className="text-sm text-stone-600 mt-1">Chưa soạn được bản nháp. Hãy thử lại sau.</p>}</div>{d.status === 'ready' && d.remakeId && <Link to={`/remakes?remakeId=${encodeURIComponent(d.remakeId)}`} className="ds-btn ds-btn-sm">Mở bản nháp</Link>}</div>)}</div></section>}
-    {!it.deletedAt && b && group !== 'skipped' && <div><button type="button" className="ds-btn ds-btn-sm" onClick={onCard}><Eye className="w-4 h-4" aria-hidden="true" /> Xem trước thẻ Teams</button></div>}
+    {it.error && group !== 'skipped' && !isTargetError(it.error) && !readyDrafts.length && <div role="alert" className="ds-alert ds-alert-warning">Trend này chưa xử lý xong. Hãy kiểm tra lại sau.</div>}
+    {it.drafts.length > 0 && <section><h3 className="text-sm font-semibold text-stone-700 mb-2">Bản nháp từng trang</h3><div className="flex flex-col gap-2">{it.drafts.map(d => <div key={`${d.fanpageId}-${d.remakeId}`} className="border border-stone-200 rounded-lg p-3 flex items-center justify-between gap-2 flex-wrap"><div className="min-w-0"><div className="text-sm font-medium text-stone-800">{d.pageName}</div>{d.angle && <div className="text-sm text-stone-500">{d.angle}</div>}<span className={`ds-badge mt-1 ${d.status === 'ready' ? 'ds-badge-success' : d.status === 'error' ? 'ds-badge-danger' : 'ds-badge-info'}`}>{d.status === 'ready' ? 'Bản nháp sẵn sàng' : d.status === 'error' ? 'Lỗi khi soạn' : 'Đang soạn'}</span>{d.status === 'ready' && (d.imageIdeas === 'error' || (d.imageIdeas == null && d.error)) && <p className="text-sm text-amber-700 mt-1">Bản nháp sẵn sàng · Ý tưởng ảnh lỗi, tạo lại trong trang remake</p>}{d.status === 'error' && <p className="text-sm text-stone-600 mt-1">Chưa soạn được bản nháp. Hãy thử lại sau.</p>}</div>{d.status === 'ready' && d.remakeId && <Link to={`/remakes?remakeId=${encodeURIComponent(d.remakeId)}`} className="ds-btn ds-btn-sm">Mở bản nháp</Link>}</div>)}</div></section>}
+    {!it.deletedAt && b && group !== 'skipped' && <div className="flex flex-col gap-1">
+      <div className="flex flex-wrap items-center gap-2"><button type="button" className="ds-btn ds-btn-sm" onClick={onCard}><Eye className="w-4 h-4" aria-hidden="true" /> Xem trước thẻ Teams</button>
+        {canConfigure && onSend && <button type="button" className="ds-btn ds-btn-sm ds-btn-primary" disabled={busy || !!sendBlock} title={sendBlock || "Gửi thẻ trend này lên Teams"} aria-describedby={sendBlock ? `send-block-${it.id}` : undefined} onClick={onSend}><I.Send size={16} /> Gửi lên Teams</button>}
+        {it.teamsSentAt && <span className="text-xs text-stone-500">Đã gửi lúc {fmtTime(it.teamsSentAt)}</span>}</div>
+      {canConfigure && onSend && sendBlock && <p id={`send-block-${it.id}`} className="text-xs text-stone-500">{sendBlock}</p>}
+    </div>}
   </div></article>;
 }

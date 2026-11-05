@@ -4,7 +4,7 @@ import { trendTeamsOutbox, trendWorkflowItems } from "../db/schema";
 import { teamsWebhook, validateTeamsWebhook, readTrendSettings } from "./trend-workflow-settings";
 import type { TrendBrief } from "./trend-research";
 
-export interface CardDraft { remakeId: string; pageName: string; angle: string; status: string; fanpageId?: string }
+export interface CardDraft { remakeId: string | null; pageName: string; angle: string; status: string; fanpageId?: string }
 
 /** Ngân sách chữ của thẻ: đủ đọc lướt trong Teams, chi tiết xem trên Outlier. */
 export const CARD_TEXT_BUDGET = 700;
@@ -71,7 +71,7 @@ export function buildTrendCard(brief: TrendBrief, drafts: CardDraft[], baseUrl: 
   const ready = drafts.filter(d => d.status === "ready" && d.remakeId);
   const actions = !baseUrl ? [] : [
     { type: "Action.OpenUrl", title: "Xem chi tiết trên Outlier", url: `${baseUrl}/trend-radar${itemId ? `?item=${encodeURIComponent(itemId)}` : ""}` },
-    ...ready.slice(0, 2).map(d => ({ type: "Action.OpenUrl", title: (ready.length > 1 ? `Mở bản nháp ${squash(d.pageName)}` : "Mở bản nháp").slice(0, 60), url: `${baseUrl}/remakes?remakeId=${encodeURIComponent(d.remakeId)}` })),
+    ...ready.slice(0, 2).map(d => ({ type: "Action.OpenUrl", title: (ready.length > 1 ? `Mở bản nháp ${squash(d.pageName)}` : "Mở bản nháp").slice(0, 60), url: `${baseUrl}/remakes?remakeId=${encodeURIComponent(d.remakeId!)}` })),
   ];
   const build = (summaryMax: number, whyMax: number, angleMax: number, pageNameMax: number) => {
     const summary = clipText(squash(brief.summary).split(/(?<=[.!?])\s+/).slice(0, 2).join(" "), summaryMax);

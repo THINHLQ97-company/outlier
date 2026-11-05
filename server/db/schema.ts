@@ -1141,9 +1141,11 @@ export const trendWorkflowDrafts = pgTable("trend_workflow_drafts", {
   itemId: uuid("item_id").notNull().references(() => trendWorkflowItems.id),
   brandId: uuid("brand_id").notNull(),
   fanpageId: uuid("fanpage_id").notNull(),
-  remakeId: uuid("remake_id").notNull(),
+  /** null khi trang này viết nháp lỗi (status=error) — không có remake để mở. */
+  remakeId: uuid("remake_id"),
   pageName: text("page_name").notNull(),
   angle: text("angle").notNull(),
+  /** pending | ready | error. ready + error = bản nháp dùng được nhưng ý tưởng ảnh lỗi. */
   status: text("status").notNull().default("pending"),
   error: text("error"),
 }, (t) => ({ targetUnique: uniqueIndex("trend_workflow_draft_unique").on(t.itemId, t.fanpageId) }));

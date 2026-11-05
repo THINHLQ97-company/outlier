@@ -306,32 +306,74 @@ async function processItem(item: typeof trendWorkflowItems.$inferSelect, config:
       deconId = d.id;
     }
     const [decon] = await db.select().from(deconstructions).where(eq(deconstructions.id, deconId!));
+    const angle = decon.structure?.formula || "Góc hài trung tính quanh chủ đề chung.";
+    // Lỗi mất lease/fence hoặc trend đã vào Thùng rác luôn dừng cả lượt; lỗi khác chỉ thuộc về một page.
+    const fatal = (e: any) => e instanceof TrendLeaseLost || e instanceof TrendDeleted;
+    // Select-then-write trong cùng transaction có fence: chạy được trên mock lẫn Postgres (unique itemId+fanpageId vẫn chặn trùng).
+    type DraftPatch = { remakeId: string | null; status: string; error: string | null };
+    const upsertDraft = async (tx: any, target: { brandId: string; fanpageId: string }, pageName: string, patch: DraftPatch) => {
+      const [row] = await tx.select().from(trendWorkflowDrafts).where(and(eq(trendWorkflowDrafts.itemId, item.id), eq(trendWorkflowDrafts.fanpageId, target.fanpageId)));
+      if (row) await tx.update(trendWorkflowDrafts).set({ ...patch, pageName, angle }).where(eq(trendWorkflowDrafts.id, row.id));
+      else await tx.insert(trendWorkflowDrafts).values({ itemId: item.id, brandId: target.brandId, fanpageId: target.fanpageId, pageName, angle, ...patch }).onConflictDoUpdate({ target: [trendWorkflowDrafts.itemId, trendWorkflowDrafts.fanpageId], set: { ...patch, pageName, angle } });
+    };
+    const saveDraft = (target: { brandId: string; fanpageId: string }, pageName: string, patch: DraftPatch) => write(tx => upsertDraft(tx, target, pageName, patch));
+    // Bước ý tưởng ảnh phải gọi ở JSON mode + khuôn: gọi như văn bản thường thì model trả markdown.
+    const conceptsGenerate = async (prompt: string) => budget.json(prompt, (await import("./image-concepts")).CONCEPT_SCHEMA);
+    const pageErrors: any[] = [];
     for (const target of config.targets) {
       const [existing] = await db.select().from(trendWorkflowDrafts).where(and(eq(trendWorkflowDrafts.itemId, item.id), eq(trendWorkflowDrafts.fanpageId, target.fanpageId)));
-      if (existing?.status === "ready") { drafts.push(existing); continue; }
-      const [brand] = await db.select().from(brands).where(eq(brands.id, target.brandId));
-      const [page] = await db.select().from(brandFanpages).where(and(eq(brandFanpages.id, target.fanpageId), eq(brandFanpages.brandId, target.brandId)));
-      if (!brand || !page) throw new Error("Trang đích không còn thuộc thương hiệu đã cấu hình.");
-      let remake = existing ? (await db.select().from(remakes).where(eq(remakes.id, existing.remakeId)))[0] : null;
-      if (!remake) {
-        const chars = await deps.pageCharacters(brand.id, page.id);
-        const { buildBrandBrief } = await import("./brand-brief");
-        const result = await deps.write({ name: brand.name, sells: brand.sells, audience: brand.audience, toneOfVoice: brand.toneOfVoice, addressing: brand.addressing, bannedTerms: brand.bannedTerms, allowedClaims: brand.allowedClaims, brief: trendPageBrief(buildBrandBrief(brand, [page] as any, "writing"), page, chars)}, decon.structure, budget.text);
-        budget.assertActive();
-        await fence();
-        if (!result.draft) throw new Error(result.warning || "Không viết được bản nháp.");
-        remake = await write(async tx => {
-          const [created] = await tx.insert(remakes).values({ owner: "trend-workflow", brandId: brand.id, deconstructionId: deconId, format: "post", status: "ready", draft: result.draft, guardrailJson: result.guardrail, sourceUrl: facebook?.path === "facebook_post" ? facebook.url : brief.sources[0]?.url || null, sourceTitle: brief.title, directionText: TREND_DEFAULT_DIRECTION }).returning();
-          await tx.insert(trendWorkflowDrafts).values({ itemId: item.id, brandId: brand.id, fanpageId: page.id, remakeId: created.id, pageName: page.pageName || brand.name, angle: decon.structure?.formula || "Góc hài trung tính", status: "pending" });
-          return created;
-        });
+      // ready (kể cả ready kèm lỗi ý tưởng ảnh) là xong: retry không viết lại, không gọi lại concepts.
+      if (existing?.status === "ready" && existing.remakeId) { drafts.push({ ...existing, remakeId: existing.remakeId }); continue; }
+      let pageName = existing?.pageName || "Trang đích";
+      let remake: typeof remakes.$inferSelect | null = null;
+      try {
+        const [brand] = await db.select().from(brands).where(eq(brands.id, target.brandId));
+        const [page] = await db.select().from(brandFanpages).where(and(eq(brandFanpages.id, target.fanpageId), eq(brandFanpages.brandId, target.brandId)));
+        if (!brand || !page) throw new Error("Trang đích không còn thuộc thương hiệu đã cấu hình.");
+        pageName = page.pageName || brand.name;
+        remake = existing?.remakeId ? (await db.select().from(remakes).where(eq(remakes.id, existing.remakeId)))[0] || null : null;
+        if (!remake) {
+          budget.assertActive();
+          const chars = await deps.pageCharacters(brand.id, page.id);
+          const { buildBrandBrief } = await import("./brand-brief");
+          const result = await deps.write({ name: brand.name, sells: brand.sells, audience: brand.audience, toneOfVoice: brand.toneOfVoice, addressing: brand.addressing, bannedTerms: brand.bannedTerms, allowedClaims: brand.allowedClaims, brief: trendPageBrief(buildBrandBrief(brand, [page] as any, "writing"), page, chars)}, decon.structure, budget.text);
+          budget.assertActive();
+          await fence();
+          if (!result.draft) throw new Error(result.warning || "Không viết được bản nháp.");
+          // Remake + draft pending cùng một transaction: retry tìm thấy remake qua draft, không viết lại.
+          remake = await write(async tx => {
+            const [created] = await tx.insert(remakes).values({ owner: "trend-workflow", brandId: brand.id, deconstructionId: deconId, format: "post", status: "ready", draft: result.draft, guardrailJson: result.guardrail, sourceUrl: facebook?.path === "facebook_post" ? facebook.url : brief.sources[0]?.url || null, sourceTitle: brief.title, directionText: TREND_DEFAULT_DIRECTION }).returning();
+            await upsertDraft(tx, target, pageName, { remakeId: created.id, status: "pending", error: null });
+            return created;
+          });
+        }
+      } catch (e: any) {
+        if (fatal(e)) throw e;
+        await fence(); // mất lease/đã xoá trong lúc chờ model → dừng như cũ
+        const message = String(e?.message || e).slice(0, 500);
+        console.warn(`[trend-workflow] Page ${pageName} chưa có bản nháp:`, message);
+        pageErrors.push(e);
+        await saveDraft(target, pageName, { remakeId: remake?.id || existing?.remakeId || null, status: "error", error: message });
+        continue;
       }
-      if (!remake) throw new Error("Không tìm thấy bản nháp đã lưu.");
-      if (!Array.isArray(remake.imageConceptsJson) || remake.imageConceptsJson.length === 0) await deps.concepts(remake.id, page.id, budget.text, fence);
-      const angle = decon.structure?.formula || "Góc hài trung tính quanh chủ đề chung.";
-      await write(tx => tx.insert(trendWorkflowDrafts).values({ itemId: item.id, brandId: brand.id, fanpageId: page.id, remakeId: remake.id, pageName: page.pageName || brand.name, angle, status: "ready" }).onConflictDoUpdate({ target: [trendWorkflowDrafts.itemId, trendWorkflowDrafts.fanpageId], set: { remakeId: remake.id, status: "ready", error: null } }));
-      drafts.push({ remakeId: remake.id, pageName: page.pageName || brand.name, angle, status: "ready" });
+      // Ý tưởng ảnh là phụ: lỗi (parse, model im, hết trần) chỉ ghi vào draft của page, bản nháp vẫn ready.
+      let conceptsError: string | null = null;
+      if (!Array.isArray(remake!.imageConceptsJson) || remake!.imageConceptsJson.length === 0) {
+        try { await deps.concepts(remake!.id, target.fanpageId, conceptsGenerate, fence); }
+        catch (e: any) {
+          if (fatal(e)) throw e;
+          await fence();
+          conceptsError = `Ý tưởng ảnh lỗi: ${String(e?.message || e)}`.slice(0, 500);
+          console.warn(`[trend-workflow] Page ${pageName}: ${conceptsError}`);
+          // Trang remake hiện lỗi này và cho bấm vẽ/đề xuất lại theo luồng thủ công sẵn có.
+          await write(tx => tx.update(remakes).set({ imageError: conceptsError!.slice(0, 400), updatedAt: new Date() }).where(eq(remakes.id, remake!.id)));
+        }
+      }
+      await saveDraft(target, pageName, { remakeId: remake!.id, status: "ready", error: conceptsError });
+      drafts.push({ remakeId: remake!.id, pageName, angle, status: "ready" });
     }
+    // Không page nào có bản nháp: cả item lỗi để cơ chế retry (attempts<3, giãn cách) thử lại.
+    if (!drafts.length && pageErrors.length) throw pageErrors.find(e => e instanceof TrendBudgetExceeded) || pageErrors[0];
   }
   const status = drafts.length ? "done" : "brief_only";
   if (!dryRun) await write(tx => enqueueTrendCard(`trend-item:${item.id}`, item.id, buildTrendCard(brief!, drafts, config.publicBaseUrl, item.id), tx));

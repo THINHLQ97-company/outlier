@@ -1,0 +1,1 @@
+ALTER TABLE "trend_workflow_drafts" ALTER COLUMN "remake_id" DROP NOT NULL;

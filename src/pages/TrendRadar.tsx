@@ -32,6 +32,7 @@ export default function TrendRadar({ settingsPage = false }: { settingsPage?: bo
   const [range, setRange] = useState<DateRange>({ preset: "7", from: "", to: "" });
   const [group, setGroup] = useState<TrendGroup | "all">("all");
   const [card, setCard] = useState<{ item: TrendItem; data?: TrendCard; err?: string } | null>(null);
+  const [sendDlg, setSendDlg] = useState<{ item: TrendItem; data?: TrendCard; err?: string; sending?: boolean; result?: api.ManualSendResult; sendErr?: string } | null>(null);
   const [running, setRunning] = useState(false);
   const [runMsg, setRunMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -90,6 +91,19 @@ export default function TrendRadar({ settingsPage = false }: { settingsPage?: bo
     setCard({ item });
     try { setCard({ item, data: await api.getCard(item.id) }); }
     catch (e) { setCard({ item, err: msg(e, "Không tải được thẻ Teams.") }); }
+  }
+
+  async function openSend(item: TrendItem) {
+    setSendDlg({ item });
+    try { const data = await api.getCard(item.id); setSendDlg(d => d && d.item.id === item.id ? { ...d, data } : d); }
+    catch (e) { setSendDlg(d => d && d.item.id === item.id ? { ...d, err: msg(e, "Không tải được thẻ Teams.") } : d); }
+  }
+  async function confirmSend() {
+    if (!sendDlg || sendDlg.sending) return;
+    const id = sendDlg.item.id;
+    setSendDlg(d => d && { ...d, sending: true, sendErr: undefined });
+    try { const result = await api.sendTrend(id); setSendDlg(d => d && { ...d, sending: false, result }); await load(); }
+    catch (e) { setSendDlg(d => d && { ...d, sending: false, sendErr: msg(e, "Chưa gửi được thẻ lên Teams. Hãy thử lại sau.") }); }
   }
 
   async function dryRun() {
@@ -179,7 +193,7 @@ export default function TrendRadar({ settingsPage = false }: { settingsPage?: bo
         </div>}
         <ConfirmDialog isOpen={!!confirmTrash} title="Chuyển vào Thùng rác?" message={`Chuyển ${confirmTrash?.length || 0} trend đã bỏ qua trong danh sách này vào Thùng rác? Bạn có thể khôi phục. Bản nháp đã tạo không bị xoá.`} confirmText="Chuyển vào Thùng rác" onConfirm={() => confirmTrash && void changeTrash(confirmTrash)} onCancel={() => setConfirmTrash(null)} />
         <section aria-label="Danh sách trend" className="flex flex-col gap-3">
-          {shown.length ? shown.map(it => <div key={it.id} id={`trend-${it.id}`} tabIndex={-1} className={it.id === linkedId ? "scroll-mt-6 rounded-xl ring-2 ring-storm-500" : ""}><TrendCardView it={it} expanded={it.id === linkedId} onCard={() => openCard(it)} canConfigure={status.canConfigure} selected={selected.has(it.id)} onSelect={() => toggle(it.id)} onTrash={() => void changeTrash([it.id], trash)} busy={busy} skippedRetentionDays={status.settings.skippedRetentionDays || 7} pages={pages} /></div>) : <div className="ds-card"><div className="ds-empty"><div className="ds-empty-icon"><Telescope className="w-8 h-8" aria-hidden="true" /></div><p className="ds-empty-title">{!items.length && !status.lastRefreshAt && !lastRun ? 'Claude chưa quét lần nào' : `Không có trend nào trong ${rangeDescription(range)}`}</p><p className="ds-empty-desc">{!items.length && !status.lastRefreshAt && !lastRun ? 'Hãy kiểm tra lịch Scheduled của Claude.' : 'Hãy thử chọn khoảng thời gian hoặc trạng thái khác.'}</p></div></div>}
+          {shown.length ? shown.map(it => <div key={it.id} id={`trend-${it.id}`} tabIndex={-1} className={it.id === linkedId ? "scroll-mt-6 rounded-xl ring-2 ring-storm-500" : ""}><TrendCardView it={it} expanded={it.id === linkedId} onCard={() => openCard(it)} onSend={() => void openSend(it)} webhookConfigured={status.settings.webhookConfigured} canConfigure={status.canConfigure} selected={selected.has(it.id)} onSelect={() => toggle(it.id)} onTrash={() => void changeTrash([it.id], trash)} busy={busy} skippedRetentionDays={status.settings.skippedRetentionDays || 7} pages={pages} /></div>) : <div className="ds-card"><div className="ds-empty"><div className="ds-empty-icon"><Telescope className="w-8 h-8" aria-hidden="true" /></div><p className="ds-empty-title">{!items.length && !status.lastRefreshAt && !lastRun ? 'Claude chưa quét lần nào' : `Không có trend nào trong ${rangeDescription(range)}`}</p><p className="ds-empty-desc">{!items.length && !status.lastRefreshAt && !lastRun ? 'Hãy kiểm tra lịch Scheduled của Claude.' : 'Hãy thử chọn khoảng thời gian hoặc trạng thái khác.'}</p></div></div>}
         </section>
       </>}
 
@@ -193,20 +207,48 @@ export default function TrendRadar({ settingsPage = false }: { settingsPage?: bo
             <div className="ds-modal-body flex flex-col gap-2 max-h-[70vh] overflow-y-auto">
               {!card.data && !card.err && <div className="flex items-center gap-2 text-stone-400"><Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> Đang tạo thẻ...</div>}
               {card.err && <div role="alert" className="ds-alert ds-alert-danger">{card.err}</div>}
-              {card.data && (() => {
-                const c = card.data.payload.attachments?.[0]?.content;
-                return (
-                  <div className="border border-stone-200 rounded-lg p-3 bg-white flex flex-col gap-2 text-sm">
-                    {(c?.body || []).map((b, i) => <p key={i} className={`whitespace-pre-wrap break-words ${b.weight === "Bolder" ? "font-bold" : ""} ${b.size === "Large" ? "text-lg" : b.size === "Small" ? "text-xs" : ""} ${b.color === "Attention" ? "text-amber-700" : b.isSubtle ? "text-stone-500" : ""}`}>{(b.text || "").split(/(\*\*[^*]+\*\*)/g).map((part, j) => part.startsWith("**") && part.endsWith("**") ? <strong key={j}>{part.slice(2, -2)}</strong> : part)}</p>)}
-                    <div className="flex flex-wrap gap-2 pt-1">{(c?.actions || []).map((a, i) => <a key={i} href={a.url} className="ds-btn ds-btn-sm" target="_blank" rel="noopener noreferrer">{a.title}</a>)}</div>
-                  </div>
-                );
-              })()}
+              {card.data && <CardPreview card={card.data} />}
               <p className="text-xs text-stone-500">Đây chỉ là bản mô phỏng gọn, thẻ thật trên Teams có thể trình bày hơi khác. Xem trước không gửi gì đi.</p>
             </div>
           </div>
         </div>
       )}
+      {sendDlg && (
+        <div className="ds-modal-overlay open" onClick={() => !sendDlg.sending && setSendDlg(null)}>
+          <div className="ds-modal" role="dialog" aria-modal="true" aria-labelledby="tr-send-title" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
+            <div className="ds-modal-header">
+              <h3 id="tr-send-title" className="ds-modal-title">Gửi thẻ lên Teams</h3>
+              <button type="button" className="ds-modal-close" aria-label="Đóng" title="Đóng" disabled={sendDlg.sending} onClick={() => setSendDlg(null)}><X className="w-4 h-4" aria-hidden="true" /></button>
+            </div>
+            <div className="ds-modal-body flex flex-col gap-2 max-h-[70vh] overflow-y-auto">
+              {!sendDlg.result && <p className="text-sm text-stone-700">Thẻ dưới đây sẽ được gửi lên kênh Teams của nhóm. Mọi người trong kênh đều thấy.</p>}
+              {!sendDlg.result && !sendDlg.item.drafts.some(d => d.status === "ready" && d.remakeId) && <div role="status" className="ds-alert ds-alert-warning">Chưa có bản nháp; thẻ chỉ có nút xem chi tiết.</div>}
+              {sendDlg.item.teamsSentAt && !sendDlg.result && <p className="text-xs text-stone-500">Trend này đã gửi lúc {new Date(sendDlg.item.teamsSentAt).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour12: false })}. Gửi tiếp sẽ tạo thêm một thẻ.</p>}
+              {!sendDlg.data && !sendDlg.err && <div className="flex items-center gap-2 text-stone-400"><Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> Đang tạo thẻ...</div>}
+              {sendDlg.err && <div role="alert" className="ds-alert ds-alert-danger">{sendDlg.err}</div>}
+              {sendDlg.data && !sendDlg.result && <CardPreview card={sendDlg.data} />}
+              {sendDlg.result && <div role="status" className={`ds-alert ${sendDlg.result.status === "accepted" ? "ds-alert-success" : "ds-alert-warning"}`}>{sendDlg.result.status === "accepted" ? "Teams đã nhận thẻ." : sendDlg.result.message}{sendDlg.result.warning ? ` ${sendDlg.result.warning}` : ""}</div>}
+              {sendDlg.sendErr && <div role="alert" className="ds-alert ds-alert-danger">{sendDlg.sendErr}</div>}
+            </div>
+            <div className="ds-modal-footer">
+              {sendDlg.result ? <button type="button" className="ds-btn" onClick={() => setSendDlg(null)}>Đóng</button> : <>
+                <button type="button" className="ds-btn" disabled={sendDlg.sending} onClick={() => setSendDlg(null)}>Huỷ</button>
+                <button type="button" className="ds-btn ds-btn-primary" disabled={sendDlg.sending || !sendDlg.data} onClick={() => void confirmSend()}>{sendDlg.sending ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <I.Send size={16} />} {sendDlg.sending ? "Đang gửi..." : "Gửi lên Teams"}</button>
+              </>}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CardPreview({ card }: { card: TrendCard }) {
+  const c = card.payload.attachments?.[0]?.content;
+  return (
+    <div className="border border-stone-200 rounded-lg p-3 bg-white flex flex-col gap-2 text-sm">
+      {(c?.body || []).map((b, i) => <p key={i} className={`whitespace-pre-wrap break-words ${b.weight === "Bolder" ? "font-bold" : ""} ${b.size === "Large" ? "text-lg" : b.size === "Small" ? "text-xs" : ""} ${b.color === "Attention" ? "text-amber-700" : b.isSubtle ? "text-stone-500" : ""}`}>{(b.text || "").split(/(\*\*[^*]+\*\*)/g).map((part, j) => part.startsWith("**") && part.endsWith("**") ? <strong key={j}>{part.slice(2, -2)}</strong> : part)}</p>)}
+      <div className="flex flex-wrap gap-2 pt-1">{(c?.actions || []).map((a, i) => <a key={i} href={a.url} className="ds-btn ds-btn-sm" target="_blank" rel="noopener noreferrer">{a.title}</a>)}</div>
     </div>
   );
 }

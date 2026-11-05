@@ -165,6 +165,15 @@ describe("parseLooseJson — chịu được các dạng model hay trả", () =>
     assert.deepEqual(parseLooseJson('Đây nhé:\n{"a":1}'), { a: 1 });
   });
 
+  test("markdown dẫn trước rồi mới tới khối ```json ở giữa (lỗi production trend)", () => {
+    const raw = '*   Format: chat {nháp}\n*   Ý: ...\n\n```json\n{"concepts":[{"format":"chat"}]}\n```\nHết {cuối}.';
+    assert.deepEqual(parseLooseJson(raw), { concepts: [{ format: "chat" }] });
+  });
+
+  test("markdown gạch đầu dòng không có JSON vẫn ném lỗi", () => {
+    assert.throws(() => parseLooseJson("*   Format: chat\n*   Title: Bông hoa"));
+  });
+
   test("rác thật sự thì ném lỗi, không trả bừa", () => {
     assert.throws(() => parseLooseJson("không phải json"));
   });

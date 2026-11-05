@@ -1,6 +1,6 @@
 # Hợp đồng API Trend chủ động
 
-Mọi endpoint cần đăng nhập. `PUT settings`, `POST run`, `POST send-test`, `POST outbox/:id/resolve`, xoá/khôi phục và đọc Thùng rác chỉ người quản trị tính năng; quyền admin kiểm lại trong DB. Lỗi có `{ code, error }`. Mặc định workflow và gửi Teams tắt. Webhook riêng Outlier, không dùng ReportApp.
+Mọi endpoint cần đăng nhập. `PUT settings`, `POST run`, `POST send-test`, `POST send`, `POST outbox/:id/resolve`, xoá/khôi phục và đọc Thùng rác chỉ người quản trị tính năng; quyền admin kiểm lại trong DB. Lỗi có `{ code, error }`. Mặc định workflow và gửi Teams tắt. Webhook riêng Outlier, không dùng ReportApp.
 
 ## Cài đặt và trạng thái
 - `GET /api/trend-workflow/settings`: `{ enabled, teamsEnabled, targets:[{brandId,fanpageId}], provider:"gemini_search"|"rss", model, maxTrends, maxModelCalls, maxModelCallsDaily, maxOutputTokens, modelTimeoutMs, publicBaseUrl, webhookConfigured, keyConfigured, apifyEnabled:false, schedule }`. Không trả URL webhook.
@@ -12,16 +12,25 @@ Mọi endpoint cần đăng nhập. `PUT settings`, `POST run`, `POST send-test`
 ## Trend và bản nháp
 - `GET /api/trend-workflow/trends?limit=30`: `{items:[],total,trashTotal}` (mặc định bỏ item đã xoá); item gồm `id,title,status,checkpoint,eventKey,duplicateOf,brief,error,deconstructionId,attempts,lastAttemptSlot,drafts[]`.
 - `brief`: `{ title, traffic, provider, confidence:"sourced"|"unverified", claims:[{text,urls}], sources:[{url,title,publisher?,publishedAt?}], summary, sensitive, needsReview, label, reason, decision?, decisionRationale?, pageAngles?, avoid? }`.
-- `drafts[]`: `{ remakeId, brandId, fanpageId, pageName, angle, status, href:"/remakes?remakeId=<id>" }`. Frontend đọc `remakeId`, gọi `GET /api/remakes/:id` và mở đúng bản viết.
+- `drafts[]`: `{ remakeId, brandId, fanpageId, pageName, angle, status, error, href, imageIdeas, note }`. `href = "/remakes?remakeId=<id>"` chỉ khi `status = ready`, ngược lại `null`. `imageIdeas`: `"ok"` | `"error"` (bản nháp sẵn sàng nhưng ý tưởng ảnh lỗi — tạo lại trong trang remake) | `null` (chưa có bản nháp). `status = error` + `remakeId = null` = page đó chưa viết được nháp. Frontend đọc `remakeId`, gọi `GET /api/remakes/:id` và mở đúng bản viết. Item còn có `dryRun` (run cha là chạy thử) và `teamsSentAt` (lần outbox `accepted` gần nhất — Teams đã nhận, không xác nhận đã hiển thị).
 - Item: `awaiting_research`, `pending`, `researched`, `watch`, `skipped`, `brief_only`, `done`, `duplicate`, `excluded`, `error`, `budget_exhausted`.
 - Run: `pending`, `running`, `done`, `partial`, `error`. Còn item chưa xong/lỗi thì `partial`, không ghi `done`. Run cũ được tính lại sau khi retry.
-- Item lỗi tự thử lại **ở mốc kế tiếp**, tối đa **3 attempts tổng cộng**. Không chạy lại item `done/brief_only/duplicate/excluded`; bản nháp page đã `ready` được giữ nguyên. Item gián đoạn (`pending/researched`) có thể tiếp tục ngay khi lấy lại lease. Bản nháp + concept có checkpoint theo page, không vẽ ảnh, không đăng bài.
+- Item lỗi tự thử lại **ở mốc kế tiếp**, tối đa **3 attempts tổng cộng**. Không chạy lại item `done/brief_only/duplicate/excluded`; bản nháp page đã `ready` được giữ nguyên. Item gián đoạn (`pending/researched`) có thể tiếp tục ngay khi lấy lại lease. Bản nháp + concept có checkpoint theo page, không vẽ ảnh, không đăng bài. Ở chế độ `claude_mcp`, worker 5 phút/lần chỉ nhặt item `error`/`budget_exhausted` của lượt thật khi `updatedAt` đã quá 2 giờ và `attempts < 3`.
+- **Từng page độc lập (từ 2026-11-05).** Page viết nháp lỗi → `trend_workflow_drafts` của page đó `status = error` + `error`, page khác vẫn chạy tiếp. Item chỉ thành `error`/`budget_exhausted` (để retry) khi **không page nào** có bản nháp. Có ≥1 draft `ready` → item `done` và (lượt thật, `pursue`, không nhạy cảm) xếp thẻ Teams với nút của các draft `ready`; page lỗi không có nút. Lần retry chỉ viết lại page chưa `ready`.
+- **Ý tưởng ảnh là phụ.** Lỗi bước đề xuất phương án ảnh (model trả sai dạng, không trả lời, hết trần model) không làm hỏng bản nháp: draft vẫn `ready`, `error = "Ý tưởng ảnh lỗi: …"`, và `remakes.image_error` được ghi để trang remake hiện cảnh báo + nút vẽ/đề xuất lại (luồng thủ công sẵn có). Draft đã `ready` không bao giờ gọi lại concepts tự động (tránh tốn tiền). Mất lease/fence hoặc trend vào Thùng rác trong lúc làm concepts vẫn dừng cả lượt như cũ. Concepts trong workflow gọi model ở JSON mode + `CONCEPT_SCHEMA` (trước đây gọi như văn bản thường nên model trả markdown); bộ đọc JSON còn lấy được khối ```json nằm giữa lời dẫn.
+- Migration **0045_calm_spencer_smythe**: `trend_workflow_drafts.remake_id` bỏ NOT NULL (draft lỗi không có remake). Rollback: deploy lại code cũ; muốn đặt lại NOT NULL thì phải xoá/sửa các dòng `remake_id IS NULL` trước.
 - Brief chỉ chứa khẳng định có URL grounding; thiếu nguồn ghi chưa xác minh. Không có Facebook vẫn tạo brief. Trend nhạy cảm chặn trước tìm kiếm, không truy footage, không nêu danh tính.
 
 ## Chạy thử nền và thẻ Teams
 - `POST /api/trend-workflow/run` body `{ "dryRun": true }`: **202** `{runId,status:"pending"}` sau khi lưu run, không chờ model. Poll `GET /api/trend-workflow/runs/:id` (hoặc `/status`). `400 DRY_RUN_REQUIRED` nếu không true. Đang có lease khác: run đã nhận chuyển `error`.
 - **Dry-run vẫn lưu deconstruction và remake THẬT nếu có page đích**, dùng chi phí model thật theo trần; chỉ không enqueue/gửi Teams. Không tự xoá dữ liệu đã tạo.
 - `GET /api/trend-workflow/trends/:id/card`: `{ payload, sent:false }`. Chỉ preview JSON, không gửi; cùng hàm `buildTrendCard` với outbox và gửi thử nên preview = thẻ thật. Thiếu `publicBaseUrl` thì không có nút.
+
+### Gửi thẻ thủ công (từ 2026-11-05)
+- `POST /api/trend-workflow/trends/:id/send` (owner) body `{ confirm:true }` → `{ id, status, attempts, error, acceptedAt, warning, message }`. Gửi thẻ thật (không nhãn "thử"), cùng outbox/claim/drain và cùng `buildTrendCard` với thẻ tự động. `status` là trạng thái outbox thật: `accepted` = Teams đã nhận (chưa xác nhận hiển thị), `unknown` = lỗi mạng/timeout (không tự gửi lại, kiểm Teams rồi xử lý ở "Thẻ Teams cần xử lý"), `retry`/`failed`.
+- Điều kiện: lượt thật (`DRY_RUN_ONLY`), `decision = pursue` (`DECISION_REQUIRED`), không nhạy cảm (`SENSITIVE_TREND`), đã cấu hình webhook (`WEBHOOK_NOT_CONFIGURED`); **không** cần `teamsEnabled`, **không** cần bản nháp — thiếu bản nháp thì vẫn gửi, `warning = "Chưa có bản nháp; thẻ chỉ có nút xem chi tiết."`. Dùng chung rate limit 3 lượt/phút/người với gửi thử (`RATE_LIMITED`).
+- Idempotency key `manual:<itemId>:<bucket 2 phút>`, tách khỏi key thẻ tự động `trend-item:<itemId>` nên thẻ tự động đã gửi không chặn. Đã có lượt gửi tay của trend này trong 2 phút qua → `409 RECENTLY_SENT` kèm trạng thái lượt đó, không gửi lại.
+- Giao diện: owner thấy nút "Gửi lên Teams" cạnh "Xem trước thẻ Teams"; xác nhận kèm xem trước thẻ; nút khoá kèm lý do khi không đủ điều kiện; hiện "Đã gửi lúc …" theo `teamsSentAt`. `GET /status` trả thêm `settings.webhookConfigured` (chỉ cho owner).
 
 ### Mẫu thẻ Teams (gọn, từ 2026-11-04)
 Envelope không đổi: `{ type:"message", attachments:[{ contentType:"application/vnd.microsoft.card.adaptive", content:<AdaptiveCard 1.2> }] }`. Nội dung như người trong team nhắn, tổng chữ (kể cả dấu `**` và nhãn nút) < 700 ký tự; vượt thì tự rút gọn dần (góc → lý do → tóm tắt), không bỏ trang nào có góc.
@@ -97,7 +106,7 @@ Tool ghi cần quyền `signals-edit` (ngoài `READONLY_TOOLS`); không tool nà
 - `trend_discover` (ghi) — sự kiện Claude tự tìm, **ngoài** Google Trends: `{ title, keyword?, …giống trend_submit_research trừ item_id }`. Cần ít nhất 1 claim có URL công khai. Tạo item `origin = claude_discover` rồi nộp nghiên cứu trong cùng transaction có fence lease. Dedupe 48 giờ theo từ khoá/sự kiện (kể cả item còn chờ). Trần `maxTrends` discovery mỗi 30 phút.
   Output: giống submit, hoặc `{status:"duplicate", itemId, itemStatus}`, `{status:"capped"}`, `{status:"busy"}`, `{status:"disabled"}`.
 - `trend_skip` (ghi) — `{ item_id, reason }`; chỉ với item `awaiting_research`. Item thành `skipped`, không nháp, không Teams. Dedupe có hạn 48 giờ, không có blacklist chủ đề vĩnh viễn.
-- `trend_status` (đọc, `{ item_id }`) — item (không có `input`/`facebook` thô) + `decision`, `discoverySource`, `skipReason`, `drafts`.
+- `trend_status` (đọc, `{ item_id }`) — item (không có `input`/`facebook` thô) + `decision`, `discoverySource`, `skipReason`, `drafts` (cùng dạng `GET /trends`: `href` link bản nháp cho draft ready, `imageIdeas`, `note` tiếng Việt từng page).
 
 ### Quyết định biên tập ≠ mức bằng chứng
 - `confidence` (`sourced`/`unverified`) chỉ nói về nguồn. **`decision` mới là "đáng làm hay không"**: có nguồn không có nghĩa đáng đu.
@@ -131,7 +140,7 @@ Sau khi nộp, Outlier chọn tối đa 1 link và chỉ gọi `fetchPostViaApif
 
 Trang xem `/trend-radar` dành cho người đã đăng nhập; nút Cài đặt dẫn tới `/trend-radar/settings` chỉ xuất hiện khi `canConfigure` trong status là true. Vào trực tiếp trang cài đặt khi không có quyền sẽ thấy thông báo từ chối.
 
-Các endpoint `GET /settings`, `PUT /settings`, `POST /run`, `POST /trends/:id/send-test`, `POST /outbox/:id/resolve` chỉ cho phép user đang hoạt động, có role admin và email trong bảng users thuộc danh sách `TREND_WORKFLOW_ADMIN_EMAILS` (phân tách bằng dấu phẩy, không phân biệt hoa thường, bỏ khoảng trắng). Khi biến trống, mặc định chỉ có `lamquangthinh3006@gmail.com`. Tài khoản không có email trong bảng users, kể cả tài khoản mật khẩu, không có quyền; username không thay thế email. Status chỉ trả trạng thái bật, lần dò và cờ quyền, không trả cấu hình đầy đủ. Webhook luôn chỉ ghi, không trả URL. Quyền MCP không thay đổi.
+Các endpoint `GET /settings`, `PUT /settings`, `POST /run`, `POST /trends/:id/send-test`, `POST /trends/:id/send`, `POST /outbox/:id/resolve` chỉ cho phép user đang hoạt động, có role admin và email trong bảng users thuộc danh sách `TREND_WORKFLOW_ADMIN_EMAILS` (phân tách bằng dấu phẩy, không phân biệt hoa thường, bỏ khoảng trắng). Khi biến trống, mặc định chỉ có `lamquangthinh3006@gmail.com`. Tài khoản không có email trong bảng users, kể cả tài khoản mật khẩu, không có quyền; username không thay thế email. Status chỉ trả trạng thái bật, lần dò và cờ quyền, không trả cấu hình đầy đủ. Webhook luôn chỉ ghi, không trả URL. Quyền MCP không thay đổi.
 
 ## Thùng rác và tự dọn (xoá mềm, từ 2026-11-04)
 

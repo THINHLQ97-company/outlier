@@ -139,7 +139,7 @@ ${noRef.length ? `- Riêng các nhân vật CHƯA có ảnh mẫu sau thì ĐƯ�
 - title, why, dialogue: TIẾNG VIỆT có dấu đầy đủ.
 - dialogue là chữ hiện trên ảnh. Dẫn chuyện thì bọc [NGOẶC VUÔNG] ở đầu. Khung không cần chữ thì để null.
 
-Trả về DUY NHẤT JSON. Mỗi phương án có "format" là một trong: ${POST_FORMATS.map((f) => f.id).join(", ")}.
+Trả về DUY NHẤT một object JSON đúng khuôn dưới đây — không markdown, không gạch đầu dòng, không lời dẫn. Mỗi phương án có "format" là một trong: ${POST_FORMATS.map((f) => f.id).join(", ")}.
 - cartoon: điền "panels".
 - chat / social: điền "messages" (from = tên người nói, text = nguyên văn tiếng Việt) và "caption" (tên cuộc trò chuyện / chú thích bài đăng).
 - review: điền "review" (business, rating 1-5, reviewer, text, reply nếu có).
@@ -330,6 +330,9 @@ export const CONCEPT_SCHEMA = {
 export function parseLooseJson(raw: string): any {
   const text = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
   const attempts: string[] = [text];
+  // Model đôi khi trả lời dẫn/markdown rồi mới tới khối ```json ở giữa: lấy đúng khối đó.
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim();
+  if (fenced && fenced !== text) attempts.push(fenced);
   const a1 = text.indexOf("[");
   const a2 = text.lastIndexOf("]");
   const o1 = text.indexOf("{");

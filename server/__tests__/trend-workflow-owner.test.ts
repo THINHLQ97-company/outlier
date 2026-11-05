@@ -39,7 +39,7 @@ async function call(app: any, method: string, path: string, username: string, bo
   }
   return { ...result, reached };
 }
-const guarded: [string, string][] = [["post", "/api/trend-workflow/trends/delete"], ["post", "/api/trend-workflow/trends/restore"], ["put", "/api/trend-workflow/settings"], ["get", "/api/trend-workflow/settings"], ["post", "/api/trend-workflow/run"], ["post", "/api/trend-workflow/trends/:id/send-test"], ["post", "/api/trend-workflow/outbox/:id/resolve"]];
+const guarded: [string, string][] = [["post", "/api/trend-workflow/trends/delete"], ["post", "/api/trend-workflow/trends/restore"], ["put", "/api/trend-workflow/settings"], ["get", "/api/trend-workflow/settings"], ["post", "/api/trend-workflow/run"], ["post", "/api/trend-workflow/trends/:id/send-test"], ["post", "/api/trend-workflow/outbox/:id/resolve"], ["post", "/api/trend-workflow/trends/:id/send"]];
 const withEnv = async (v: string | undefined, fn: () => Promise<void>) => {
   const old = process.env.TREND_WORKFLOW_ADMIN_EMAILS;
   if (v === undefined) delete process.env.TREND_WORKFLOW_ADMIN_EMAILS; else process.env.TREND_WORKFLOW_ADMIN_EMAILS = v;

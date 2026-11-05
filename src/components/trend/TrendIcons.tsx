@@ -16,3 +16,4 @@ export const Sparkle = icon(<path d="M12 2c1 6 2 7 7 8-5 1-6 2-7 8-1-6-2-7-7-8 5
 export const CheckBadge = icon(<><path d="m12 2 2.4 1.5 2.8-.2 1.1 2.6 2.4 1.5-.5 2.8 1.3 2.5-1.8 2.2-.3 2.8-2.7.8-1.9 2.1-2.8-.6-2.8.6-1.9-2.1-2.7-.8-.3-2.8-1.8-2.2 1.3-2.5-.5-2.8 2.4-1.5 1.1-2.6 2.8.2Z"/><path d="m8 12 2.5 2.5L16 9"/></>);
 export const QuestionCircle = icon(<><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 1.7-2.5 2-2.5 4m0 3h.01"/></>);
 export const ShieldAlert = icon(<><path d="M12 2 4 5v6c0 5 3 8 8 11 5-3 8-6 8-11V5l-8-3Z"/><path d="M12 7v6m0 3h.01"/></>);
+export const Send = icon(<><path d="M21 3 10 14"/><path d="M21 3 14.5 21l-4.5-7-7-4.5L21 3Z"/></>);

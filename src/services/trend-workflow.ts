@@ -11,11 +11,12 @@ export interface TrendSettings {
   publicBaseUrl: string; webhookConfigured: boolean; keyConfigured: boolean; schedule: string;
 }
 export interface TrendBrief { provider?: string; title: string; traffic: string; confidence: "sourced" | "unverified"; summary: string; sensitive: boolean; needsReview: boolean; label: string; reason?: string; suggestedAngle?: string; decision?: "pursue" | "watch" | "skip"; decisionRationale?: string; pageAngles?: { fanpageId?: string; pageName?: string; angle: string }[]; avoid?: string[]; sources: { title?: string; url: string; publisher?: string; publishedAt?: string }[]; claims: { text: string; urls: string[] }[] }
-export interface TrendDraft { remakeId: string; brandId: string; fanpageId: string; pageName: string; angle: string; status: string; error?: string | null }
-export interface TrendItem { decision?: "pursue" | "watch" | "skip" | null; discoverySource?: "google_trends" | "claude" | null; skipReason?: string | null; contentPath?: "facebook_post" | "brief_only"; facebookSourceUrl?: string | null; facebookReason?: string | null; id: string; title: string; status: string; checkpoint: string; brief: TrendBrief | null; error: string | null; attempts: number; drafts: TrendDraft[]; createdAt: string; deletedAt?: string | null; deleteReason?: "manual" | "auto_skipped" | "auto_stale" | null }
+/** status ready + error = bản nháp dùng được nhưng ý tưởng ảnh lỗi; status error = page chưa viết được (remakeId null). */
+export interface TrendDraft { remakeId: string | null; brandId: string; fanpageId: string; pageName: string; angle: string; status: string; error?: string | null; href?: string | null; imageIdeas?: "ok" | "error" | null; note?: string }
+export interface TrendItem { decision?: "pursue" | "watch" | "skip" | null; discoverySource?: "google_trends" | "claude" | null; skipReason?: string | null; contentPath?: "facebook_post" | "brief_only"; facebookSourceUrl?: string | null; facebookReason?: string | null; id: string; title: string; status: string; checkpoint: string; brief: TrendBrief | null; error: string | null; attempts: number; drafts: TrendDraft[]; createdAt: string; dryRun?: boolean; teamsSentAt?: string | null; deletedAt?: string | null; deleteReason?: "manual" | "auto_skipped" | "auto_stale" | null }
 export interface TrendRun { id: string; status: string; error: string | null; createdAt: string; dryRun: boolean }
 export interface OutboxItem { id: string; status: string; attempts: number; lastError: string | null; acceptedAt: string | null; nextAttemptAt: string | null }
-export interface TrendStatus { settings: Pick<TrendSettings, "enabled"> & { skippedRetentionDays?: number } & { researchProvider?: TrendSettings["researchProvider"]; hasTargets?: boolean }; canConfigure: boolean; hasTargets?: boolean; lastRefreshAt?: string | null; refreshedBy?: "Claude" | "chạy thử" | null; lastSlot: unknown; runs: TrendRun[]; outbox: OutboxItem[] }
+export interface TrendStatus { settings: Pick<TrendSettings, "enabled"> & { skippedRetentionDays?: number } & { researchProvider?: TrendSettings["researchProvider"]; hasTargets?: boolean; webhookConfigured?: boolean }; canConfigure: boolean; hasTargets?: boolean; lastRefreshAt?: string | null; refreshedBy?: "Claude" | "chạy thử" | null; lastSlot: unknown; runs: TrendRun[]; outbox: OutboxItem[] }
 export interface TrendTargets { brands: { id: string; name: string }[]; fanpages: { id: string; brandId: string; pageName: string; platform: string; pageUrl: string }[] }
 export interface TrendCard { payload: { attachments?: { content?: { body?: { text?: string; size?: string; weight?: string; color?: string; isSubtle?: boolean }[]; actions?: { title?: string; url?: string }[] } }[] }; sent: boolean }
 async function request<T>(path: string, method = "GET", body?: unknown): Promise<T> {
@@ -29,11 +30,13 @@ async function request<T>(path: string, method = "GET", body?: unknown): Promise
       RATE_LIMITED: "Bạn đã gửi thử hoặc gửi lại 3 lần trong một phút. Hãy chờ một phút rồi thử lại.",
       WEBHOOK_NOT_CONFIGURED: "Chưa có đường dẫn gửi Teams. Hãy lưu đường dẫn trong phần cài đặt.",
       DRY_RUN_ONLY: "Đây là trend của lần chạy thử nên không gửi lên Teams. Hãy để Claude lấy hoặc nộp trend trong lần chạy thật.",
-      DECISION_REQUIRED: "Claude chưa chọn đu trend này; chỉ gửi thử được trend đã được chọn đu.",
+      DECISION_REQUIRED: "Claude chưa chọn đu trend này; chỉ gửi được trend đã được chọn đu.",
       SENSITIVE_TREND: "Trend nhạy cảm không thể gửi lên Teams. Hãy chọn trend khác.",
       OUTBOX_NOT_UNKNOWN: "Thẻ này đã được xử lý hoặc không còn chờ kiểm tra. Hãy tải lại danh sách.",
       INVALID_IDS: "Danh sách trend chọn không hợp lệ. Hãy tải lại trang rồi thử lại.",
       INVALID_RETENTION: "Số ngày lưu không hợp lệ: trend đã bỏ qua từ 1 đến 90 ngày, trend cũ từ 7 đến 365 ngày.",
+      RECENTLY_SENT: "Trend này vừa được gửi lên Teams trong 2 phút qua nên không gửi lại. Hãy kiểm tra kênh Teams.",
+      CONFIRM_REQUIRED: "Cần xác nhận trước khi gửi. Hãy thử lại.",
       BRIEF_NOT_FOUND: "Chưa có bản tóm tắt. Hãy chọn trend khác hoặc chờ xử lý xong.",
     };
     throw new Error(messages[data.code] || data.reason || data.error || (res.status === 429 ? messages.RATE_LIMITED : "Không thực hiện được, vui lòng thử lại."));
@@ -70,5 +73,8 @@ export const runDry = () => request<{ runId: string | null; status: string; crea
 export const getCard = (id: string) => request<TrendCard>(`/trends/${encodeURIComponent(id)}/card`);
 export const sendTest = (id: string, idempotencyKey: string) => request<{ message: string; status: string }>(`/trends/${encodeURIComponent(id)}/send-test`, "POST", { confirm: true, idempotencyKey });
 
+export interface ManualSendResult { id: string; status: string; attempts: number; error: string | null; acceptedAt: string | null; warning: string | null; message: string }
+/** Gửi thẻ thật bằng tay (chủ tính năng). Bấm trùng trong 2 phút bị chặn ở server. */
+export const sendTrend = (id: string) => request<ManualSendResult>(`/trends/${encodeURIComponent(id)}/send`, "POST", { confirm: true });
 export const getRun = (id: string) => request<TrendRun>(`/runs/${encodeURIComponent(id)}`);
 export const resolveOutbox = (id: string, action: "resolved" | "resend") => request<{ id: string; action: string }>(`/outbox/${encodeURIComponent(id)}/resolve`, "POST", { action, confirm: true, ...(action === "resend" ? { acknowledgeDuplicateRisk: true } : {}) });
