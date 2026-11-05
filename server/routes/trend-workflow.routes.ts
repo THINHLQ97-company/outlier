@@ -8,6 +8,7 @@ import { queueTrendDryRun as defaultQueue, lastTrendSlot } from "../services/tre
 import { publicTrendDraft, trendRefreshState } from "../services/trend-claude";
 import { buildTrendCard, drainTrendOutbox, recoverStaleTrendOutbox, reserveTrendSendTest, resolveTrendOutbox } from "../services/trend-teams";
 import { trashTrends, restoreTrends } from "../services/trend-trash";
+import { syncTrendDrafts } from "../services/trend-draft-sync";
 import { sensitiveTrend, type TrendBrief } from "../services/trend-research";
 /** Safe derived fields; never expose raw input. Skip reason is stored in error without a new migration. */
 export function trendItemPublicFields(r: { status: string; error: string | null; input: unknown; brief?: unknown }) {
@@ -99,7 +100,7 @@ export function registerTrendWorkflowRoutes(app: Express, overrides: Partial<{ d
     const rows = await getDb().select().from(trendWorkflowItems).where(trash ? isNotNull(trendWorkflowItems.deletedAt) : isNull(trendWorkflowItems.deletedAt)).orderBy(desc(trash ? trendWorkflowItems.deletedAt : trendWorkflowItems.createdAt)).limit(limit).offset(offset);
     const total = (await getDb().select({ id: trendWorkflowItems.id }).from(trendWorkflowItems).where(trash ? isNotNull(trendWorkflowItems.deletedAt) : isNull(trendWorkflowItems.deletedAt))).length;
     const trashTotal = trash ? total : await canConfigure(req) ? (await getDb().select({ id: trendWorkflowItems.id }).from(trendWorkflowItems).where(isNotNull(trendWorkflowItems.deletedAt))).length : 0;
-    const drafts = rows.length ? await getDb().select().from(trendWorkflowDrafts).where(inArray(trendWorkflowDrafts.itemId, rows.map(r => r.id))) : [];
+    const drafts = rows.length ? await syncTrendDrafts(await getDb().select().from(trendWorkflowDrafts).where(inArray(trendWorkflowDrafts.itemId, rows.map(r => r.id))), getDb()) : [];
     // Chỉ thời điểm Teams đã nhận (accepted) — không có nghĩa đã hiển thị; không lộ payload/lỗi outbox.
     const sent = rows.length ? await getDb().select({ itemId: trendTeamsOutbox.itemId, acceptedAt: trendTeamsOutbox.acceptedAt }).from(trendTeamsOutbox).where(and(inArray(trendTeamsOutbox.itemId, rows.map(r => r.id)), eq(trendTeamsOutbox.status, "accepted"))) : [];
     const lastSent = (id: string) => sent.filter(o => o.itemId === id && o.acceptedAt).map(o => new Date(o.acceptedAt!).getTime()).sort((a, b) => b - a)[0];
@@ -143,7 +144,7 @@ export function registerTrendWorkflowRoutes(app: Express, overrides: Partial<{ d
     if (!UUID.test(req.params.id)) return res.status(400).json({ code: "INVALID_ID", error: "Mã xu hướng không hợp lệ." });
     const [row] = await getDb().select().from(trendWorkflowItems).where(and(eq(trendWorkflowItems.id, req.params.id), isNull(trendWorkflowItems.deletedAt)));
     if (!row?.brief) return res.status(404).json({ code: "BRIEF_NOT_FOUND", error: "Chưa có bản tóm tắt cho xu hướng này." });
-    const drafts = await getDb().select().from(trendWorkflowDrafts).where(eq(trendWorkflowDrafts.itemId, row.id));
+    const drafts = await syncTrendDrafts(await getDb().select().from(trendWorkflowDrafts).where(eq(trendWorkflowDrafts.itemId, row.id)), getDb());
     res.json({ payload: buildTrendCard(row.brief as TrendBrief, drafts, (await readTrendSettings()).publicBaseUrl, row.id), sent: false });
   }));
   app.post("/api/trend-workflow/trends/:id/send-test", requireAuth, requireTrendOwner, route(async (req, res) => {
@@ -160,7 +161,7 @@ export function registerTrendWorkflowRoutes(app: Express, overrides: Partial<{ d
     const [parentRun] = await getDb().select().from(trendWorkflowRuns).where(eq(trendWorkflowRuns.id, item.runId));
     const decisionBlocked = trendSendDecisionGuard(item, Boolean(parentRun?.dryRun));
     if (decisionBlocked) return res.status(409).json(decisionBlocked);
-    const drafts = await getDb().select().from(trendWorkflowDrafts).where(eq(trendWorkflowDrafts.itemId, item.id));
+    const drafts = await syncTrendDrafts(await getDb().select().from(trendWorkflowDrafts).where(eq(trendWorkflowDrafts.itemId, item.id)), getDb());
     if (!drafts.some(d => d.status === "ready")) return res.status(409).json({ code: "DRAFT_REQUIRED", error: "Cần có ít nhất một bản nháp sẵn sàng để thẻ mở được bản nháp." });
     const idempotencyKey = `test:${item.id}:${key}`;
     await getDb().insert(trendTeamsOutbox).values({ idempotencyKey, itemId: item.id, payload: buildTrendCard(item.brief as TrendBrief, drafts, config.publicBaseUrl, item.id) }).onConflictDoNothing();
@@ -189,7 +190,7 @@ export function registerTrendWorkflowRoutes(app: Express, overrides: Partial<{ d
     const blocked = await checkSendTest(getAuthUser(req)!);
     if (blocked) return res.status(blocked.status).json({ code: blocked.code, error: blocked.error });
     const config = await getSettings();
-    const drafts = await getDb().select().from(trendWorkflowDrafts).where(eq(trendWorkflowDrafts.itemId, item.id));
+    const drafts = await syncTrendDrafts(await getDb().select().from(trendWorkflowDrafts).where(eq(trendWorkflowDrafts.itemId, item.id)), getDb());
     const hasDraft = drafts.some(d => d.status === "ready" && d.remakeId);
     // Bucket 2 phút trong key: hai request đồng thời cùng chèn một key, unique index chỉ cho một dòng.
     const idempotencyKey = `${prefix}${Math.floor(Date.now() / MANUAL_SEND_WINDOW_MS)}`;

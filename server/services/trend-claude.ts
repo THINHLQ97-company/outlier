@@ -202,7 +202,7 @@ export function publicTrendDraft<T extends { remakeId: string | null; status: st
 export async function trendResearchStatus(itemId: string, db: any = getDb()) {
   const [item] = await db.select().from(trendWorkflowItems).where(eq(trendWorkflowItems.id, itemId));
   if (!item || item.deletedAt) throw new Error("Không tìm thấy item.");
-  const drafts = await db.select().from(trendWorkflowDrafts).where(eq(trendWorkflowDrafts.itemId, itemId));
+  const drafts = await (await import("./trend-draft-sync")).syncTrendDrafts(await db.select().from(trendWorkflowDrafts).where(eq(trendWorkflowDrafts.itemId, itemId)), db);
   const { facebook, input, ...publicItem } = item;
   const skipped = item.status === "skipped";
   return { ...publicItem, decision: skipped ? "skip" : (item.brief as any)?.decision ?? null, discoverySource: input?.origin === "claude_discover" ? "claude" : "google_trends", skipReason: skipped ? String(item.error || "").replace(/^Claude bỏ qua: /, "") || null : null, error: skipped ? null : item.error, drafts: drafts.map(publicTrendDraft) };
