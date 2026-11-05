@@ -1,6 +1,6 @@
 import SafeImage from "./SafeImage";
 import { useEffect, useState } from "react";
-import { Loader2, Plus, Trash2, Link2, Link2Off, RefreshCw, ExternalLink, Star, Users } from "lucide-react";
+import { Loader2, Plus, Trash2, Link2, Link2Off, RefreshCw, ExternalLink, Star, Users, FileText } from "lucide-react";
 import {
   addBrandFanpage,
   deleteBrandFanpage,
@@ -8,6 +8,7 @@ import {
   disconnectFanpageMeta,
   syncFanpagePosts,
   setFanpageCharacters,
+  setFanpageContentDirection,
   type MetaSyncResult,
 } from "../services/brands";
 import { listCharacters } from "../services/characters";
@@ -76,6 +77,24 @@ export default function BrandFanpages({
       // Không có thư viện nhân vật thì phần còn lại vẫn dùng được bình thường.
       .catch(() => setAllCharacters([]));
   }, []);
+
+  // Content direction: trang nào đang mở ô sửa link, và nội dung ô.
+  const [dirFor, setDirFor] = useState<string | null>(null);
+  const [dirUrl, setDirUrl] = useState("");
+
+  async function saveDirection(fp: BrandFanpage, url: string) {
+    setBusyId(fp.id);
+    setError(null);
+    try {
+      await setFanpageContentDirection(brandId, fp.id, url.trim());
+      setDirFor(null);
+      onChanged();
+    } catch (e: any) {
+      setError(e?.message || "Không đọc được link content direction.");
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   /** Số nhân vật đã gán mà vẫn còn trong thư viện. */
   function liveCount(fp: BrandFanpage): number {
@@ -387,6 +406,68 @@ export default function BrandFanpages({
                       </div>
                     </div>
                   )}
+
+                  <div className="mt-3 pt-3 border-t border-stone-200">
+                    <div className="flex items-start justify-between gap-2 flex-wrap">
+                      <div className="min-w-0">
+                        <h4 className="text-xs font-semibold text-stone-700 flex items-center gap-1">
+                          <FileText className="w-3.5 h-3.5" aria-hidden="true" /> Content direction
+                        </h4>
+                        {fp.contentDirectionUrl ? (
+                          <p className="text-[11px] text-stone-500 mt-0.5">
+                            <a href={fp.contentDirectionUrl} target="_blank" rel="noreferrer" className="text-storm-600 hover:underline">
+                              {fp.contentDirectionTitle || fp.contentDirectionUrl}
+                            </a>
+                            {" · "}
+                            {(fp.contentDirectionText || "").length.toLocaleString("vi-VN")} ký tự
+                            {fp.contentDirectionFetchedAt && ` · đọc lúc ${new Date(fp.contentDirectionFetchedAt).toLocaleString("vi-VN")}`}
+                            {" · AI đọc bản này mỗi lần viết hoặc chọn trend cho trang; tự đọc lại mỗi ngày."}
+                          </p>
+                        ) : (
+                          <p className="text-[11px] text-stone-400 mt-0.5">
+                            Chưa gắn. Dán link bản chốt hướng nội dung để AI đối chiếu khi viết và chọn trend cho trang này.
+                          </p>
+                        )}
+                        {fp.contentDirectionError && (
+                          <p className="text-[11px] text-amber-700 mt-0.5">
+                            Lần đọc lại gần nhất lỗi ({fp.contentDirectionError}) — AI vẫn dùng bản đã đọc trước đó.
+                          </p>
+                        )}
+                      </div>
+                      {canEdit && dirFor !== fp.id && (
+                        <div className="flex gap-1.5 shrink-0">
+                          {fp.contentDirectionUrl && (
+                            <button type="button" onClick={() => saveDirection(fp, fp.contentDirectionUrl!)} disabled={busy} className="ds-btn ds-btn-ghost ds-btn-sm" title="Đọc lại link ngay">
+                              <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" /> Đọc lại
+                            </button>
+                          )}
+                          <button type="button" onClick={() => { setDirFor(fp.id); setDirUrl(fp.contentDirectionUrl || ""); }} disabled={busy} className="ds-btn ds-btn-secondary ds-btn-sm">
+                            {fp.contentDirectionUrl ? "Đổi link" : "Gắn link"}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    {dirFor === fp.id && (
+                      <div className="flex gap-2 mt-2 flex-wrap">
+                        <label htmlFor={`dir-${fp.id}`} className="sr-only">Link content direction</label>
+                        <input
+                          id={`dir-${fp.id}`}
+                          className="ds-input flex-1 min-w-[220px]"
+                          placeholder="https://…"
+                          value={dirUrl}
+                          onChange={(e) => setDirUrl(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && dirUrl.trim() && saveDirection(fp, dirUrl)}
+                        />
+                        <button type="button" onClick={() => saveDirection(fp, dirUrl)} disabled={busy || !dirUrl.trim()} className="ds-btn ds-btn-primary ds-btn-sm">
+                          {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />} Lưu và đọc
+                        </button>
+                        {fp.contentDirectionUrl && (
+                          <button type="button" onClick={() => saveDirection(fp, "")} disabled={busy} className="ds-btn ds-btn-ghost ds-btn-sm">Gỡ</button>
+                        )}
+                        <button type="button" onClick={() => setDirFor(null)} className="ds-btn ds-btn-ghost ds-btn-sm">Huỷ</button>
+                      </div>
+                    )}
+                  </div>
 
                   {charsFor === fp.id && (
                     <div className="mt-3 pt-3 border-t border-stone-200">

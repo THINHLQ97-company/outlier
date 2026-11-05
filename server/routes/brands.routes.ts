@@ -382,6 +382,31 @@ export function registerBrandRoutes(app: Express) {
     }
   });
 
+  // ===== Content direction của trang: dán link, server đọc và lưu nguyên văn =====
+  // Body { url } — url rỗng/null = gỡ. Đọc lỗi thì báo ngay, không lưu nửa vời.
+  app.put("/api/brands/:id/fanpages/:fid/content-direction", requireAuth, async (req, res) => {
+    if (dbDown(res)) return;
+    const { id, fid } = req.params;
+    if (!UUID_RE.test(id) || !UUID_RE.test(fid)) return res.status(400).json({ error: "Mã không hợp lệ." });
+    try {
+      const [brand] = await getDb().select().from(brands).where(eq(brands.id, id));
+      if (!brand) return res.status(404).json({ error: "Không tìm thấy thương hiệu." });
+      if (!(await canEdit(req, brand))) return res.status(403).json({ error: "Không có quyền sửa." });
+      const [page] = await getDb().select({ id: brandFanpages.id }).from(brandFanpages).where(and(eq(brandFanpages.id, fid), eq(brandFanpages.brandId, id)));
+      if (!page) return res.status(404).json({ error: "Không tìm thấy trang." });
+      const url = typeof req.body?.url === "string" ? req.body.url.trim() : "";
+      const { setContentDirection } = await import("../services/content-direction");
+      try {
+        res.json(await setContentDirection(fid, url || null));
+      } catch (e: any) {
+        res.status(400).json({ error: e?.message || "Không đọc được link." });
+      }
+    } catch (e: any) {
+      console.error("content direction:", e?.message || e);
+      res.status(500).json({ error: "Không lưu được content direction." });
+    }
+  });
+
   // ===== Nối fanpage với Meta rồi quét bài của chính page về =====
   // Token đi trong body, không bao giờ trong URL: URL lọt vào log truy cập,
   // lịch sử trình duyệt và referer.

@@ -380,6 +380,12 @@ export interface BrandFanpage {
   metaConnectedAt?: string | null;
   metaLastSyncAt?: string | null;
   metaLastPostCount?: number | null;
+  /** Content direction: link bản chốt hướng nội dung, server đọc và lưu nguyên văn. */
+  contentDirectionUrl?: string | null;
+  contentDirectionTitle?: string | null;
+  contentDirectionText?: string | null;
+  contentDirectionFetchedAt?: string | null;
+  contentDirectionError?: string | null;
   createdAt: string;
 }
 

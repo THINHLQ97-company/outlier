@@ -323,6 +323,13 @@
       "when": 1793842742538,
       "tag": "0045_calm_spencer_smythe",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1793845262892,
+      "tag": "0046_sparkling_king_cobra",
+      "breakpoints": true
     }
   ]
 }

@@ -11,6 +11,7 @@
 import type { brands, brandFanpages } from "../db/schema";
 import type { BrandField, BrandRegister, BrandBehaviorRules, BrandVisualIdentity, BrandExample } from "../db/schema";
 import { statsToText } from "./fanpage-stats";
+import { contentDirectionBlock } from "./content-direction";
 
 type BrandRow = typeof brands.$inferSelect;
 type FanpageRow = typeof brandFanpages.$inferSelect;
@@ -141,6 +142,10 @@ export function buildBrandBrief(
   } else if (pages.length > 0) {
     missing.push("số liệu thật của trang — nối Meta rồi quét bài về để có nhịp đăng, định dạng hay dùng, và bài nào ăn hơn hẳn");
   }
+
+  // Content direction đứng sau hồ sơ và trước bài mẫu: đọc luật của trang trước rồi mới tới mẫu.
+  const direction = contentDirectionBlock(pages as any);
+  if (direction) out.push(direction);
 
   const examples = val<BrandExample[]>(row.fewShotExamples as any);
   if (examples) {

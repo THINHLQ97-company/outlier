@@ -1001,6 +1001,16 @@ export const brandFanpages = pgTable("brand_fanpages", {
   metaAdsStatus: text("meta_ads_status"),
   metaAdsNote: text("meta_ads_note"),
 
+  // ── Content direction của trang: bản chốt hướng nội dung, đọc từ link ──
+  // AI đọc NGUYÊN VĂN mỗi lần viết/đánh giá trend cho trang này — khác tài liệu
+  // nguồn (brand_sources) chỉ dùng một lần để bóc hồ sơ.
+  contentDirectionUrl: text("content_direction_url"),
+  contentDirectionTitle: text("content_direction_title"),
+  contentDirectionText: text("content_direction_text"),
+  contentDirectionFetchedAt: timestamp("content_direction_fetched_at", { withTimezone: true }),
+  /** Lần cập nhật gần nhất lỗi vì sao — vẫn giữ bản đã đọc trước đó. */
+  contentDirectionError: text("content_direction_error"),
+
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({

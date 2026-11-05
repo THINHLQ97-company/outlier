@@ -217,6 +217,17 @@ export async function setFanpageCharacters(
   return res.json();
 }
 
+/** Gắn link content direction cho trang (rỗng = gỡ). Server đọc link ngay; đọc lỗi thì báo lỗi. */
+export async function setFanpageContentDirection(brandId: string, fanpageId: string, url: string): Promise<BrandFanpage> {
+  const res = await fetch(`/api/brands/${brandId}/fanpages/${fanpageId}/content-direction`, {
+    method: "PUT",
+    headers: authHeaders(),
+    body: JSON.stringify({ url }),
+  });
+  if (!res.ok) return asError(res, "Không đọc được link content direction.");
+  return res.json();
+}
+
 export type { BrandField };
 
 export interface TokenExchangeResult {

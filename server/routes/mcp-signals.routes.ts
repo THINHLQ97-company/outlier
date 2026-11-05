@@ -581,6 +581,20 @@ const TOOLS = [
     },
   },
   {
+    name: "brand_fanpage_set_direction",
+    description: "Gắn (hoặc gỡ) link CONTENT DIRECTION cho một trang của thương hiệu — bản chốt hướng nội dung (trụ nội dung, công thức, lằn ranh). Server đọc link ngay và lưu nguyên văn; từ đó brand_brief và mọi lần viết/chọn trend cho trang đều đối chiếu với bản này. Tự đọc lại mỗi ngày. url rỗng = gỡ.",
+    annotations: { title: "Gắn content direction cho trang", readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      properties: {
+        fanpage_id: { type: "string", description: "Mã trang (brand_profile_get → fanpages)" },
+        url: { type: "string", description: "Link content direction (http/https); rỗng để gỡ" },
+      },
+      required: ["fanpage_id"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "brand_fanpage_add",
     description: "Thêm trang/kênh CỦA CHÍNH thương hiệu (nơi thương hiệu đăng bài) — khác kênh theo dõi đối thủ. Giúp gợi ý đu trend đúng định dạng, đúng người đọc của từng trang.",
     annotations: { title: "Thêm trang của thương hiệu", readOnlyHint: false },
@@ -1378,10 +1392,12 @@ async function callTool(name: string, args: any, principal: McpPrincipal, base =
       ...row,
       sources: srcs,
       fanpages: pages.map((f: any) => ({
-        platform: f.platform, pageName: f.pageName, pageUrl: f.pageUrl, handle: f.handle,
+        id: f.id, platform: f.platform, pageName: f.pageName, pageUrl: f.pageUrl, handle: f.handle,
         followerCount: f.followerCount, topics: f.topics, formats: f.formats,
         postingCadence: f.postingCadence, audienceNote: f.audienceNote,
         isPrimary: f.isPrimary,
+        // Nội dung đầy đủ nằm trong brand_brief; ở đây chỉ báo có/không và nguồn.
+        contentDirection: f.contentDirectionUrl ? { url: f.contentDirectionUrl, title: f.contentDirectionTitle, chars: (f.contentDirectionText || "").length, fetchedAt: f.contentDirectionFetchedAt, error: f.contentDirectionError } : null,
       })),
       missing_fields: missing,
       note:
@@ -2205,6 +2221,15 @@ async function callTool(name: string, args: any, principal: McpPrincipal, base =
     const limit = Math.min(500, Math.max(10, Number(args.limit) || 100));
     const { syncFanpagePosts } = await import("../services/fanpage-sync");
     return await syncFanpagePosts(args.fanpage_id, limit);
+  }
+
+  if (name === "brand_fanpage_set_direction") {
+    if (!UUID_RE.test(args.fanpage_id || "")) throw new Error("fanpage_id không hợp lệ");
+    const [fp] = await db.select({ id: brandFanpages.id }).from(brandFanpages).where(eq(brandFanpages.id, args.fanpage_id));
+    if (!fp) throw new Error("Không tìm thấy trang");
+    const { setContentDirection } = await import("../services/content-direction");
+    const row: any = await setContentDirection(fp.id, String(args.url || "").trim() || null);
+    return { fanpage_id: fp.id, url: row?.contentDirectionUrl || null, title: row?.contentDirectionTitle || null, chars: (row?.contentDirectionText || "").length, note: row?.contentDirectionUrl ? "Đã đọc và lưu. brand_brief giờ có mục Content direction của trang này." : "Đã gỡ content direction." };
   }
 
   if (name === "brand_fanpage_add") {

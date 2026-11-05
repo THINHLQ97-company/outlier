@@ -248,6 +248,8 @@ export async function sweepFanpageAds(reason: string): Promise<FanpageAdsSyncRes
           .catch(() => {});
       }
     }
+    // Content direction đọc lại mỗi ngày (chỉ link đã quá 24 giờ) — rẻ, không tốn AI.
+    await import("./content-direction").then((m) => m.refreshContentDirections()).catch((e: any) => console.warn("[content-direction]", e?.message || e));
   } finally {
     running = false;
   }
