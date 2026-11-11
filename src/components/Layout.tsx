@@ -8,6 +8,7 @@ import {
   Images,
   Wand2,
   ShieldCheck,
+  Activity,
   Fingerprint,
   Telescope,
   Zap,
@@ -86,6 +87,7 @@ const SYSTEM_GROUP: NavGroup = {
 };
 
 const ADMIN_ITEM: NavItem = { to: "/admin/users", label: "Quản trị", icon: ShieldCheck };
+const ADMIN_ACTIVITY_ITEM: NavItem = { to: "/admin/activity", label: "Log hoạt động", icon: Activity };
 
 const SIDEBAR_COLLAPSED_KEY = "outlier:sidebarCollapsed";
 
@@ -105,7 +107,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   // Mobile luôn mở drawer đầy đủ nhãn — "collapsed" chỉ là trạng thái desktop.
   const showLabels = !collapsed || mobileOpen;
   const groups = isAdmin
-    ? [...NAV_GROUPS, { ...SYSTEM_GROUP, items: [...SYSTEM_GROUP.items, ADMIN_ITEM] }]
+    ? [...NAV_GROUPS, { ...SYSTEM_GROUP, items: [...SYSTEM_GROUP.items, ADMIN_ITEM, ADMIN_ACTIVITY_ITEM] }]
     : [...NAV_GROUPS, SYSTEM_GROUP];
   const initials = (username || "?").slice(0, 2).toUpperCase();
 

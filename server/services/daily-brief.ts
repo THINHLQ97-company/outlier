@@ -8,7 +8,7 @@
 // tiền nên chỉ chạy khi có người bấm — bản tóm tắt chỉ NÓI rằng nên quét.
 import { and, desc, eq, gte } from "drizzle-orm";
 import { getDb } from "../db/client";
-import { brands, deconstructions, radarItems, remakes, signals, watchedChannels } from "../db/schema";
+import { brands, deconstructions, radarItems, remakes, signals, watchedChannels, trendWorkflowItems, trendWorkflowRuns } from "../db/schema";
 
 export interface DailyBrief {
   generatedAt: string;
@@ -26,6 +26,8 @@ export interface DailyBrief {
   }[];
   /** Bản bóc đã xong nhưng chưa đọc bình luận — mỏ vàng còn bỏ ngỏ. */
   deconstructionsWithoutComments: { id: string; title: string; platform?: string | null }[];
+  /** Trend workflow đã nhận trong 48 giờ: Claude phải đọc trước khi nộp để không lặp. */
+  recentTrendWorkflow: { id: string; title: string; status: string; decision?: string | null; createdAt: string; duplicateOf?: string | null }[];
   /** Bản viết xong mà chưa đăng. */
   unpublishedDrafts: { id: string; title: string; hasImage: boolean }[];
   /** Kênh lâu chưa quét lại. */
@@ -60,6 +62,12 @@ export async function buildDailyBrief(owner: string): Promise<DailyBrief> {
     .where(and(gte(signals.publishedDate, freshCutoff), eq(signals.status, "new")))
     .orderBy(desc(signals.publishedDate))
     .limit(15);
+
+  const workflowRows = await db.select({ id: trendWorkflowItems.id, title: trendWorkflowItems.title, status: trendWorkflowItems.status, brief: trendWorkflowItems.brief, createdAt: trendWorkflowItems.createdAt, duplicateOf: trendWorkflowItems.duplicateOf })
+    .from(trendWorkflowItems)
+    .where(gte(trendWorkflowItems.createdAt, new Date(now - 48 * 3600_000)))
+    .orderBy(desc(trendWorkflowItems.createdAt)).limit(100);
+  const recentTrendWorkflow = workflowRows.map(r => ({ id: r.id, title: r.title, status: r.status, decision: (r.brief as any)?.decision || null, createdAt: new Date(r.createdAt).toISOString(), duplicateOf: r.duplicateOf || null }));
 
   const hotRows = await db
     .select()
@@ -112,6 +120,7 @@ export async function buildDailyBrief(owner: string): Promise<DailyBrief> {
   // Việc nên làm: xếp theo thứ tự rẻ trước, tốn tiền sau — để phiên tự động
   // không mặc định đi vào chỗ tốn tiền.
   const actions: string[] = [];
+  actions.push("Trước khi săn/nộp trend, đọc recentTrendWorkflow (48 giờ gần nhất). Cùng sự kiện dù khác keyword không nộp lại; dùng trend_status với id đã có. Danh sách tối đa 100 item, không phải toàn bộ lịch sử. Chỉ nộp diễn biến mới khi giải thích rõ điều gì mới.");
   if (brandList.length === 0) {
     actions.push("Chưa có thương hiệu nào — tạo bằng brand_create rồi nạp hồ sơ, vì mọi thứ khác đều dựa vào đó.");
   } else if (!brandList.some((b) => b.ready)) {
@@ -142,6 +151,7 @@ export async function buildDailyBrief(owner: string): Promise<DailyBrief> {
   return {
     generatedAt: new Date().toISOString(),
     brands: brandList,
+    recentTrendWorkflow,
     freshTrends: trendRows.map((t) => ({
       id: t.id,
       title: t.title,

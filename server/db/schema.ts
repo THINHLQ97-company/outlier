@@ -24,6 +24,24 @@ export const users = pgTable("users", {
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 
+// ===== user_activity_log — heartbeat + lịch sử hoạt động admin =====
+// Không lưu token/password; chỉ lưu user, loại sự kiện, route và thời điểm.
+export const userActivityLog = pgTable("user_activity_log", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+  username: text("username").notNull(), // giữ lại để lịch sử không mất nghĩa khi user bị xoá
+  event: text("event").notNull(), // login | heartbeat
+  path: text("path"),
+  userAgent: text("user_agent"),
+  ip: text("ip"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  userTimeIdx: index("user_activity_log_user_time_idx").on(t.username, t.createdAt),
+  timeIdx: index("user_activity_log_time_idx").on(t.createdAt),
+}));
+
+export type UserActivityLog = typeof userActivityLog.$inferSelect;
+
 // ===== signals — bước THU + trạng thái LỌC =====
 // source: "market_radar" | "group_insights" | "manual" | "claude_research"
 //   ("claude_research" = tin do Claude tự web-search thêm qua MCP server).

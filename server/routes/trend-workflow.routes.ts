@@ -27,8 +27,13 @@ export function trendSendDecisionGuard(item: { brief: unknown }, dryRun = false)
 /** Gửi tay: cùng cổng biên tập với thẻ tự động, nhưng KHÔNG đòi teamsEnabled hay bản nháp. */
 export function trendManualSendGuard(item: { status: string; title: string; brief: unknown }, dryRun: boolean) {
   const b = item.brief as TrendBrief | null;
-  if (item.status === "excluded" || b?.sensitive || sensitiveTrend(item.title)) return { code: "SENSITIVE_TREND", error: "Xu hướng nhạy cảm; không gửi Teams." };
-  return trendSendDecisionGuard(item, dryRun);
+  if (!b) return { code: "BRIEF_NOT_FOUND", error: "Chưa có bản tóm tắt." };
+  if (item.status === "excluded" || b.sensitive || sensitiveTrend(item.title)) return { code: "SENSITIVE_TREND", error: "Xu hướng nhạy cảm; không gửi Teams." };
+  if (b.decision === "skip" || item.status === "skipped" || item.status === "duplicate") return { code: "DECISION_REQUIRED", error: "Trend đã bị bỏ qua hoặc đánh dấu trùng; không gửi Teams." };
+  if (dryRun) return { code: "DRY_RUN_ONLY", error: "Trend chạy thử không được gửi Teams. Hãy tạo lượt thật sau khi đánh giá." };
+  // Gửi tay là hành động xác nhận cuối của owner: watch vẫn gửi được khi owner
+  // thấy trend phù hợp, còn auto-delivery vẫn chỉ dành cho pursue.
+  return null;
 }
 /** Chống bấm trùng: mọi lần gửi tay của một trend trong 2 phút gần nhất coi là một. */
 export const MANUAL_SEND_WINDOW_MS = 120_000;

@@ -44,6 +44,7 @@ export function registerAuthRoutes(app: Express) {
       const token = crypto.createHmac("sha256", getSecret()).update(payload).digest("hex");
 
       resetRateLimit(req, "login");
+      void import("../services/user-activity").then(({ recordUserActivity }) => recordUserActivity(user.username, "login", req));
       return res.status(200).json({
         success: true,
         token: `${Buffer.from(payload).toString("base64")}.${token}`,
@@ -87,6 +88,7 @@ export function registerAuthRoutes(app: Express) {
       if (pending || !user) {
         return res.status(403).json({ error: "Tài khoản chưa được cấp quyền — đã gửi yêu cầu tới quản trị viên, vui lòng chờ duyệt.", pending: true });
       }
+      void import("../services/user-activity").then(({ recordUserActivity }) => recordUserActivity(user.username, "login", req));
       return res.json({ success: true, token: issueSessionToken(user), username: user.username, role: user.role });
     } catch (e: any) {
       console.error("google login:", e?.message || e);

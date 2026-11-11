@@ -22,7 +22,7 @@ export function manualSendBlock(it: TrendItem, webhookConfigured: boolean | unde
   if (!it.brief) return "Chưa có bản tóm tắt.";
   if (it.status === "excluded" || it.brief.sensitive) return "Trend nhạy cảm không gửi lên Teams.";
   if (it.dryRun) return "Trend của lần chạy thử không gửi lên Teams.";
-  if (decisionOf(it) !== "pursue") return "Claude chưa chọn đu trend này.";
+  if (it.status === "skipped" || it.status === "duplicate" || decisionOf(it) === "skip") return "Trend đã bị bỏ qua hoặc đánh dấu trùng.";
   if (!webhookConfigured) return "Chưa cấu hình đường dẫn gửi Teams trong Cài đặt.";
   return null;
 }

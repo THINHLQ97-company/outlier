@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 import { verifyToken as apiVerifyToken, fetchMe } from "./services/auth";
+import { authHeaders } from "./services/http";
 import type { Role } from "./types";
 
 // Global auth/session state — pattern copied from
@@ -51,6 +52,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     verify();
   }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let lastInteraction = Date.now();
+    const touch = () => { lastInteraction = Date.now(); };
+    const beat = () => {
+      if (document.visibilityState !== "visible" || Date.now() - lastInteraction > 3 * 60_000) return;
+      void fetch("/api/activity/heartbeat", { method: "POST", headers: authHeaders(false) }).catch(() => {});
+    };
+    window.addEventListener("pointerdown", touch);
+    window.addEventListener("keydown", touch);
+    window.addEventListener("scroll", touch, { passive: true });
+    beat();
+    const timer = window.setInterval(beat, 60_000);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("pointerdown", touch);
+      window.removeEventListener("keydown", touch);
+      window.removeEventListener("scroll", touch);
+    };
+  }, [isAuthenticated]);
 
   const login = (u: string, token: string, r: Role) => {
     localStorage.setItem("authToken", token);

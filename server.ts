@@ -33,6 +33,7 @@ import { registerMcpOAuthRoutes } from "./server/routes/mcp-oauth.routes";
 import { registerMcpSignalsRoutes } from "./server/routes/mcp-signals.routes";
 import { registerTransferRoutes } from "./server/routes/transfer.routes";
 import { registerTrendWorkflowRoutes } from "./server/routes/trend-workflow.routes";
+import { registerActivityRoutes } from "./server/routes/activity.routes";
 
 dotenv.config();
 
@@ -120,6 +121,7 @@ async function startServer() {
 
   // ===== USERS — quản lý tài khoản (chỉ admin) =====
   registerUserRoutes(app);
+  registerActivityRoutes(app);
 
   // ===== ASSETS — kho template meme + ảnh tham chiếu =====
   registerAssetRoutes(app);
@@ -189,6 +191,7 @@ async function startServer() {
     startImageRepairJob();
     // Mỗi 2 giờ trong khung 08-22 giờ VN; thiếu cấu hình chỉ cảnh báo.
     startTrendWorkflowJob();
+    void import("./server/services/user-activity").then(({ pruneUserActivity }) => pruneUserActivity()).catch(() => {});
   });
 }
 

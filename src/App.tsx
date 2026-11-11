@@ -15,6 +15,7 @@ import Deconstruct from "./pages/Deconstruct";
 import Remake from "./pages/Remake";
 import Videos from "./pages/Videos";
 import AdminUsers from "./pages/AdminUsers";
+import AdminActivity from "./pages/AdminActivity";
 import Costs from "./pages/Costs";
 import ConnectClaude from "./pages/ConnectClaude";
 
@@ -50,6 +51,7 @@ function Gate() {
         <Route path="/costs" element={<Costs />} />
         <Route path="/connect" element={<ConnectClaude />} />
         <Route path="/admin/users" element={<AdminUsers />} />
+        <Route path="/admin/activity" element={<AdminActivity />} />
         <Route path="*" element={<Navigate to="/studio" replace />} />
       </Routes>
     </Layout>

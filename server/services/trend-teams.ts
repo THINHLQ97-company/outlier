@@ -122,6 +122,8 @@ export async function drainTrendOutbox(post: typeof fetch = fetch, onlyId?: stri
   await recoverStaleTrendOutbox(db);
   const config = await deps.settings();
   const webhook = await deps.webhook();
+  // Không có cổng duyệt thủ công: outbox của pursue gửi ngay khi Teams bật.
+  // Công tắc teamsEnabled vẫn là kill switch của admin.
   if ((!config.teamsEnabled && !onlyId) || !webhook || !config.publicBaseUrl) return;
   // Claim nguyên tử: hai tiến trình không cùng POST một outbox. Không tái claim
   // sending khi restart vì tiến trình cũ có thể đã gửi nhưng chưa ghi accepted.

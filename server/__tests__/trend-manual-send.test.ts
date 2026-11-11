@@ -66,7 +66,7 @@ test("điều kiện chặn: chưa xác nhận, chạy thử, chưa chọn đu, 
   const cases: [any, string][] = [
     [{}, "CONFIRM_REQUIRED"],
     [{ dryRun: true }, "DRY_RUN_ONLY"],
-    [{ item: { brief: brief({ decision: "watch" }) } }, "DECISION_REQUIRED"],
+    [{ item: { brief: brief({ decision: "skip" }) } }, "DECISION_REQUIRED"],
     [{ item: { brief: brief({ sensitive: true }) } }, "SENSITIVE_TREND"],
     [{ item: { status: "excluded" } }, "SENSITIVE_TREND"],
     [{ webhook: null }, "WEBHOOK_NOT_CONFIGURED"],
@@ -78,6 +78,13 @@ test("điều kiện chặn: chưa xác nhận, chạy thử, chưa chọn đu, 
     assert.equal(r.body.code, code, code); assert.ok(r.status >= 400);
     assert.equal(posts.length, 0); assert.equal(tables.trend_teams_outbox.length, 0);
   }
+});
+
+test("watch vẫn gửi được khi owner xác nhận thủ công", async () => {
+  const { app, posts } = setup({ item: { brief: brief({ decision: "watch" }) } });
+  const r = await send(app);
+  assert.equal(r.status, 200);
+  assert.equal(posts.length, 1);
 });
 
 test("lỗi mạng trả unknown thật, không báo đã nhận", async () => {

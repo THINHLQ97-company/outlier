@@ -364,7 +364,12 @@ export async function refreshChannelInBackground(channelId: string, limit?: numb
 
     const first = r.candidates.find((c) => c.channelKey || c.channelName || c.followerCount);
     // Avatar có thể nằm ở bài khác với bài mang tên kênh, nên tìm riêng.
+    // Tải ngay vào kho local khi quét xong — không phụ thuộc repair job hay
+    // chữ ký CDN Facebook. Nếu tải lỗi, durableImageWrite giữ avatar local cũ.
     const withAvatar = r.candidates.find((c) => (c as any).channelAvatarUrl);
+    const avatarSource = (withAvatar as any)?.channelAvatarUrl as string | undefined;
+    const { keepImage } = await import("../services/durable-images");
+    const localAvatar = avatarSource ? await keepImage(avatarSource).then((url) => url?.startsWith("/api/files/") ? url : null).catch(() => null) : null;
     await db.update(watchedChannels).set({
       scanStatus: "idle", errorMessage: null,
       lastScanAt: new Date(), lastJobId: job.id, lastNewCount: newKeys.length,
@@ -373,11 +378,13 @@ export async function refreshChannelInBackground(channelId: string, limit?: numb
       // Tên quét được thắng tên cũ: lần đầu thêm kênh thì tên chính là URL,
       // giữ nó lại thì danh sách mãi hiện đường dẫn thay vì tên trang.
       channelName: first?.channelName ?? chan.channelName ?? null,
-      channelAvatarUrl: (await import("../services/image-write")).durableImageWrite(watchedChannels.channelAvatarUrl, await (await import("../services/durable-images")).storedImage((withAvatar as any)?.channelAvatarUrl)),
+      channelAvatarUrl: (await import("../services/image-write")).durableImageWrite(watchedChannels.channelAvatarUrl, localAvatar),
       followerCount: first?.followerCount ?? graphFollowers ?? chan.followerCount,
       updatedAt: new Date(),
     }).where(eq(watchedChannels.id, channelId));
-    await (await import("../services/durable-images")).queueImage({ table: "watched_channels", column: "channel_avatar_url", id: channelId }, (withAvatar as any)?.channelAvatarUrl)
+    // Nếu bộ nhớ cục bộ chưa tải được, chỉ xếp nguồn vào hàng chờ; tuyệt đối
+    // không ghi đè ảnh local bằng URL Facebook động.
+    if (!localAvatar) await (await import("../services/durable-images")).queueImage({ table: "watched_channels", column: "channel_avatar_url", id: channelId }, avatarSource)
       .catch((e: any) => console.warn("[channels] Chưa xếp hàng ảnh đại diện mới:", e?.message || e));
   } catch (e: any) {
     console.error("refresh channel:", e?.message || e);
