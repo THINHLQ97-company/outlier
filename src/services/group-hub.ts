@@ -1,7 +1,8 @@
 import { authHeaders, asError } from "./http";
 export interface GroupSnapshot { id: string; periodLabel: string; sourceFilename: string; fileName?: string; createdAt: string; importedAt?: string; expiresAt: string; summary: { topPosts?: any[]; projectSignals?: any[]; dailyNumbers?: any[] } }
 export interface GroupProjectSignal { id: string; project: string; signal: string; direction?: "up" | "down" | "stable"; score?: number; week?: string; details?: string; url?: string; comments?: number; reactions?: number; views?: number }
-export interface WeeklyReportDraft { id: string; weekLabel: string; week?: string; title?: string; status: string; scheduledPublishAt?: string | null; createdAt: string; updatedAt: string; draftMarkdown?: string | null }
+export interface ReportPost { order: number; title: string; body: string; review_status: "needs_review" | "approved" | "rejected"; source_links?: { url: string; note?: string; posted_at?: string | null; posted_at_source?: string }[] }
+export interface WeeklyReportDraft { id: string; weekLabel: string; week?: string; title?: string; status: string; scheduledPublishAt?: string | null; createdAt: string; updatedAt: string; draftMarkdown?: string | null; posts?: ReportPost[]; adminNotes?: string | null; trendsJson?: { trends?: any[] } }
 export interface WeeklyTrend { week: string; title: string; summary: string; themes?: string[] }
 async function get<T>(path: string, fallback: string): Promise<T> { const res = await fetch(path, { headers: authHeaders(false) }); if (!res.ok) return asError(res, fallback); return res.json(); }
 export async function getGroupHub() { return get<{ snapshot: GroupSnapshot | null; reports: WeeklyReportDraft[] }>("/api/group-hub", "Không tải được Group Hub."); }

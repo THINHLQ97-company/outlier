@@ -3,7 +3,7 @@ import { and, desc, eq, lt, sql } from "drizzle-orm";
 import { requireAdmin, requireAuth, getAuthUser } from "../auth-mw";
 import { getDb, isDbConfigured } from "../db/client";
 import { groupInsightSnapshots, groupWeeklyReports } from "../db/schema";
-import { summarizeGroupWorkbook, sha256, cleanupGroupHub } from "../services/group-hub";
+import { summarizeGroupWorkbook, sha256, cleanupGroupHub, getLatestGroupReport, listGroupReports, archiveGroupReport } from "../services/group-hub";
 
 const MAX_XLSX = 10 * 1024 * 1024;
 function down(res: any) { if (!isDbConfigured()) { res.status(503).json({ error: "Tính năng Group Hub chưa khả dụng (thiếu DATABASE_URL)." }); return true; } return false; }
@@ -37,11 +37,13 @@ export function registerGroupHubRoutes(app: Express) {
       res.status(201).json({ id: row.id, summary: row.summaryJson, expiresAt: row.expiresAt });
     } catch (e: any) { console.error("group hub upload:", e?.message || e); res.status(400).json({ error: "Không đọc được file XLSX Group Insights." }); }
   });
+  app.get("/api/group-hub/reports", requireAuth, async (_req, res) => { if (down(res)) return; res.json(await listGroupReports(getDb())); });
+  app.delete("/api/group-hub/reports/:id", requireAuth, requireAdmin, async (req, res) => { if (down(res)) return; res.json(await archiveGroupReport(getDb(), req.params.id)); });
   app.get("/api/group-hub/reports/:id", requireAuth, async (req, res) => {
     if (down(res)) return;
     const [row] = await getDb().select().from(groupWeeklyReports).where(eq(groupWeeklyReports.id, req.params.id));
     if (!row) return res.status(404).json({ error: "Không tìm thấy draft." });
-    res.json(row);
+    res.json({ ...row, posts: row.postsJson?.length ? row.postsJson : (await getLatestGroupReport(getDb()) as any).posts });
   });
   app.patch("/api/group-hub/reports/:id", requireAuth, requireAdmin, async (req, res) => {
     if (down(res)) return;

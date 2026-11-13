@@ -63,6 +63,8 @@ export const groupWeeklyReports = pgTable("group_weekly_reports", {
   groupSnapshotId: uuid("group_snapshot_id").references(() => groupInsightSnapshots.id, { onDelete: "set null" }),
   contextJson: jsonb("context_json").$type<Record<string, any>>(),
   draftMarkdown: text("draft_markdown"),
+  postsJson: jsonb("posts_json").$type<Record<string, any>[]>().notNull().default([]),
+  adminNotes: text("admin_notes"),
   status: text("status").notNull().default("draft"), // draft | needs_review | approved | published
   scheduledPublishAt: timestamp("scheduled_publish_at", { withTimezone: true }),
   createdBy: text("created_by").notNull(),
