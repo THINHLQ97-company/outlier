@@ -1,0 +1,17 @@
+import { authHeaders, asError } from "./http";
+export interface GroupSnapshot { id: string; periodLabel: string; sourceFilename: string; fileName?: string; createdAt: string; importedAt?: string; expiresAt: string; summary: { topPosts?: any[]; projectSignals?: any[]; dailyNumbers?: any[] } }
+export interface GroupProjectSignal { id: string; project: string; signal: string; direction?: "up" | "down" | "stable"; score?: number; week?: string }
+export interface WeeklyReportDraft { id: string; weekLabel: string; week?: string; title?: string; status: string; createdAt: string; updatedAt: string; draftMarkdown?: string | null }
+export interface WeeklyTrend { week: string; title: string; summary: string; themes?: string[] }
+async function get<T>(path: string, fallback: string): Promise<T> { const res = await fetch(path, { headers: authHeaders(false) }); if (!res.ok) return asError(res, fallback); return res.json(); }
+export async function getGroupHub() { return get<{ snapshot: GroupSnapshot | null; reports: WeeklyReportDraft[] }>("/api/group-hub", "Không tải được Group Hub."); }
+export async function listGroupSnapshots() { const d = await getGroupHub(); return d.snapshot ? [d.snapshot] : []; }
+export async function listProjectSignals() { const d = await getGroupHub(); return (d.snapshot?.summary?.projectSignals || []).map((x: any, i: number) => ({ id: `${d.snapshot?.id}-${i}`, project: x.title || "Chưa rõ dự án", signal: `${x.comments || 0} bình luận · ${x.reactions || 0} reaction · ${x.views || 0} lượt xem`, direction: "stable" as const })); }
+export async function listWeeklyDrafts() { const d = await getGroupHub(); return d.reports.map(r => ({ id: r.id, week: r.weekLabel, title: `Weekly Review ${r.weekLabel}`, status: r.status === "approved" || r.status === "published" ? "published" : "review", updatedAt: r.updatedAt || r.createdAt })); }
+export async function getWeeklyTrend() { return null; }
+export async function uploadGroupInsights(file: File): Promise<GroupSnapshot> {
+  const dataBase64 = await new Promise<string>((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result)); r.onerror = () => reject(r.error); r.readAsDataURL(file); });
+  const res = await fetch("/api/group-hub/upload", { method: "POST", headers: authHeaders(true), body: JSON.stringify({ filename: file.name, dataBase64 }) });
+  if (!res.ok) return asError(res, "Không tải được file Insights.");
+  const d: any = await res.json(); return { id: d.id, periodLabel: file.name, sourceFilename: file.name, createdAt: new Date().toISOString(), expiresAt: d.expiresAt, summary: d.summary };
+}

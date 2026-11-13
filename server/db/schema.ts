@@ -42,6 +42,34 @@ export const userActivityLog = pgTable("user_activity_log", {
 
 export type UserActivityLog = typeof userActivityLog.$inferSelect;
 
+// ===== group_hub_* — snapshot hoạt động group Vibe Coding =====
+// Dữ liệu XLSX thô có TTL ngắn; Claude chỉ nhận bản summary đã chuẩn hóa.
+export const groupInsightSnapshots = pgTable("group_insight_snapshots", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  periodLabel: text("period_label").notNull(),
+  sourceFilename: text("source_filename").notNull(),
+  sourceSha256: text("source_sha256").notNull().unique(),
+  rawJson: jsonb("raw_json").$type<Record<string, any>>().notNull(),
+  summaryJson: jsonb("summary_json").$type<Record<string, any>>().notNull(),
+  uploadedBy: text("uploaded_by").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({ expiresIdx: index("group_insight_snapshots_expires_idx").on(t.expiresAt), createdIdx: index("group_insight_snapshots_created_idx").on(t.createdAt) }));
+
+export const groupWeeklyReports = pgTable("group_weekly_reports", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  weekLabel: text("week_label").notNull(),
+  trendJson: jsonb("trend_json").$type<Record<string, any>>().notNull().default({}),
+  groupSnapshotId: uuid("group_snapshot_id").references(() => groupInsightSnapshots.id, { onDelete: "set null" }),
+  contextJson: jsonb("context_json").$type<Record<string, any>>(),
+  draftMarkdown: text("draft_markdown"),
+  status: text("status").notNull().default("draft"), // draft | needs_review | approved | published
+  createdBy: text("created_by").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({ weekIdx: index("group_weekly_reports_week_idx").on(t.weekLabel), expiresIdx: index("group_weekly_reports_expires_idx").on(t.expiresAt) }));
+
 // ===== signals — bước THU + trạng thái LỌC =====
 // source: "market_radar" | "group_insights" | "manual" | "claude_research"
 //   ("claude_research" = tin do Claude tự web-search thêm qua MCP server).

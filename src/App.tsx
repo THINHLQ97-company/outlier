@@ -18,6 +18,7 @@ import AdminUsers from "./pages/AdminUsers";
 import AdminActivity from "./pages/AdminActivity";
 import Costs from "./pages/Costs";
 import ConnectClaude from "./pages/ConnectClaude";
+import GroupHub from "./pages/GroupHub";
 
 function Gate() {
   const { isAuthenticated, authChecked } = useAppContext();
@@ -37,6 +38,7 @@ function Gate() {
       <Routes>
         <Route path="/" element={<Navigate to="/studio" replace />} />
         <Route path="/studio" element={<Studio />} />
+        <Route path="/group-hub" element={<GroupHub />} />
         <Route path="/library" element={<Library />} />
         <Route path="/brands" element={<Brands />} />
         <Route path="/radar" element={<Radar />} />

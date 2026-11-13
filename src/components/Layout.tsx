@@ -8,6 +8,7 @@ import {
   Images,
   Wand2,
   ShieldCheck,
+  Layers3,
   Activity,
   Fingerprint,
   Telescope,
@@ -72,7 +73,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: "Kết quả",
-    items: [{ to: "/library", label: "Thư viện", icon: Images }],
+    items: [{ to: "/library", label: "Thư viện", icon: Images }, { to: "/group-hub", label: "Group Hub", icon: Layers3 }],
   },
 ];
 

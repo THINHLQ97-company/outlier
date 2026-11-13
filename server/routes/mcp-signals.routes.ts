@@ -77,7 +77,7 @@ Còn một luồng cũ vẫn dùng được: signals_score chấm tin theo rubri
 // được THÊM vai mới, không được sửa những vai này.
 const CORE_CHARACTER_NAMES = new Set(CHARACTERS.map((c) => c.name));
 
-const READONLY_TOOLS = new Set(["trend_queue", "trend_status", "access_check", "character_image_get", "styles_list", "style_brand_material", "daily_brief", "signals_list", "signals_get", "rubric_get", "characters_list", "brands_list", "brand_profile_get", "brand_brief", "radar_jobs_list", "radar_results", "deconstruct_get", "remake_get", "channels_list", "channel_items", "video_frames", "video_projects_list", "video_get"]);
+const READONLY_TOOLS = new Set(["trend_queue", "trend_status", "access_check", "character_image_get", "styles_list", "style_brand_material", "daily_brief", "signals_list", "signals_get", "rubric_get", "characters_list", "brands_list", "brand_profile_get", "brand_brief", "radar_jobs_list", "radar_results", "deconstruct_get", "remake_get", "channels_list", "channel_items", "video_frames", "video_projects_list", "video_get", "group_insights_get", "group_weekly_report_get"]);
 
 const TREND_SOURCE_SCHEMA = { type: "array", maxItems: 30, items: { type: "object", properties: {
   url: { type: "string" }, title: { type: "string", maxLength: 300 }, publisher: { type: "string", maxLength: 120 }, publishedAt: { type: "string", maxLength: 40 },
@@ -132,6 +132,24 @@ const TOOLS = [
         item_id: { type: "string" }, ...TREND_RESEARCH_PROPERTIES,
       }, required: ["item_id", "summary", "claims"], additionalProperties: false,
     },
+  },
+  {
+    name: "group_insights_get",
+    description: "Đọc snapshot Group Hub mới nhất đã upload: số liệu group, top posts, bài liên quan/dự án và nguồn. Dữ liệu thô có TTL; không trả password/token.",
+    annotations: { title: "Đọc insight group", readOnlyHint: true },
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "group_weekly_report_get",
+    description: "Đọc draft Weekly Review Vibe Coding mới nhất để admin xem và duyệt.",
+    annotations: { title: "Đọc draft weekly group", readOnlyHint: true },
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "group_weekly_report_set",
+    description: "Claude lưu context hoặc draft Markdown Weekly Review từ trend và snapshot group. Chỉ lưu bản tóm tắt cần thiết, không nhúng XLSX thô.",
+    annotations: { title: "Lưu draft weekly group", readOnlyHint: false },
+    inputSchema: { type: "object", properties: { draft_markdown: { type: "string", maxLength: 30000 }, context: { type: "object" }, week_label: { type: "string", maxLength: 30 } }, required: ["draft_markdown"], additionalProperties: false },
   },
   {
     name: "access_check",
@@ -998,6 +1016,19 @@ async function callTool(name: string, args: any, principal: McpPrincipal, base =
   if (name === "trend_queue") return (await import("../services/trend-claude")).trendResearchQueue();
   if (name === "trend_status") return (await import("../services/trend-claude")).trendResearchStatus(String(args.item_id || ""));
   if (name === "trend_submit_research") return (await import("../services/trend-claude")).submitTrendResearch(String(args.item_id || ""), args, principal.username);
+
+  if (name === "group_insights_get") {
+    const { getLatestGroupInsights } = await import("../services/group-hub");
+    return await getLatestGroupInsights(db);
+  }
+  if (name === "group_weekly_report_get") {
+    const { getLatestGroupReport } = await import("../services/group-hub");
+    return await getLatestGroupReport(db);
+  }
+  if (name === "group_weekly_report_set") {
+    const { saveGroupReportDraft } = await import("../services/group-hub");
+    return await saveGroupReportDraft(db, { ...args, createdBy: principal.username });
+  }
 
   if (name === "daily_brief") {
     const { buildDailyBrief } = await import("../services/daily-brief");
