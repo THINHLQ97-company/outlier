@@ -1,7 +1,7 @@
 import { authHeaders, asError } from "./http";
 
 export type ChatPlatform = "messenger_like" | "zalo_like" | "custom";
-export type ChatMessageType = "text" | "emoji" | "image" | "system" | "typing" | "link_preview" | "sticker";
+export type ChatMessageType = "text" | "emoji" | "image" | "system" | "typing" | "link_preview" | "sticker" | "voice";
 
 export interface ChatParticipant {
   id: string;
@@ -22,6 +22,8 @@ export interface ChatMessage {
   time: string;
   seen: boolean;
   reaction: string;
+  replyToId?: string;
+  meta?: { url?: string; title?: string; description?: string; sticker?: string; duration?: string; waveform?: string };
 }
 
 export interface ChatTheme {
@@ -67,6 +69,40 @@ export interface ChatProjectInput {
   document: ChatDocument;
 }
 
+/** Convert the editor document to the server's normalized field names. */
+export function toApiDocument(input: ChatDocument): Record<string, unknown> {
+  return {
+    ...input,
+    participants: input.participants.map((p, index) => ({ ...p, sortOrder: index })),
+    messages: input.messages.map((m, index) => ({
+      id: m.id,
+      participantId: m.participantId,
+      messageType: m.type,
+      text: m.text,
+      sentAt: m.time,
+      metadata: { seen: m.seen, reaction: m.reaction, ...(m.meta || {}) },
+      replyToId: m.replyToId || null,
+    })),
+  };
+}
+
+/** Convert the persisted server document back to the editor shape. */
+export function fromApiDocument(input: Record<string, any>): ChatDocument {
+  return {
+    participants: Array.isArray(input.participants) ? input.participants.map((p: any) => ({
+      ...p, nickname: p.nickname || "", avatarUrl: p.avatarUrl || "", color: p.color || "#64748b",
+      side: p.side === "right" ? "right" : "left", status: p.status?.online === false ? "offline" : "online",
+    })) : [],
+    messages: Array.isArray(input.messages) ? input.messages.map((m: any) => ({
+      id: m.id, participantId: m.participantId, text: m.text || "", type: m.messageType || "text",
+      time: m.sentAt || "", seen: m.metadata?.seen !== false, reaction: m.metadata?.reaction || "",
+      replyToId: m.replyToId || undefined, meta: m.metadata || {},
+    })) : [],
+    theme: { ...defaultChatTheme, ...(input.theme || {}) },
+    exportSettings: { width: 1080, height: 1080, format: "png", ...(input.exportSettings || {}) },
+  };
+}
+
 export async function listChatProjects(): Promise<ChatProject[]> {
   const res = await fetch("/api/chat-projects", { headers: authHeaders(false) });
   if (!res.ok) return asError(res, "Không tải được các đoạn chat.");
@@ -81,7 +117,7 @@ export async function getChatProject(id: string): Promise<ChatProject> {
 
 export async function createChatProject(input: ChatProjectInput): Promise<ChatProject> {
   const res = await fetch("/api/chat-projects", {
-    method: "POST", headers: authHeaders(), body: JSON.stringify(input),
+    method: "POST", headers: authHeaders(), body: JSON.stringify({ ...input, document: toApiDocument(input.document) }),
   });
   if (!res.ok) return asError(res, "Không tạo được đoạn chat.");
   return res.json();
@@ -89,10 +125,19 @@ export async function createChatProject(input: ChatProjectInput): Promise<ChatPr
 
 export async function updateChatProject(id: string, input: Partial<ChatProjectInput>): Promise<ChatProject> {
   const res = await fetch(`/api/chat-projects/${id}`, {
-    method: "PATCH", headers: authHeaders(), body: JSON.stringify(input),
+    method: "PATCH", headers: authHeaders(), body: JSON.stringify({ ...input, ...(input.document ? { document: toApiDocument(input.document) } : {}) }),
   });
   if (!res.ok) return asError(res, "Không lưu được đoạn chat.");
   return res.json();
+}
+
+export async function saveChatExport(id: string, input: { imageDataUrl: string; width: number; height: number; format?: "png" }): Promise<ChatProject> {
+  const res = await fetch(`/api/chat-projects/${id}/export`, {
+    method: "POST", headers: authHeaders(), body: JSON.stringify({ ...input, format: input.format || "png", rendererVersion: "canvas-v1" }),
+  });
+  if (!res.ok) return asError(res, "Không lưu được ảnh export.");
+  const body = await res.json();
+  return body.project;
 }
 
 export async function duplicateChatProject(id: string): Promise<ChatProject> {

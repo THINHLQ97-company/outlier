@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { deconstructFromTrend } from "../services/deconstruct";
-import { RefreshCw, Plus, Loader2, X, ExternalLink, AlertTriangle, Wand2, Sparkles, TrendingUp, Trash2, Eraser, Scissors, ChevronRight, ChevronDown } from "lucide-react";
+import { RefreshCw, Plus, Loader2, X, ExternalLink, AlertTriangle, Wand2, Sparkles, TrendingUp, Trash2, Eraser, Scissors, ChevronRight, ChevronDown, MessageCircle } from "lucide-react";
 import { listSignals, syncSignals, createManualSignal, scanGoogleTrends, deleteSignal, purgeSignals } from "../services/signals";
 import type { Signal } from "../types";
 import { AXES, type AxisKey } from "../../shared/engine-data";
@@ -38,7 +38,15 @@ function buildStudioLink(s: Signal): string {
   return `/studio?scene=${encodeURIComponent(`${s.title}. ${s.rawSummary}`)}`;
 }
 
-/** Đọc lượt tìm kiếm của một mục, 0 nếu nguồn không có con số này. */
+function buildChatLink(s: Signal): string {
+  const params = new URLSearchParams({ title: s.title.slice(0, 80) });
+  if (s.suggestionJson?.scene) params.set("scene", s.suggestionJson.scene);
+  if (s.suggestionJson?.characters?.length) params.set("chars", s.suggestionJson.characters.join(","));
+  if (s.suggestionJson?.dialogue?.length) params.set("dialogue", JSON.stringify(s.suggestionJson.dialogue));
+  return `/chat-composer?${params.toString()}`;
+}
+
+
 function trafficOf(s: Signal): number {
   const raw = s.sourceMetaJson?.approxTraffic || parseLegacySummary(s.rawSummary)?.approxTraffic;
   if (!raw) return 0;
@@ -425,6 +433,7 @@ export default function SignalsQueue() {
                   >
                     <Wand2 className="w-3.5 h-3.5" aria-hidden="true" /> Đưa sang Sáng tạo
                   </button>
+                  {s.suggestionJson?.dialogue?.length ? <button type="button" onClick={() => navigate(buildChatLink(s))} className="ds-btn ds-btn-secondary ds-btn-sm" title="Mở gợi ý thoại trong trình dựng đoạn chat"><MessageCircle className="w-3.5 h-3.5" aria-hidden="true" /> Dựng đoạn chat</button> : null}
 
                   <button
                     type="button"
