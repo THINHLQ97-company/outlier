@@ -7,7 +7,7 @@ import { brandFanpages, brands, deconstructions, remakes, trendWorkflowDrafts, t
 import { fetchGoogleTrends, type GoogleTrendItem } from "./google-trends";
 import { TREND_RESEARCH_INSTRUCTION, eventFingerprint, latestTrendSlot, normalizeTrend, researchTrend, sameEvent, trendSlotDue, type TrendBrief, rssBrief, sensitiveTrend } from "./trend-research";
 import { readTrendSettings, type TrendSettings } from "./trend-workflow-settings";
-import { buildTrendCard, drainTrendOutbox, enqueueTrendCard } from "./trend-teams";
+import { buildTrendCard, buildTrendRunSummaryCard, drainTrendOutbox, enqueueTrendCard } from "./trend-teams";
 import { createTrendModelBudget, TrendBudgetExceeded, TrendLeaseLost, workflowModelCall, type WorkflowModelCall } from "./trend-model-budget";
 import { TREND_DEFAULT_DIRECTION } from "./trend-structure";
 
@@ -220,6 +220,18 @@ export async function runTrendWorkflow(opts: { db?: any; config?: TrendSettings;
       const state = remaining.some(x => !["done", "brief_only", "duplicate", "excluded", "skipped", "watch"].includes(x.status)) ? "partial" : "done";
       if (runId === run.id) status = state;
       await db.transaction(async tx => { await fence(tx); await tx.update(trendWorkflowRuns).set({ status: state, updatedAt: new Date() }).where(eq(trendWorkflowRuns.id, runId)); });
+    }
+    if (!opts.dryRun) {
+      const summaryRows = await db.select({ title: trendWorkflowItems.title, status: trendWorkflowItems.status, error: trendWorkflowItems.error }).from(trendWorkflowItems).where(eq(trendWorkflowItems.runId, run.id));
+      const runSettings = await readTrendSettings();
+      const runWebhook = await import("./trend-workflow-settings").then(m => m.teamsWebhook()).catch(() => null);
+      if (runSettings.teamsEnabled && runSettings.publicBaseUrl && runWebhook) {
+        const pursued = summaryRows.filter(r => ["done", "brief_only"].includes(r.status)).map(r => r.title);
+        const skipped = summaryRows.filter(r => ["skipped", "duplicate", "excluded"].includes(r.status)).map(r => ({ title: r.title, reason: r.error || (r.status === "duplicate" ? "trùng sự kiện đã có" : r.status === "excluded" ? "trend nhạy cảm/an toàn" : "Claude bỏ qua") }));
+        const watched = summaryRows.filter(r => r.status === "watch").map(r => r.title);
+        const errors = summaryRows.filter(r => ["error", "budget_exhausted"].includes(r.status)).map(r => `${r.title}: ${r.error || r.status}`);
+        await enqueueTrendCard(`trend-run-summary:${run.id}`, null, buildTrendRunSummaryCard({ runId: run.id, baseUrl: runSettings.publicBaseUrl, pursued, skipped, watched, errors }), db);
+      }
     }
     if (!opts.dryRun) await drainTrendOutbox().catch(() => console.warn("[trend-workflow] Chưa gửi được outbox Teams; sẽ thử lại sau."));
     return { ran: true, runId: run.id, slot, status };

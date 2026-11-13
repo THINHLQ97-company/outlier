@@ -114,7 +114,21 @@ export async function deliverTrendCard(webhook: string, payload: Record<string, 
     return { status: "unknown", error: "Không xác định Teams đã nhận chưa. Cần kiểm tra thủ công; không tự gửi lại để tránh trùng." };
   }
 }
-export async function enqueueTrendCard(key: string, itemId: string, payload: Record<string, any>, db: any = getDb()) {
+export function buildTrendRunSummaryCard(input: { runId: string; baseUrl: string; pursued: string[]; skipped: { title: string; reason: string }[]; watched: string[]; errors: string[] }) {
+  const base = input.baseUrl.replace(/\/+$/, "");
+  const line = (items: string[], empty: string) => items.length ? items.slice(0, 8).map(x => `• ${clipText(x, 90)}`).join("\n") : empty;
+  const skipped = input.skipped.map(x => `• ${clipText(x.title, 70)} — ${clipText(x.reason, 100)}`);
+  const body = [
+    { type: "TextBlock", text: "Vibe Coding · tổng hợp lượt săn trend", weight: "Bolder", size: "Medium" },
+    { type: "TextBlock", text: input.pursued.length ? `Đáng đu (${input.pursued.length})\n${line(input.pursued, "Không có")}` : "Đáng đu: không có", wrap: true },
+    { type: "TextBlock", text: skipped.length ? `Đã bỏ qua (${skipped.length})\n${skipped.slice(0, 8).join("\\n")}` : "Đã bỏ qua: không có", wrap: true, spacing: "Small", isSubtle: true },
+    ...(input.watched.length ? [{ type: "TextBlock", text: `Theo dõi (${input.watched.length})\n${line(input.watched, "Không có")}`, wrap: true, spacing: "Small", isSubtle: true }] : []),
+    ...(input.errors.length ? [{ type: "TextBlock", text: `Lỗi cần kiểm tra (${input.errors.length})\n${line(input.errors, "Không có")}`, wrap: true, spacing: "Small", color: "Attention" }] : []),
+  ];
+  return { type: "message", attachments: [{ contentType: "application/vnd.microsoft.card.adaptive", content: { type: "AdaptiveCard", version: "1.2", $schema: "http://adaptivecards.io/schemas/adaptive-card.json", body, actions: [{ type: "Action.OpenUrl", title: "Mở Trend Radar", url: `${base}/trend-radar` }] } }] };
+}
+
+export async function enqueueTrendCard(key: string, itemId: string | null, payload: Record<string, any>, db: any = getDb()) {
   return db.insert(trendTeamsOutbox).values({ idempotencyKey: key, itemId, payload }).onConflictDoNothing().returning();
 }
 export async function drainTrendOutbox(post: typeof fetch = fetch, onlyId?: string, deps = { db: getDb, settings: readTrendSettings, webhook: teamsWebhook }): Promise<void> {
