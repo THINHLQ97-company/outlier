@@ -9,7 +9,11 @@ export async function getGroupHub() { return get<{ snapshot: GroupSnapshot | nul
 export async function listGroupSnapshots() { const d = await getGroupHub(); return ((d as any).snapshots || (d.snapshot ? [d.snapshot] : [])); }
 export async function listProjectSignals() { const d = await getGroupHub(); return (d.snapshot?.summary?.projectSignals || []).map((x: any, i: number) => ({ id: `${d.snapshot?.id}-${i}`, project: x.title || "Chưa rõ dự án", signal: `${x.comments || 0} bình luận · ${x.reactions || 0} reaction · ${x.views || 0} lượt xem`, details: x.title, url: x.url, comments: x.comments, reactions: x.reactions, views: x.views, direction: "stable" as const })); }
 export async function listWeeklyDrafts() { const d = await getGroupHub(); return d.reports.map(r => ({ id: r.id, weekLabel: r.weekLabel, title: `Weekly Review ${r.weekLabel}`, status: r.status, scheduledPublishAt: r.scheduledPublishAt, createdAt: r.createdAt, updatedAt: r.updatedAt })); }
-export async function getWeeklyTrend(): Promise<WeeklyTrend | null> { return null; }
+export async function getWeeklyTrend(): Promise<WeeklyTrend | null> {
+  const d = await getGroupHub(); const r: any = d.reports?.[0]; const trends = r?.trendJson?.trends || [];
+  if (trends.length) return { week: r.weekLabel, title: trends[0].title || "Trend nổi bật tuần này", summary: trends.map((t: any) => `${t.title}: ${t.summary || t.why_it_matters || ""}`).join("\n"), themes: trends.map((t: any) => t.title).filter(Boolean) };
+  const first = r?.posts?.[0]?.body || r?.draftMarkdown; return first ? { week: r.weekLabel, title: "Tổng hợp tuần này", summary: first.slice(0, 500), themes: [] } : null;
+}
 export async function getWeeklyReport(id: string): Promise<WeeklyReportDraft & { draftMarkdown?: string | null }> {
   return get(`/api/group-hub/reports/${encodeURIComponent(id)}`, "Không tải được draft Weekly Review.");
 }

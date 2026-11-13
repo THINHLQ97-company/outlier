@@ -147,9 +147,9 @@ const TOOLS = [
   },
   {
     name: "group_weekly_report_set",
-    description: "Claude lưu context hoặc draft Markdown Weekly Review từ trend và snapshot group. Chỉ lưu bản tóm tắt cần thiết, không nhúng XLSX thô.",
-    annotations: { title: "Lưu draft weekly group", readOnlyHint: false },
-    inputSchema: { type: "object", properties: { draft_markdown: { type: "string", maxLength: 30000 }, context: { type: "object" }, week_label: { type: "string", maxLength: 30 } }, required: ["draft_markdown"], additionalProperties: false },
+    description: "Lưu hoặc cập nhật Weekly Review theo week_label (không tạo bản trùng). Có thể gửi trends, posts tối đa 5 bài, admin_notes; Outlier lưu draft và gửi Teams CTA mở Group Hub để admin upload XLSX bổ sung. Không tự đăng Facebook.",
+    annotations: { title: "Lưu Weekly Review group", readOnlyHint: false },
+    inputSchema: { type: "object", properties: { draft_markdown: { type: "string", maxLength: 30000 }, context: { type: "object" }, week_label: { type: "string", maxLength: 30 }, admin_notes: { type: "string", maxLength: 8000 }, trends: { type: "array", maxItems: 10 }, posts: { type: "array", maxItems: 5 } }, required: [], additionalProperties: false },
   },
   {
     name: "access_check",

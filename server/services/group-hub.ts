@@ -47,6 +47,18 @@ export async function saveGroupReportDraft(db: any, input: { draft_markdown?: st
   const values = { weekLabel, trendJson: { trends: Array.isArray(input.trends) ? input.trends.slice(0, 10) : [] }, groupSnapshotId: insights.available ? insights.id : null, contextJson: input.context || {}, draftMarkdown: input.draft_markdown ? String(input.draft_markdown).slice(0, 30000) : null, postsJson: posts, adminNotes: input.admin_notes ? String(input.admin_notes).slice(0, 8000) : null, status: "needs_review", scheduledPublishAt, createdBy: input.createdBy, expiresAt, updatedAt: now };
   const [existing] = await db.select({ id: groupWeeklyReports.id }).from(groupWeeklyReports).where(eq(groupWeeklyReports.weekLabel, weekLabel)).orderBy(desc(groupWeeklyReports.updatedAt)).limit(1);
   const [row] = existing ? await db.update(groupWeeklyReports).set(values).where(eq(groupWeeklyReports.id, existing.id)).returning() : await db.insert(groupWeeklyReports).values(values).returning();
+  // Teams notification is best-effort: report save must not fail when webhook is unavailable.
+  try {
+    const { readTrendSettings, teamsWebhook } = await import("./trend-workflow-settings");
+    const { enqueueTrendCard, drainTrendOutbox } = await import("./trend-teams");
+    const settings = await readTrendSettings(); const webhook = await teamsWebhook();
+    if (settings.teamsEnabled && webhook && settings.publicBaseUrl) {
+      const key = `group-weekly:${weekLabel}`;
+      const payload = { type: "message", attachments: [{ contentType: "application/vnd.microsoft.card.adaptive", content: { type: "AdaptiveCard", version: "1.2", body: [{ type: "TextBlock", text: `Vibe Coding Weekly · ${weekLabel}`, weight: "Bolder", size: "Medium" }, { type: "TextBlock", text: "Đã có tổng hợp trend. Mở Group Hub để xem và upload XLSX hoạt động nhóm.", wrap: true }], actions: [{ type: "Action.OpenUrl", title: "Mở Group Hub / upload XLSX", url: `${settings.publicBaseUrl}/group-hub` }] } }] };
+      const [queued] = await enqueueTrendCard(key, null as any, payload, db);
+      if (queued) await drainTrendOutbox(undefined, queued.id).catch(() => {});
+    }
+  } catch (e: any) { console.warn("[group-hub] Teams CTA skipped:", e?.message || e); }
   return { id: row.id, replaced: !!existing, status: row.status, posts: row.postsJson, scheduledPublishAt: row.scheduledPublishAt, expiresAt: row.expiresAt, message: existing ? "Đã cập nhật Weekly Review hiện có của tuần." : "Đã lưu Weekly Review mới; admin cần duyệt trước khi đăng." };
 }
 export async function listGroupReports(db: any = undefined) {
