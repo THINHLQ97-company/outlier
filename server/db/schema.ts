@@ -64,6 +64,7 @@ export const groupWeeklyReports = pgTable("group_weekly_reports", {
   contextJson: jsonb("context_json").$type<Record<string, any>>(),
   draftMarkdown: text("draft_markdown"),
   status: text("status").notNull().default("draft"), // draft | needs_review | approved | published
+  scheduledPublishAt: timestamp("scheduled_publish_at", { withTimezone: true }),
   createdBy: text("created_by").notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

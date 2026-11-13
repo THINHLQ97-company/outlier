@@ -26,8 +26,9 @@ export async function getLatestGroupReport(db: any = undefined) {
 export async function saveGroupReportDraft(db: any, input: { draft_markdown: string; context?: Record<string, any>; week_label?: string; createdBy: string }) {
   const { getDb } = await import("../db/client"); db ||= getDb();
   const now = new Date(); const expiresAt = new Date(now.getTime() + REPORT_TTL_DAYS * 86400000);
+  const scheduledPublishAt = new Date(now); const days = (6 - scheduledPublishAt.getDay() + 7) % 7 || 7; scheduledPublishAt.setDate(scheduledPublishAt.getDate() + days); scheduledPublishAt.setHours(9, 0, 0, 0);
   const insights = await getLatestGroupInsights(db);
-  const [row] = await db.insert(groupWeeklyReports).values({ weekLabel: input.week_label || now.toISOString().slice(0, 10), trendJson: {}, groupSnapshotId: insights.available ? insights.id : null, contextJson: input.context || {}, draftMarkdown: String(input.draft_markdown).slice(0, 30000), status: "needs_review", createdBy: input.createdBy, expiresAt, updatedAt: now }).returning();
+  const [row] = await db.insert(groupWeeklyReports).values({ weekLabel: input.week_label || now.toISOString().slice(0, 10), trendJson: {}, groupSnapshotId: insights.available ? insights.id : null, contextJson: input.context || {}, draftMarkdown: String(input.draft_markdown).slice(0, 30000), status: "needs_review", scheduledPublishAt, createdBy: input.createdBy, expiresAt, updatedAt: now }).returning();
   return { id: row.id, status: row.status, expiresAt: row.expiresAt, message: "Đã lưu draft Weekly Review; admin cần duyệt trước khi đăng." };
 }
 export async function cleanupGroupHub(db: any = undefined) {

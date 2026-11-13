@@ -11,9 +11,10 @@ export function registerGroupHubRoutes(app: Express) {
   app.get("/api/group-hub", requireAuth, async (_req, res) => {
     if (down(res)) return;
     const db = getDb();
-    const [snapshot] = await db.select().from(groupInsightSnapshots).where(and(sql`${groupInsightSnapshots.expiresAt} > now()`)).orderBy(desc(groupInsightSnapshots.createdAt)).limit(1);
-    const reports = await db.select({ id: groupWeeklyReports.id, weekLabel: groupWeeklyReports.weekLabel, status: groupWeeklyReports.status, createdBy: groupWeeklyReports.createdBy, createdAt: groupWeeklyReports.createdAt, expiresAt: groupWeeklyReports.expiresAt }).from(groupWeeklyReports).orderBy(desc(groupWeeklyReports.createdAt)).limit(12);
-    res.json({ snapshot: snapshot ? { id: snapshot.id, periodLabel: snapshot.periodLabel, sourceFilename: snapshot.sourceFilename, summary: snapshot.summaryJson, expiresAt: snapshot.expiresAt, createdAt: snapshot.createdAt } : null, reports });
+    const snapshots = await db.select().from(groupInsightSnapshots).where(and(sql`${groupInsightSnapshots.expiresAt} > now()`)).orderBy(desc(groupInsightSnapshots.createdAt)).limit(12);
+    const [snapshot] = snapshots;
+    const reports = await db.select({ id: groupWeeklyReports.id, weekLabel: groupWeeklyReports.weekLabel, status: groupWeeklyReports.status, scheduledPublishAt: groupWeeklyReports.scheduledPublishAt, createdBy: groupWeeklyReports.createdBy, createdAt: groupWeeklyReports.createdAt, expiresAt: groupWeeklyReports.expiresAt }).from(groupWeeklyReports).orderBy(desc(groupWeeklyReports.createdAt)).limit(12);
+    res.json({ snapshots: snapshots.map(s => ({ id: s.id, periodLabel: s.periodLabel, sourceFilename: s.sourceFilename, summary: s.summaryJson, expiresAt: s.expiresAt, createdAt: s.createdAt })), snapshot: snapshot ? { id: snapshot.id, periodLabel: snapshot.periodLabel, sourceFilename: snapshot.sourceFilename, summary: snapshot.summaryJson, expiresAt: snapshot.expiresAt, createdAt: snapshot.createdAt } : null, reports });
   });
   app.post("/api/group-hub/upload", requireAuth, requireAdmin, async (req, res) => {
     if (down(res)) return;

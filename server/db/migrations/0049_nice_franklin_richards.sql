@@ -1,0 +1,1 @@
+ALTER TABLE "group_weekly_reports" ADD COLUMN "scheduled_publish_at" timestamp with time zone;
