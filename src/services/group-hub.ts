@@ -8,7 +8,14 @@ export async function getGroupHub() { return get<{ snapshot: GroupSnapshot | nul
 export async function listGroupSnapshots() { const d = await getGroupHub(); return ((d as any).snapshots || (d.snapshot ? [d.snapshot] : [])); }
 export async function listProjectSignals() { const d = await getGroupHub(); return (d.snapshot?.summary?.projectSignals || []).map((x: any, i: number) => ({ id: `${d.snapshot?.id}-${i}`, project: x.title || "Chưa rõ dự án", signal: `${x.comments || 0} bình luận · ${x.reactions || 0} reaction · ${x.views || 0} lượt xem`, details: x.title, url: x.url, comments: x.comments, reactions: x.reactions, views: x.views, direction: "stable" as const })); }
 export async function listWeeklyDrafts() { const d = await getGroupHub(); return d.reports.map(r => ({ id: r.id, weekLabel: r.weekLabel, title: `Weekly Review ${r.weekLabel}`, status: r.status, scheduledPublishAt: r.scheduledPublishAt, createdAt: r.createdAt, updatedAt: r.updatedAt })); }
-export async function getWeeklyTrend() { return null; }
+export async function getWeeklyTrend(): Promise<WeeklyTrend | null> { return null; }
+export async function getWeeklyReport(id: string): Promise<WeeklyReportDraft & { draftMarkdown?: string | null }> {
+  return get(`/api/group-hub/reports/${encodeURIComponent(id)}`, "Không tải được draft Weekly Review.");
+}
+export async function setWeeklyReportStatus(id: string, status: "approved" | "draft"): Promise<void> {
+  const res = await fetch(`/api/group-hub/reports/${encodeURIComponent(id)}`, { method: "PATCH", headers: authHeaders(true), body: JSON.stringify({ status }) });
+  if (!res.ok) return asError(res, "Không cập nhật được trạng thái draft.");
+}
 export async function uploadGroupInsights(file: File): Promise<GroupSnapshot> {
   const dataBase64 = await new Promise<string>((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result)); r.onerror = () => reject(r.error); r.readAsDataURL(file); });
   const res = await fetch("/api/group-hub/upload", { method: "POST", headers: authHeaders(true), body: JSON.stringify({ filename: file.name, dataBase64 }) });
