@@ -3,7 +3,7 @@ import { and, desc, eq, lt, sql } from "drizzle-orm";
 import { requireAdmin, requireAuth, getAuthUser } from "../auth-mw";
 import { getDb, isDbConfigured } from "../db/client";
 import { groupInsightSnapshots, groupWeeklyReports } from "../db/schema";
-import { summarizeGroupWorkbook, sha256, cleanupGroupHub, getLatestGroupReport, listGroupReports, archiveGroupReport } from "../services/group-hub";
+import { summarizeGroupWorkbook, sha256, cleanupGroupHub, listGroupReports, archiveGroupReport, splitLegacyDraft } from "../services/group-hub";
 
 const MAX_XLSX = 10 * 1024 * 1024;
 function down(res: any) { if (!isDbConfigured()) { res.status(503).json({ error: "Tính năng Group Hub chưa khả dụng (thiếu DATABASE_URL)." }); return true; } return false; }
@@ -43,7 +43,7 @@ export function registerGroupHubRoutes(app: Express) {
     if (down(res)) return;
     const [row] = await getDb().select().from(groupWeeklyReports).where(eq(groupWeeklyReports.id, req.params.id));
     if (!row) return res.status(404).json({ error: "Không tìm thấy draft." });
-    res.json({ ...row, posts: row.postsJson?.length ? row.postsJson : (await getLatestGroupReport(getDb()) as any).posts });
+    res.json({ ...row, posts: row.postsJson?.length ? row.postsJson : splitLegacyDraft(row.draftMarkdown || "") });
   });
   app.patch("/api/group-hub/reports/:id", requireAuth, requireAdmin, async (req, res) => {
     if (down(res)) return;

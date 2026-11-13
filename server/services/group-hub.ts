@@ -75,5 +75,9 @@ export async function cleanupGroupHub(db: any = undefined) {
   const { getDb } = await import("../db/client"); db ||= getDb();
   const a = await db.delete(groupInsightSnapshots).where(lt(groupInsightSnapshots.expiresAt, new Date()));
   const b = await db.delete(groupWeeklyReports).where(lt(groupWeeklyReports.expiresAt, new Date()));
-  return { snapshots: a.rowCount || 0, reports: b.rowCount || 0 };
+  // Archive duplicate reports, keeping the newest non-archived row per week.
+  const rows = await db.select({ id: groupWeeklyReports.id, weekLabel: groupWeeklyReports.weekLabel, updatedAt: groupWeeklyReports.updatedAt, status: groupWeeklyReports.status }).from(groupWeeklyReports).where(sql`${groupWeeklyReports.status} <> 'archived'`).orderBy(desc(groupWeeklyReports.updatedAt));
+  const seen = new Set<string>(); let archived = 0;
+  for (const row of rows) { if (seen.has(row.weekLabel)) { await db.update(groupWeeklyReports).set({ status: "archived", updatedAt: new Date() }).where(eq(groupWeeklyReports.id, row.id)); archived++; } else seen.add(row.weekLabel); }
+  return { snapshots: a.rowCount || 0, reports: (b.rowCount || 0) + archived };
 }
