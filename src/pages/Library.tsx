@@ -55,6 +55,7 @@ import { AXES } from "../../shared/engine-data";
 import ConfirmDialog from "../components/ConfirmDialog";
 import type { GalleryPost, PostStatus, AxisKey, CharacterRow, CharacterKind, StyleRow, AssetKind, RagExample, RagProfile } from "../types";
 import { PostsTab, ImagesTab, VideosTab } from "../components/LibraryContentTabs";
+import { listChatProjects, deleteChatProject, type ChatProject } from "../services/chat-projects";
 
 // Hai nhóm tab khác hẳn nhau: nhóm đầu là THÀNH PHẨM (đem đi dùng được ngay),
 // nhóm sau là NGUYÊN LIỆU (dùng để làm ra thành phẩm). Trộn chung một hàng thì
@@ -63,6 +64,7 @@ const CONTENT_TABS = [
   { key: "posts", label: "Bài viết", icon: FileText },
   { key: "images", label: "Hình ảnh", icon: ImageIcon },
   { key: "videos", label: "Video", icon: Film },
+  { key: "chats", label: "Đoạn chat", icon: FileText },
 ] as const;
 
 // "Ảnh meme cũ" đã gộp vào tab Hình ảnh — một tab riêng cho thứ gần như luôn
@@ -115,11 +117,22 @@ export default function Library() {
         </>
       )}
       {tab === "videos" && <VideosTab />}
+      {tab === "chats" && <ChatProjectsTab />}
       {tab === "characters" && <CharactersTab />}
       {tab === "styles" && <StylesTab />}
       {tab === "rag" && <RagTab />}
     </div>
   );
+}
+
+function ChatProjectsTab() {
+  const [items, setItems] = useState<ChatProject[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { listChatProjects().then(setItems).catch((e) => setError(e?.message || "Không tải được đoạn chat.")).finally(() => setLoading(false)); }, []);
+  async function remove(id: string) { if (!window.confirm("Xóa đoạn chat này?")) return; try { await deleteChatProject(id); setItems((rows) => rows.filter((r) => r.id !== id)); } catch (e: any) { setError(e?.message || "Không xóa được đoạn chat."); } }
+  if (loading) return <div className="ds-card"><div className="py-12 flex justify-center"><Loader2 className="w-5 h-5 animate-spin" aria-label="Đang tải" /></div></div>;
+  return <div className="flex flex-col gap-3">{error && <div role="alert" className="ds-alert ds-alert-danger">{error}</div>}{items.length ? items.map((item) => <div key={item.id} className="ds-card"><div className="ds-card-body flex items-center gap-3"><div className="flex-1 min-w-0"><div className="flex gap-2 items-center flex-wrap"><h3 className="font-semibold text-stone-800">{item.title}</h3><span className="ds-badge">{item.platform === "zalo_like" ? "Zalo-like" : item.platform === "custom" ? "Custom" : "Messenger-like"}</span>{item.exportJson?.fileUrl ? <span className="ds-badge ds-badge-success">Đã export</span> : null}</div><p className="text-xs text-stone-500 mt-1">Cập nhật {new Date(item.updatedAt).toLocaleString("vi-VN")}</p></div>{typeof item.exportJson?.fileUrl === "string" && <a className="ds-btn ds-btn-ghost ds-btn-sm" href={imageDisplayUrl(item.exportJson.fileUrl) || item.exportJson.fileUrl} target="_blank" rel="noreferrer">Xem ảnh</a>}<Link className="ds-btn ds-btn-secondary ds-btn-sm" to={`/chat-composer?id=${item.id}`}>Mở</Link>{item.isMine && <button className="ds-btn ds-btn-ghost ds-btn-sm text-red-600" onClick={() => void remove(item.id)}>Xóa</button>}</div></div>) : <div className="ds-card"><div className="ds-empty"><p className="ds-empty-title">Chưa có đoạn chat nào</p><Link className="ds-btn ds-btn-primary ds-btn-sm" to="/chat-composer">Tạo đoạn chat</Link></div></div>}</div>;
 }
 
 // ===== Tab "Ảnh" — bài đã tạo (gallery) =====

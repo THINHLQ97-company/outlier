@@ -11,7 +11,7 @@ import { newKey, parseDataUrl, storage } from "../storage";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PLATFORMS = ["messenger_like", "zalo_like", "custom"] as const;
-const MESSAGE_TYPES = ["text", "emoji", "image", "system", "typing", "link_preview", "sticker"] as const;
+const MESSAGE_TYPES = ["text", "emoji", "image", "system", "typing", "link_preview", "sticker", "voice"] as const;
 const EXPORT_FORMATS = ["png", "jpg", "jpeg", "webp"] as const;
 const MAX_TITLE_LENGTH = 200;
 const MAX_DOCUMENT_BYTES = 2 * 1024 * 1024;
