@@ -1250,3 +1250,28 @@ export const imagePendingUpdates = pgTable("image_pending_updates", {
   sourceUrl: text("source_url").notNull(),
   queuedAt: timestamp("queued_at", { withTimezone: true }).notNull().defaultNow(),
 }, t => [uniqueIndex("image_pending_target_idx").on(t.targetTable,t.targetColumn,t.targetId,t.postId)]);
+
+// ===== chat_projects — nội dung dựng hội thoại mockup (không phải nhắn tin thật) =====
+// document giữ cấu trúc editor để có thể mở lại/nhân bản mà không phải dựng
+// nhiều bảng con: { participants[], messages[], theme, exportSettings }.
+// metadataJson luôn có isMockup=true để phân biệt với dữ liệu Messenger/Zalo thật.
+export const chatProjects = pgTable("chat_projects", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  owner: text("owner").notNull(),
+  isShared: boolean("is_shared").notNull().default(false),
+  title: text("title").notNull(),
+  platform: text("platform").notNull().default("messenger_like"), // messenger_like | zalo_like | custom
+  presetVersion: text("preset_version").notNull().default("1"),
+  document: jsonb("document").$type<Record<string, any>>().notNull().default({}),
+  exportJson: jsonb("export_json").$type<Record<string, any>>().notNull().default({}),
+  metadataJson: jsonb("metadata_json").$type<Record<string, any>>().notNull().default({ isMockup: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  ownerIdx: index("chat_projects_owner_idx").on(t.owner),
+  sharedIdx: index("chat_projects_shared_idx").on(t.isShared),
+  updatedIdx: index("chat_projects_updated_idx").on(t.updatedAt),
+}));
+
+export type ChatProjectRow = typeof chatProjects.$inferSelect;
+export type NewChatProjectRow = typeof chatProjects.$inferInsert;

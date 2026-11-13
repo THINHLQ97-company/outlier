@@ -523,3 +523,26 @@ body {
 }
 .ds-avatar-sm { width: 24px; height: 24px; font-size: 10px; }
 .ds-avatar-lg { width: 40px; height: 40px; font-size: 15px; }
+
+/* ===== Chat Composer mockup preview ===== */
+.chat-preview { position: relative; width: 100%; max-width: 420px; height: 720px; margin: 0 auto; overflow: hidden; border: 1px solid var(--ds-border); border-radius: 28px; box-shadow: var(--ds-shadow-lg); font-family: Inter, "Be Vietnam Pro", system-ui, sans-serif; }
+.chat-preview-header { display: flex; align-items: center; gap: 10px; min-height: 72px; padding: 14px 16px; color: #fff; }
+.chat-avatar { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; overflow: hidden; border-radius: 9999px; background: #cbd5e1; color: #334155; font-weight: 700; }
+.chat-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.chat-avatar-header { width: 40px; height: 40px; border: 2px solid rgba(255,255,255,.65); }
+.chat-avatar-small { width: 28px; height: 28px; font-size: 12px; align-self: flex-end; }
+.chat-preview-body { height: calc(100% - 128px); overflow-y: auto; padding: 14px 14px 22px; }
+.chat-preview-note { margin: 0 auto 14px; width: max-content; max-width: 100%; padding: 3px 9px; border-radius: 9999px; background: rgba(15,23,42,.06); color: #64748b; font-size: 11px; }
+.chat-message-row { display: flex; align-items: flex-end; gap: 7px; margin: 7px 0; }
+.chat-message-right { justify-content: flex-end; }
+.chat-message-stack { display: flex; max-width: 76%; flex-direction: column; align-items: flex-start; }
+.chat-message-right .chat-message-stack { align-items: flex-end; }
+.chat-sender-name { margin: 0 0 2px 8px; color: #64748b; font-size: 11px; }
+.chat-bubble { position: relative; padding: 9px 12px; border-radius: 18px; font-size: 14px; line-height: 1.38; white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat-reaction { position: absolute; right: -4px; bottom: -11px; padding: 1px 4px; border-radius: 9999px; background: #fff; box-shadow: var(--ds-shadow-sm); font-size: 12px; }
+.chat-time { margin: 4px 5px 0; color: #94a3b8; font-size: 10px; }
+.chat-system-message { margin: 12px auto; color: #64748b; font-size: 12px; text-align: center; }
+.chat-image-placeholder { display: flex; width: 168px; height: 112px; align-items: center; justify-content: center; border-radius: 12px; background: rgba(100,116,139,.15); }
+.chat-preview-composer { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; min-height: 56px; padding: 15px 18px; border-top: 1px solid rgba(15,23,42,.08); background: rgba(255,255,255,.96); color: #94a3b8; }
+.chat-platform-label { position: absolute; right: 10px; bottom: 60px; color: rgba(100,116,139,.55); font-size: 9px; }
+.chat-preview-dark .chat-preview-composer { background: #1e293b; color: #cbd5e1; }

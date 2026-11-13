@@ -19,6 +19,7 @@ import AdminActivity from "./pages/AdminActivity";
 import Costs from "./pages/Costs";
 import ConnectClaude from "./pages/ConnectClaude";
 import GroupHub from "./pages/GroupHub";
+import ChatComposer from "./pages/ChatComposer";
 
 function Gate() {
   const { isAuthenticated, authChecked } = useAppContext();
@@ -39,6 +40,7 @@ function Gate() {
         <Route path="/" element={<Navigate to="/studio" replace />} />
         <Route path="/studio" element={<Studio />} />
         <Route path="/group-hub" element={<GroupHub />} />
+        <Route path="/chat-composer" element={<ChatComposer />} />
         <Route path="/library" element={<Library />} />
         <Route path="/brands" element={<Brands />} />
         <Route path="/radar" element={<Radar />} />

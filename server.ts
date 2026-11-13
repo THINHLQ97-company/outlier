@@ -35,6 +35,7 @@ import { registerTransferRoutes } from "./server/routes/transfer.routes";
 import { registerTrendWorkflowRoutes } from "./server/routes/trend-workflow.routes";
 import { registerActivityRoutes } from "./server/routes/activity.routes";
 import { registerGroupHubRoutes } from "./server/routes/group-hub.routes";
+import { registerChatProjectRoutes } from "./server/routes/chat-projects.routes";
 
 dotenv.config();
 
@@ -157,6 +158,9 @@ async function startServer() {
 
   // ===== GALLERY — thư viện ảnh + lưu ảnh thành asset =====
   registerGalleryRoutes(app);
+
+  // ===== CHAT COMPOSER — dựng đoạn chat mockup, không gửi tin nhắn thật =====
+  registerChatProjectRoutes(app);
 
   // ===== RAG — kho "ảnh đã thích" (❤️) + hồ sơ sở thích để prompt thông minh hơn =====
   registerRagRoutes(app);

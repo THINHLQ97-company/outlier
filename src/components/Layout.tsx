@@ -18,6 +18,7 @@ import {
   Eye,
   Megaphone,
   Clapperboard,
+  MessageCircle,
   Menu,
   X,
   ChevronsLeft,
@@ -68,6 +69,7 @@ const NAV_GROUPS: NavGroup[] = [
       // người dùng mất thời gian thử rồi thất vọng. Đường /videos vẫn chạy để
       // không hỏng link cũ — bật lại ở đây khi tính năng ổn định.
       { to: "/studio", label: "Sáng tạo nhanh", icon: Wand2 },
+      { to: "/chat-composer", label: "Dựng đoạn chat", icon: MessageCircle },
       { to: "/ad-orders", label: "Đặt quảng cáo", icon: Megaphone },
     ],
   },
