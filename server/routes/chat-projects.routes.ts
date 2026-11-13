@@ -151,6 +151,31 @@ async function persistAvatarDataUrls(document: Record<string, any>): Promise<{ d
       createdKeys.push(key);
       participant.avatarUrl = `/api/files/${key}`;
     }
+    if (typeof result.theme?.chatThumbnailUrl === "string" && result.theme.chatThumbnailUrl.startsWith("data:")) {
+      const parsed = parseDataUrl(result.theme.chatThumbnailUrl);
+      if (!parsed || !["png", "jpg", "webp", "gif"].includes(parsed.ext) || parsed.buffer.length > MAX_AVATAR_BYTES) {
+        throw new ChatValidationError("Ảnh đại diện đoạn chat không hợp lệ (chỉ PNG/JPG/WebP/GIF, tối đa 5 MB).");
+      }
+      const key = newKey("misc", parsed.ext);
+      await storage.put(key, parsed.buffer);
+      createdKeys.push(key);
+      result.theme.chatThumbnailUrl = `/api/files/${key}`;
+    }
+    for (const item of result.messages || []) {
+      for (const target of ["mediaUrl", "imageUrl"] as const) {
+        const value = target === "mediaUrl" ? item.mediaUrl : item.metadata?.[target];
+        if (typeof value !== "string" || !value.startsWith("data:")) continue;
+        const parsed = parseDataUrl(value);
+        if (!parsed || !["png", "jpg", "webp", "gif"].includes(parsed.ext) || parsed.buffer.length > MAX_AVATAR_BYTES) {
+          throw new ChatValidationError("Ảnh trong tin nhắn không hợp lệ (chỉ PNG/JPG/WebP/GIF, tối đa 5 MB).");
+        }
+        const key = newKey("misc", parsed.ext);
+        await storage.put(key, parsed.buffer);
+        createdKeys.push(key);
+        if (target === "mediaUrl") item.mediaUrl = `/api/files/${key}`;
+        else item.metadata[target] = `/api/files/${key}`;
+      }
+    }
     assertDocumentSize(result);
     return { document: result, createdKeys };
   } catch (error) {

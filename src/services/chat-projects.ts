@@ -20,10 +20,15 @@ export interface ChatMessage {
   text: string;
   type: ChatMessageType;
   time: string;
+  date?: string;
   seen: boolean;
+  status?: "sent" | "delivered" | "seen";
   reaction: string;
+  reactions?: string[];
   replyToId?: string;
-  meta?: { url?: string; title?: string; description?: string; sticker?: string; duration?: string; waveform?: string };
+  mediaUrl?: string;
+  meta?: { url?: string; title?: string; description?: string; imageUrl?: string; sticker?: string; duration?: string; waveform?: string; imageAlt?: string };
+  groupPosition?: "single" | "first" | "middle" | "last";
 }
 
 export interface ChatTheme {
@@ -38,6 +43,12 @@ export interface ChatTheme {
   showAvatars: boolean;
   showTimestamps: boolean;
   showSeen: boolean;
+  chatThumbnailUrl?: string;
+  chatIcon?: string;
+  headerStatus?: string;
+  showHeaderActions?: boolean;
+  composerPlaceholder?: string;
+  composerIcons?: { microphone: boolean; image: boolean; gif: boolean; emoji: boolean };
 }
 
 export interface ChatDocument {
@@ -80,8 +91,11 @@ export function toApiDocument(input: ChatDocument): Record<string, unknown> {
       messageType: m.type,
       text: m.text,
       sentAt: m.time,
-      metadata: { seen: m.seen, reaction: m.reaction, ...(m.meta || {}) },
+      metadata: { seen: m.seen, status: m.status, reaction: m.reaction, reactions: m.reactions, ...(m.meta || {}) },
+      mediaUrl: m.mediaUrl || null,
       replyToId: m.replyToId || null,
+      groupPosition: m.groupPosition || null,
+      sortOrder: index,
     })),
   };
 }
@@ -95,8 +109,8 @@ export function fromApiDocument(input: Record<string, any>): ChatDocument {
     })) : [],
     messages: Array.isArray(input.messages) ? input.messages.map((m: any) => ({
       id: m.id, participantId: m.participantId, text: m.text || "", type: m.messageType || "text",
-      time: m.sentAt || "", seen: m.metadata?.seen !== false, reaction: m.metadata?.reaction || "",
-      replyToId: m.replyToId || undefined, meta: m.metadata || {},
+      time: m.sentAt || "", date: m.date || undefined, seen: m.metadata?.seen !== false, status: m.metadata?.status || (m.metadata?.seen ? "seen" : "sent"), reaction: m.metadata?.reaction || "", reactions: Array.isArray(m.metadata?.reactions) ? m.metadata.reactions : (m.metadata?.reaction ? [m.metadata.reaction] : []),
+      mediaUrl: m.mediaUrl || undefined, replyToId: m.replyToId || undefined, groupPosition: m.groupPosition || undefined, meta: m.metadata || {},
     })) : [],
     theme: { ...defaultChatTheme, ...(input.theme || {}) },
     exportSettings: { width: 1080, height: 1080, format: "png", ...(input.exportSettings || {}) },
@@ -156,6 +170,8 @@ export const defaultChatTheme: ChatTheme = {
   incomingBubbleColor: "#ffffff", outgoingBubbleColor: "#4f46e5",
   incomingTextColor: "#0f172a", outgoingTextColor: "#ffffff",
   conversationEmoji: "💬", showAvatars: true, showTimestamps: true, showSeen: true,
+  headerStatus: "Active now", showHeaderActions: true, composerPlaceholder: "Aa",
+  composerIcons: { microphone: true, image: true, gif: true, emoji: true },
 };
 
 export function starterChatDocument(): ChatDocument {
