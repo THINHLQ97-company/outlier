@@ -7,6 +7,25 @@ import {
 } from "../services/chat-projects";
 import { imageDisplayUrl } from "../services/http";
 
+function MessengerIcon({ name, size = 18 }: { name: "back" | "phone" | "video" | "info" | "plus" | "camera" | "image" | "mic" | "gif" | "smile" | "close" | "minus" | "send"; size?: number }) {
+  const paths: Record<string, string> = {
+    phone: "M4.776 1.111a1.728 1.728 0 0 0-2.56-.127l-.472.472a4.516 4.516 0 0 0-.739 5.415 21.46 21.46 0 0 0 8.123 8.123 4.516 4.516 0 0 0 5.415-.738L15 13.8a1.75 1.75 0 0 0-.13-2.591l-2.131-1.745a1.75 1.75 0 0 0-2.143-.056L9.22 10.416a.052.052 0 0 1-.06.002 12.077 12.077 0 0 1-3.578-3.58.052.052 0 0 1 .002-.058l1.008-1.375a1.75 1.75 0 0 0-.056-2.143l-1.76-2.15z",
+    back: "M15 4 7 12l8 8M8 12h12",
+    video: "M6.304 2h-.108c-1.133 0-2.058 0-2.79.098-.763.103-1.425.325-1.954.854C.923 3.48.7 4.142.598 4.907.5 5.637.5 6.563.5 7.697v.607c0 1.133 0 2.058.098 2.79.103.763.325 1.425.854 1.954.529.529 1.19.751 1.955.854.73.098 1.656.098 2.79.098h.107c1.133 0 2.058 0 2.79-.098.763-.103 1.425-.325 1.954-.854.529-.529.751-1.19.854-1.955.038-.286.062-.602.076-.949l1.93 1.418a1 1 0 0 0 1.592-.806V5.228a1 1 0 0 0-1.57-.822l-1.956 1.357a9.984 9.984 0 0 0-.072-.856c-.103-.764-.325-1.426-.854-1.955-.529-.529-1.19-.751-1.955-.854C8.363 2 7.437 2 6.303 2z",
+    info: "M10 9v7M10 5.5v.2M10 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16z",
+    plus: "M8 .5a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15zM8.001 4a.75.75 0 0 1 .75.75v2.5h2.499a.75.75 0 0 1 0 1.5H8.751v2.5a.75.75 0 0 1-1.5 0v-2.5H4.75a.75.75 0 1 1 0-1.5h2.501v-2.5A.75.75 0 0 1 8.001 4z",
+    camera: "m4 7 2-2h3l1-2h4l1 2h3a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7h2zm6 2.5a3 3 0 1 0 0 6 3 3 0 0 0 0-6z",
+    image: "M4 4h16v14H4zM4 15l4-4 3 3 2-2 7 6M8 8.5h.01",
+    mic: "M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm-6-3a6 6 0 0 0 12 0M12 18v3M9 21h6",
+    send: "M16.6915026,12.4744748 L3.50612381,13.2599618 C3.19218622,13.2599618 3.03521743,13.4170592 3.03521743,13.5741566 L1.15159189,20.0151496 C0.8376543,20.8006365 0.99,21.89 1.77946707,22.52 C2.41,22.99 3.50612381,23.1 4.13399899,22.8429026 L21.714504,14.0454487 C22.6563168,13.5741568 23.1272231,12.6315722 22.9702544,11.6889879 C22.8132856,11.0605983 22.3423792,10.4322088 21.714504,10.118014 L4.13399899,1.16346272 C3.34915502,.9 2.40734225,1.00636533 1.77946707,1.4776575 C0.994623095,2.10604706 .8376543,3.0486314 1.15159189,3.99121575 L3.03521743,10.4322088 C3.03521743,10.5893061 3.34915502,10.7464035 3.50612381,10.7464035 L16.6915026,11.5318905 C16.6915026,11.5318905 17.1624089,11.5318905 17.1624089,12.0031827 C17.1624089,12.4744748 16.6915026,12.4744748 16.6915026,12.4744748 Z",
+    close: "M13.457 3.957a1 1 0 0 0-1.414-1.414L8 6.586 3.957 2.543a1 1 0 0 0-1.414 1.414L6.586 8l-4.043 4.043a1 1 0 1 0 1.414 1.414L8 9.414l4.043 4.043a1 1 0 0 0 1.414-1.414L9.414 8l4.043-4.043z",
+    minus: "M3 8a1 1 0 0 1 1-1h8a1 1 0 1 1 0 2H4a1 1 0 0 1-1-1z",
+    smile: "M8 13s1 2 4 2 4-2 4-2M9 9h.01M15 9h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
+  };
+  if (name === "gif") return <span className="chat-gif-icon">GIF</span>;
+  return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={name === "phone" ? 0 : 2} strokeLinecap="round" strokeLinejoin="round"><path d={paths[name]} fill={name === "phone" ? "currentColor" : "none"} /></svg>;
+}
+
 function ChatPreview({ chatDocument, platform, title, selectedId, onSelect }: { chatDocument: ChatDocument; platform: ChatPlatform; title: string; selectedId?: string | null; onSelect?: (id: string) => void }) {
   const { theme, participants, messages } = chatDocument;
   const first = participants[0];
@@ -15,10 +34,10 @@ function ChatPreview({ chatDocument, platform, title, selectedId, onSelect }: { 
     <div className={`chat-preview ${theme.mode === "dark" ? "chat-preview-dark" : ""}`} style={{ background: theme.backgroundColor }}>
       <div className="chat-preview-windowbar"><span className="chat-window-dot" /><span className="chat-window-dot" /><span className="chat-window-dot" /></div>
       <div className="chat-preview-header" style={{ background: theme.headerColor }}>
-        <span className="chat-header-action">‹</span>
+        <span className="chat-header-action"><MessengerIcon name="back" size={24} /></span>
         <div className="chat-avatar chat-avatar-header">{thumbnail ? <img src={imageDisplayUrl(thumbnail) || thumbnail} alt="" /> : (theme.chatIcon || first?.displayName || "?").slice(0, 1)}</div>
         <div className="min-w-0"><p className="font-semibold truncate">{title || participants.map((p) => p.displayName).join(", ") || "Đoạn chat"}</p><p className="text-xs opacity-80">{theme.headerStatus || (participants.length > 2 ? `${participants.length} người tham gia` : "Active now")}</p></div>
-        {theme.showHeaderActions !== false && <div className="chat-header-actions"><span>☎</span><span>▣</span><span>ⓘ</span></div>}
+        {theme.showHeaderActions !== false && <div className="chat-header-actions"><span><MessengerIcon name="phone" /></span><span><MessengerIcon name="video" /></span><span><MessengerIcon name="info" /></span></div>}
       </div>
       <div className="chat-preview-body">
         <div className="chat-preview-note">Đây là mockup hội thoại</div>
@@ -41,7 +60,7 @@ function ChatPreview({ chatDocument, platform, title, selectedId, onSelect }: { 
           </div></div>;
         })}
       </div>
-      <div className="chat-preview-composer"><div className="chat-composer-icons">{theme.composerIcons?.microphone !== false && <span>🎙</span>}{theme.composerIcons?.image !== false && <span>▣</span>}{theme.composerIcons?.gif !== false && <span>GIF</span>}</div><span className="chat-composer-placeholder">{theme.composerPlaceholder || "Aa"}</span>{theme.composerIcons?.emoji !== false && <span>😊</span>}</div>
+      <div className="chat-preview-composer"><div className="chat-composer-icons">{theme.composerIcons?.microphone !== false && <span><MessengerIcon name="mic" size={17} /></span>}{theme.composerIcons?.image !== false && <span><MessengerIcon name="image" size={17} /></span>}{theme.composerIcons?.gif !== false && <span><MessengerIcon name="gif" size={21} /></span>}</div><span className="chat-composer-placeholder">{theme.composerPlaceholder || "Aa"}</span>{theme.composerIcons?.emoji !== false && <span><MessengerIcon name="smile" size={19} /></span>}</div>
     </div>
   );
 }

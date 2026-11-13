@@ -607,3 +607,5 @@ body {
 .chat-preview-mode button.active { background: #fff; color: #4338ca; box-shadow: var(--ds-shadow-xs); }
 .chat-preview-mobile .chat-preview { width: 360px; max-width: 360px; height: 680px; border-radius: 26px; border: 7px solid #111827; box-shadow: 0 8px 25px rgba(15,23,42,.2); }
 .chat-preview-mobile .chat-preview-windowbar { display: none; }
+.chat-header-actions span, .chat-header-action, .chat-composer-icons span { display: inline-flex; align-items: center; justify-content: center; }
+.chat-gif-icon { font-size: 10px; font-weight: 800; letter-spacing: -.5px; }
